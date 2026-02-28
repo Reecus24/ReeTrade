@@ -308,12 +308,21 @@ class MultiUserTradingWorker:
             settings, account, live_usdt_free
         )
         
-        await self.db.log(user_id, "INFO", f"Budget: ${available_budget:.2f} available / ${used_budget:.2f} used / ${total_budget:.2f} total")
+        # DAILY CAP CHECK
+        today_exposure = await self.db.get_today_exposure(user_id, settings.mode)
+        daily_cap = settings.live_daily_cap_usdt if settings.mode == 'live' else settings.paper_daily_cap_usdt
+        daily_remaining = max(0, daily_cap - today_exposure)
+        
+        mode_prefix = f"[{settings.mode.upper()}]"
+        await self.db.log(user_id, "INFO", f"{mode_prefix} Budget: ${available_budget:.2f} avail | Daily: ${today_exposure:.2f}/${daily_cap:.2f} used")
         
         # Check daily loss limit
         if risk_mgr.check_daily_loss_limit(account, self.user_initial_equity[user_id]):
-            await self.db.log(user_id, "ERROR", "Daily loss limit hit - stopping bot")
-            await self.db.update_settings(user_id, {'bot_running': False})
+            await self.db.log(user_id, "ERROR", f"{mode_prefix} Daily loss limit hit - stopping bot")
+            if settings.mode == 'live':
+                await self.db.update_settings(user_id, {'live_running': False})
+            else:
+                await self.db.update_settings(user_id, {'paper_running': False})
             return
         
         # Check existing positions for exits using LIVE market data
@@ -321,13 +330,18 @@ class MultiUserTradingWorker:
             await self.check_position_exit(user_id, pos, account, settings, mexc)
         
         # Check cooldown
-        if self.is_in_cooldown(user_id, 5):  # Fixed 5 candles cooldown
-            await self.db.log(user_id, "DEBUG", "In cooldown period (5 candles), skipping new entries")
+        if self.is_in_cooldown(user_id, 5):
+            await self.db.log(user_id, "DEBUG", f"{mode_prefix} In cooldown period (5 candles), skipping new entries")
             return
         
         # Check if we have budget for new positions
         if available_budget < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"Insufficient budget (${available_budget:.2f}) for new positions (min: ${settings.min_notional_usdt})")
+            await self.db.log(user_id, "INFO", f"{mode_prefix} Insufficient budget (${available_budget:.2f})")
+            return
+        
+        # Check DAILY CAP
+        if daily_remaining < settings.min_notional_usdt:
+            await self.db.log(user_id, "INFO", f"{mode_prefix} Daily cap reached (${today_exposure:.2f}/${daily_cap:.2f})")
             return
         
         # Look for new entries with REGIME DETECTION
