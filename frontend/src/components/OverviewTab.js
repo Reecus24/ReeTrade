@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Play, Square, AlertTriangle, Activity } from 'lucide-react';
+import { Play, Square, AlertTriangle, Activity, Database, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import LiveModeConfirm from '@/components/LiveModeConfirm';
@@ -31,6 +31,39 @@ const getAuthHeaders = () => {
 const OverviewTab = ({ status, onRefresh }) => {
   const [loading, setLoading] = useState(false);
   const [showLiveDialog, setShowLiveDialog] = useState(false);
+  const [balanceData, setBalanceData] = useState(null);
+  const [balanceError, setBalanceError] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+
+  // Fetch balance based on mode
+  const fetchBalance = async () => {
+    if (!status?.settings) return;
+    
+    setBalanceLoading(true);
+    setBalanceError(null);
+    
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/account/balance`, getAuthHeaders());
+      setBalanceData(response.data);
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || 'Balance konnte nicht geladen werden';
+      setBalanceError(errorMsg);
+      setBalanceData(null);
+      
+      if (status.settings.mode === 'live') {
+        toast.error(`MEXC Fehler: ${errorMsg}`);
+      }
+    } finally {
+      setBalanceLoading(false);
+    }
+  };
+
+  // Fetch balance when mode changes or on mount
+  useEffect(() => {
+    if (status?.settings) {
+      fetchBalance();
+    }
+  }, [status?.settings?.mode]);
 
   if (!status) {
     return (
