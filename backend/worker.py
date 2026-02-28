@@ -11,7 +11,7 @@ from models import Position, Trade, UserSettings, PaperAccount
 logger = logging.getLogger(__name__)
 
 class MultiUserTradingWorker:
-    "'"'"'Background worker for multi-user automated trading"'"'"'
+    # Background worker for multi-user automated trading
     
     def __init__(self, db: Database):
         self.db = db
