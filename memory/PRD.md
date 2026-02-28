@@ -49,6 +49,7 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] **NEU:** Verbesserte Settings mit Erklärungen und Tooltips
 - [x] **NEU:** Daily Trading Cap für Paper und Live Modi
 - [x] **NEU:** Getrennte Settings UI (Paper Settings / Live Settings / Strategie Tabs)
+- [x] **NEU:** Daily Cap Progress Bar im Dashboard (Paper & Live)
 
 ## Neue Features (28. Februar 2026)
 
