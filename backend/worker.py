@@ -675,15 +675,32 @@ class MultiUserTradingWorker:
         try:
             risk_mgr = RiskManager(settings)
             
-            # Apply fees and slippage
-            exit_price = risk_mgr.apply_fees_and_slippage(exit_price, "SELL")
+            # Calculate fees and slippage for exit
+            notional = position.qty * exit_price
+            fee_rate = settings.fee_bps / 10000
+            slippage_rate = settings.slippage_bps / 10000
             
-            # Calculate PnL
-            pnl = (exit_price - position.entry_price) * position.qty
-            pnl_pct = (pnl / (position.entry_price * position.qty)) * 100
+            exit_fee = notional * fee_rate
+            exit_slippage = notional * slippage_rate
+            
+            # Apply fees and slippage
+            exit_price_adjusted = risk_mgr.apply_fees_and_slippage(exit_price, "SELL")
+            
+            # Calculate PnL (gross)
+            gross_pnl = (exit_price - position.entry_price) * position.qty
+            
+            # Calculate total fees (entry was already applied, estimate it)
+            entry_notional = position.entry_price * position.qty
+            entry_fee = entry_notional * fee_rate
+            total_fees = entry_fee + exit_fee
+            total_slippage = (entry_notional + notional) * slippage_rate
+            
+            # Net PnL after fees and slippage
+            net_pnl = gross_pnl - total_fees - total_slippage
+            pnl_pct = (net_pnl / entry_notional) * 100 if entry_notional > 0 else 0
             
             # Update account
-            cash_returned = position.qty * exit_price
+            cash_returned = position.qty * exit_price_adjusted
             account.cash += cash_returned
             account.equity = account.cash + sum(
                 p.qty * exit_price for p in account.open_positions if p.symbol != position.symbol
@@ -694,7 +711,7 @@ class MultiUserTradingWorker:
                 p for p in account.open_positions if p.symbol != position.symbol
             ]
             
-            # Log trade
+            # Log trade with enhanced info
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
@@ -702,10 +719,14 @@ class MultiUserTradingWorker:
                 side="SELL",
                 qty=position.qty,
                 entry=position.entry_price,
-                exit=exit_price,
-                pnl=pnl,
+                exit=exit_price_adjusted,
+                pnl=net_pnl,
+                pnl_pct=pnl_pct,
+                fees_paid=total_fees,
+                slippage_cost=total_slippage,
                 mode=settings.mode,
-                reason=reason
+                reason=reason,
+                notional=notional
             )
             await self.db.add_trade(trade)
             
@@ -717,16 +738,18 @@ class MultiUserTradingWorker:
                     'symbol': position.symbol,
                     'side': 'SELL',
                     'qty': round(position.qty, 4),
-                    'exit_price': round(exit_price, 4),
-                    'pnl': round(pnl, 2),
+                    'exit_price': round(exit_price_adjusted, 4),
+                    'gross_pnl': round(gross_pnl, 2),
+                    'net_pnl': round(net_pnl, 2),
                     'pnl_pct': round(pnl_pct, 2),
+                    'total_fees': round(total_fees, 4),
                     'reason': reason,
                     'mode': settings.mode
                 }
             )
             
             # Check for consecutive losses and pause symbol if needed
-            if pnl < 0:
+            if net_pnl < 0:
                 recent_losses = await self.db.get_recent_symbol_losses(user_id, position.symbol, hours=12)
                 if recent_losses >= 3:
                     await self.db.set_symbol_pause(
@@ -740,12 +763,14 @@ class MultiUserTradingWorker:
             
             await self.db.log(
                 user_id,
-                "INFO" if pnl > 0 else "WARNING",
-                f"CLOSE {position.symbol} @ {exit_price:.4f}",
+                "INFO" if net_pnl > 0 else "WARNING",
+                f"CLOSE {position.symbol} @ {exit_price_adjusted:.4f}",
                 {
                     'entry': round(position.entry_price, 4),
-                    'pnl': round(pnl, 2),
+                    'gross_pnl': round(gross_pnl, 2),
+                    'net_pnl': round(net_pnl, 2),
                     'pnl_pct': round(pnl_pct, 2),
+                    'fees': round(total_fees, 4),
                     'reason': reason
                 }
             )
