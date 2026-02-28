@@ -61,7 +61,7 @@ const DashboardPage = ({ onLogout }) => {
     setLiveBalanceLoading(true);
     setLiveBalanceError(null);
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/account/balance`, getAuthHeaders());
+      const response = await axios.get(`${BACKEND_URL}/api/account/balance?mode=live`, getAuthHeaders());
       setLiveBalance(response.data);
     } catch (error) {
       setLiveBalanceError(error.response?.data?.detail || 'Fehler beim Laden');
@@ -74,7 +74,7 @@ const DashboardPage = ({ onLogout }) => {
   const fetchPaperBalance = useCallback(async () => {
     setPaperBalanceLoading(true);
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/account/balance`, getAuthHeaders());
+      const response = await axios.get(`${BACKEND_URL}/api/account/balance?mode=paper`, getAuthHeaders());
       setPaperBalance(response.data);
     } catch (error) {
       console.error('Paper balance fetch error:', error);
