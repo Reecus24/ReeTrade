@@ -327,9 +327,13 @@ async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/account/balance")
 async def get_account_balance(current_user: dict = Depends(get_current_user)):
-    """Get account balance - Live from MEXC or Paper from DB"""
+    """Get account balance with budget info - Live from MEXC or Paper from DB"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
+    paper_account = await db.get_paper_account(user_id)
+    
+    # Calculate used budget from open positions
+    used_budget = sum(pos.entry_price * pos.qty for pos in paper_account.open_positions)
     
     if settings.mode == 'live':
         # Get MEXC keys
@@ -357,6 +361,10 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             usdt_locked = float(usdt_balance.get('locked', 0))
             usdt_total = usdt_free + usdt_locked
             
+            # Calculate effective balance with budget limit
+            budget_remaining = settings.trading_budget_usdt - used_budget
+            available_budget = min(usdt_free, max(0, budget_remaining))
+            
             # Get non-zero balances for display
             non_zero_balances = [
                 {
@@ -374,9 +382,19 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'equity': usdt_total,
                 'cash': usdt_free,
                 'locked': usdt_locked,
-                'balances': non_zero_balances[:20],  # Top 20 non-zero
+                'balances': non_zero_balances[:20],
                 'last_updated': datetime.now(timezone.utc).isoformat(),
-                'error': None
+                'error': None,
+                # Budget info
+                'budget': {
+                    'total_budget': settings.trading_budget_usdt,
+                    'used_budget': round(used_budget, 2),
+                    'available_budget': round(available_budget, 2),
+                    'max_order_notional': settings.max_order_notional_usdt,
+                    'wallet_free': usdt_free,
+                    'effective_available': round(available_budget, 2)
+                },
+                'open_positions_count': len(paper_account.open_positions)
             }
             
         except Exception as e:
@@ -386,18 +404,49 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 detail=f"Failed to fetch MEXC balance: {str(e)}"
             )
     else:
-        # Paper mode - return paper account
-        paper_account = await db.get_paper_account(user_id)
+        # Paper mode - return paper account with budget
+        # Initialize paper account if needed
+        if paper_account.equity == 10000.0 and settings.paper_start_balance_usdt != 10000.0:
+            paper_account.equity = settings.paper_start_balance_usdt
+            paper_account.cash = settings.paper_start_balance_usdt
+            await db.update_paper_account(paper_account)
+        
+        # Calculate available budget for paper
+        available_budget = max(0, settings.paper_start_balance_usdt - used_budget)
+        
+        # Calculate PnL from paper_start_balance
+        pnl = paper_account.equity - settings.paper_start_balance_usdt
+        pnl_pct = (pnl / settings.paper_start_balance_usdt * 100) if settings.paper_start_balance_usdt > 0 else 0
+        
         return {
             'source': 'paper',
-            'source_label': 'Paper (DB)',
+            'source_label': 'Paper (Simulated Live)',
             'equity': paper_account.equity,
             'cash': paper_account.cash,
             'locked': 0,
             'balances': [],
             'open_positions': [pos.model_dump() for pos in paper_account.open_positions] if paper_account.open_positions else [],
             'last_updated': datetime.now(timezone.utc).isoformat(),
-            'error': None
+            'error': None,
+            # Budget info
+            'budget': {
+                'total_budget': settings.paper_start_balance_usdt,
+                'used_budget': round(used_budget, 2),
+                'available_budget': round(available_budget, 2),
+                'max_order_notional': settings.max_order_notional_usdt,
+                'start_balance': settings.paper_start_balance_usdt,
+                'effective_available': round(available_budget, 2)
+            },
+            'pnl': {
+                'amount': round(pnl, 2),
+                'percent': round(pnl_pct, 2)
+            },
+            'open_positions_count': len(paper_account.open_positions),
+            # Fee settings for transparency
+            'fees': {
+                'fee_bps': settings.fee_bps,
+                'slippage_bps': settings.slippage_bps
+            }
         }
 
 # ============ MARKET DATA ENDPOINTS ============
