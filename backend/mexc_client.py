@@ -122,6 +122,63 @@ class MexcClient:
         # Return top N symbols
         return [p['symbol'] for p in usdt_pairs[:limit]]
     
+    async def get_momentum_universe(self, quote: str = "USDT", base_limit: int = 50) -> List[Dict]:
+        """Get momentum-scored universe
+        
+        Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume
+        """
+        # Get top 50 by volume as base universe
+        tickers = await self.get_ticker_24h()
+        
+        usdt_pairs = [
+            t for t in tickers 
+            if isinstance(t, dict) and t.get('symbol', '').endswith(quote)
+        ]
+        
+        # Sort by volume and take top 50
+        usdt_pairs.sort(
+            key=lambda x: float(x.get('quoteVolume', 0)), 
+            reverse=True
+        )
+        base_universe = usdt_pairs[:base_limit]
+        
+        # Calculate momentum scores
+        momentum_pairs = []
+        for ticker in base_universe:
+            try:
+                symbol = ticker['symbol']
+                
+                # Get 24h and 4h returns from ticker
+                price_change_pct = float(ticker.get('priceChangePercent', 0))
+                
+                # Get 4H candles for 4h return
+                klines_4h = await self.get_klines(symbol, interval="4h", limit=2)
+                if len(klines_4h) >= 2:
+                    price_4h_ago = float(klines_4h[-2][4])  # Close price 4h ago
+                    current_price = float(klines_4h[-1][4])  # Current close
+                    return_4h = ((current_price - price_4h_ago) / price_4h_ago) * 100
+                else:
+                    return_4h = 0
+                
+                # Momentum score: 0.6 * return_24h + 0.4 * return_4h
+                momentum_score = (0.6 * price_change_pct) + (0.4 * return_4h)
+                
+                momentum_pairs.append({
+                    'symbol': symbol,
+                    'score': momentum_score,
+                    'return_24h': price_change_pct,
+                    'return_4h': return_4h,
+                    'quoteVolume': float(ticker.get('quoteVolume', 0))
+                })
+            except Exception as e:
+                logger.warning(f"Error calculating momentum for {symbol}: {e}")
+                continue
+        
+        # Sort by momentum score descending
+        momentum_pairs.sort(key=lambda x: x['score'], reverse=True)
+        
+        return momentum_pairs
+    
     # PRIVATE ENDPOINTS (for Live mode)
     
     async def get_account(self) -> Dict[str, Any]:
