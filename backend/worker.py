@@ -266,13 +266,15 @@ class MultiUserTradingWorker:
     
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
         account = await self.db.get_paper_account(user_id)
+        mode_prefix = f"[{settings.mode.upper()}]"
+        scan_time = datetime.now(timezone.utc)
         
         # Initialize paper account with user's budget setting if needed
         if account.equity == 10000.0 and settings.paper_start_balance_usdt != 10000.0:
             account.equity = settings.paper_start_balance_usdt
             account.cash = settings.paper_start_balance_usdt
             await self.db.update_paper_account(account)
-            await self.db.log(user_id, "INFO", f"Paper account initialized with budget: ${settings.paper_start_balance_usdt}")
+            await self.db.log(user_id, "INFO", f"{mode_prefix} Paper account initialized with budget: ${settings.paper_start_balance_usdt}")
         
         # Initialize tracking
         if user_id not in self.user_initial_equity:
