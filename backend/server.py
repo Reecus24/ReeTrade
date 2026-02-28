@@ -173,13 +173,13 @@ async def request_live_mode(current_user: dict = Depends(get_current_user)):
 
 @app.post("/api/bot/live/confirm")
 @limiter.limit("3/minute")
-async def confirm_live_mode(req: Request, request: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
+async def confirm_live_mode(request: Request, body: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
     """Confirm live trading mode with password verification"""
     user_id = current_user['user_id']
     
     # Verify password
     user = await db.get_user_by_id(user_id)
-    if not user or not verify_password(request.password, user['password_hash']):
+    if not user or not verify_password(body.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid password")
     
     # Check if API keys are configured
@@ -201,7 +201,7 @@ async def confirm_live_mode(req: Request, request: LiveConfirmRequest, current_u
         user_id=user_id,
         action="LIVE_MODE_ENABLE",
         details={'mode': 'live', 'live_confirmed': True},
-        ip_address=req.client.host if req.client else None
+        ip_address=request.client.host if request.client else None
     )
     return {"message": "Live mode confirmed", "mode": "live"}
 
