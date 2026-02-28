@@ -150,6 +150,72 @@ class MultiUserTradingWorker:
             # Wait 5 minutes
             await asyncio.sleep(300)
     
+    async def exit_check_loop(self):
+        """Fast loop to check exits every 30 seconds"""
+        while self.running:
+            try:
+                active_settings = await self.db.get_all_active_users()
+                
+                for settings_doc in active_settings:
+                    user_id = settings_doc.get('user_id')
+                    try:
+                        await self.check_exits_for_user(user_id)
+                    except Exception as e:
+                        logger.error(f"Exit check error for {user_id}: {e}")
+            
+            except Exception as e:
+                logger.error(f"Exit check loop error: {e}")
+            
+            # Check exits every 30 seconds
+            await asyncio.sleep(30)
+    
+    async def check_exits_for_user(self, user_id: str):
+        """Quick exit check for a user - runs every 30 seconds"""
+        settings = await self.db.get_settings(user_id)
+        account = await self.db.get_paper_account(user_id)
+        
+        # Skip if no open positions
+        if not account.open_positions:
+            return
+        
+        # Only check if live mode is running
+        if not (settings.live_running and settings.live_confirmed):
+            # Also check paper positions
+            if not settings.paper_running:
+                return
+        
+        # Get MEXC client
+        mexc = await self.get_user_mexc_client(user_id, settings)
+        
+        mode_prefix = f"[{settings.mode.upper()}]"
+        
+        # Check each position
+        for position in account.open_positions[:]:
+            try:
+                ticker = await mexc.get_ticker_24h(position.symbol)
+                current_price = float(ticker['lastPrice'])
+                
+                should_exit = False
+                exit_reason = ""
+                
+                # Check stop loss
+                if current_price <= position.stop_loss:
+                    should_exit = True
+                    exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
+                
+                # Check take profit
+                elif current_price >= position.take_profit:
+                    should_exit = True
+                    exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
+                
+                if should_exit:
+                    await self.db.log(user_id, "INFO", f"{mode_prefix} EXIT: {position.symbol} - {exit_reason}")
+                    await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
+                    await self.db.update_paper_account(account)
+                    
+            except Exception as e:
+                logger.error(f"Exit check error for {position.symbol}: {e}")
+    
     async def process_user(self, user_id: str):
         settings = await self.db.get_settings(user_id)
         
