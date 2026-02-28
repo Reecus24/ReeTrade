@@ -344,8 +344,8 @@ class MultiUserTradingWorker:
         for pos in account.open_positions[:]:
             await self.check_position_exit(user_id, pos, account, settings, mexc)
         
-        # Check cooldown
-        cooldown_active = self.is_in_cooldown(user_id, settings.cooldown_candles)
+        # Check cooldown - MODE SPECIFIC
+        cooldown_active = self.is_in_cooldown(user_id, settings.mode, settings.cooldown_candles)
         if cooldown_active:
             cooldown_mins = settings.cooldown_candles * 15
             await self.db.log(user_id, "INFO", f"{mode_prefix} ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min nach letztem Trade)")
