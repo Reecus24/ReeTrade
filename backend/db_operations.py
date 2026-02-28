@@ -35,6 +35,8 @@ class Database:
         await self.paper_accounts.create_index('user_id', unique=True)
         await self.logs.create_index([('user_id', 1), ('ts', -1)])
         await self.trades.create_index([('user_id', 1), ('ts', -1)])
+        await self.audit_logs.create_index([('user_id', 1), ('ts', -1)])
+        await self.audit_logs.create_index('action')
         logger.info("Database initialized with indexes")
     
     # ========== USER OPERATIONS ==========
