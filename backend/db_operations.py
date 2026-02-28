@@ -25,6 +25,7 @@ class Database:
         self.trades = self.db.trades
         self.daily_metrics = self.db.daily_metrics
         self.audit_logs = self.db.audit_logs
+        self.symbol_pauses = self.db.symbol_pauses
     
     async def initialize(self):
         # Initialize database indexes
