@@ -461,6 +461,30 @@ class MultiUserTradingWorker:
         stop_loss: float,
         take_profit: float
     ):
+        # Deprecated - use open_position_with_budget instead
+        await self.open_position_with_budget(
+            user_id, symbol, klines, account, settings,
+            strategy, risk_mgr, context, mexc, regime,
+            stop_loss, take_profit, available_budget=settings.trading_budget_usdt
+        )
+    
+    async def open_position_with_budget(
+        self,
+        user_id: str,
+        symbol: str,
+        klines: list,
+        account: PaperAccount,
+        settings: UserSettings,
+        strategy: TradingStrategy,
+        risk_mgr: RiskManager,
+        context: dict,
+        mexc: MexcClient,
+        regime: str,
+        stop_loss: float,
+        take_profit: float,
+        available_budget: float
+    ):
+        """Open position with budget limit enforcement"""
         try:
             current_price = float(klines[-1][4])
             
@@ -471,12 +495,37 @@ class MultiUserTradingWorker:
                 await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
                 return
             
+            # Calculate notional value
+            notional = qty * current_price
+            
+            # BUDGET LIMIT CHECK 1: Max order notional
+            if settings.max_order_notional_usdt and notional > settings.max_order_notional_usdt:
+                # Reduce position to max order size
+                qty = settings.max_order_notional_usdt / current_price
+                notional = qty * current_price
+                await self.db.log(user_id, "INFO", f"{symbol} position reduced to max order size: ${notional:.2f}")
+            
+            # BUDGET LIMIT CHECK 2: Available budget
+            if notional > available_budget:
+                # Reduce position to available budget
+                qty = available_budget / current_price
+                notional = qty * current_price
+                await self.db.log(user_id, "INFO", f"{symbol} position reduced to available budget: ${notional:.2f}")
+            
+            # Check if position is still viable
+            if notional < settings.min_notional_usdt:
+                await self.db.log(user_id, "WARNING", f"{symbol} position too small after budget limits: ${notional:.2f}")
+                return
+            
             # Round quantity to exchange stepSize
             rounded_qty = order_sizer.round_quantity(symbol, qty)
             
             if rounded_qty == 0:
                 await self.db.log(user_id, "WARNING", f"{symbol} qty {qty:.6f} below exchange minimum after rounding")
                 return
+            
+            # Recalculate notional with rounded qty
+            notional = rounded_qty * current_price
             
             # Validate notional value
             valid, notional_reason = order_sizer.validate_notional(
@@ -494,13 +543,20 @@ class MultiUserTradingWorker:
                     {
                         'qty': round(rounded_qty, 6),
                         'price': round(current_price, 4),
-                        'notional': round(rounded_qty * current_price, 2),
+                        'notional': round(notional, 2),
                         'min_notional': settings.min_notional_usdt
                     }
                 )
                 return
             
-            # Apply fees and slippage
+            # Calculate fees and slippage costs
+            fee_rate = settings.fee_bps / 10000
+            slippage_rate = settings.slippage_bps / 10000
+            
+            entry_fee = notional * fee_rate
+            slippage_cost = notional * slippage_rate
+            
+            # Apply fees and slippage to entry price
             entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
             
             # Create position with rounded qty
@@ -519,7 +575,7 @@ class MultiUserTradingWorker:
             account.cash -= position_value
             account.open_positions.append(position)
             
-            # Log trade
+            # Log trade with enhanced info
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
@@ -528,7 +584,10 @@ class MultiUserTradingWorker:
                 qty=rounded_qty,
                 entry=entry_price,
                 mode=settings.mode,
-                reason=f"Regime: {regime}, EMA crossover, RSI={context.get('rsi', 0)}"
+                reason=f"Regime: {regime}, EMA crossover, RSI={context.get('rsi', 0)}",
+                notional=notional,
+                fees_paid=entry_fee,
+                slippage_cost=slippage_cost
             )
             await self.db.add_trade(trade)
             
@@ -546,7 +605,10 @@ class MultiUserTradingWorker:
                     'regime': regime,
                     'risk_pct': settings.risk_per_trade * 100,
                     'mode': settings.mode,
-                    'notional': round(rounded_qty * entry_price, 2)
+                    'notional': round(notional, 2),
+                    'fees': round(entry_fee, 4),
+                    'slippage': round(slippage_cost, 4),
+                    'budget_remaining': round(available_budget - notional, 2)
                 }
             )
             
@@ -558,7 +620,8 @@ class MultiUserTradingWorker:
                     'qty': round(rounded_qty, 6),
                     'stop_loss': round(stop_loss, 4),
                     'take_profit': round(take_profit, 4),
-                    'position_value': round(position_value, 2),
+                    'notional': round(notional, 2),
+                    'fees': round(entry_fee, 4),
                     'regime': regime,
                     'risk_pct': settings.risk_per_trade * 100,
                     **context
