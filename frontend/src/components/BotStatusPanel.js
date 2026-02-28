@@ -102,14 +102,11 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
           </div>
         </div>
         
-        {/* Last Decision */}
+        {/* Last Symbol */}
         <div className="p-2 bg-zinc-900/50 rounded">
-          <div className="text-xs text-zinc-500">Letzte Entscheidung</div>
-          <div className={`text-sm font-medium mt-1 flex items-center gap-1 ${decisionInfo.color}`}>
-            <DecisionIcon className="w-3 h-3" />
-            <span className="truncate" title={decisionInfo.label}>
-              {decisionInfo.label.length > 20 ? decisionInfo.label.substring(0, 20) + '...' : decisionInfo.label}
-            </span>
+          <div className="text-xs text-zinc-500">Letzter Coin</div>
+          <div className="text-sm font-mono font-bold text-white mt-1">
+            {lastSymbol || '-'}
           </div>
         </div>
         
@@ -128,6 +125,15 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
           <div className="text-sm font-mono text-zinc-300 mt-1">
             {positionsCount} / {settings?.max_positions || 3}
           </div>
+        </div>
+      </div>
+      
+      {/* Decision - Full Width */}
+      <div className="mt-3 p-3 bg-zinc-900/50 rounded">
+        <div className="text-xs text-zinc-500 mb-1">Letzte Entscheidung</div>
+        <div className={`text-sm font-medium flex items-center gap-2 ${decisionInfo.color}`}>
+          <DecisionIcon className="w-4 h-4 flex-shrink-0" />
+          <span>{decisionInfo.label}</span>
         </div>
       </div>
       
