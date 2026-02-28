@@ -166,6 +166,8 @@ live_max_order_usdt: float = 50.0
 ```
 
 ## Changelog
+- **28.02.2026:** Daily Cap Progress Bar im Dashboard (Fortschrittsbalken, Prozentanzeige, Warnungen)
 - **28.02.2026:** Daily Trading Cap implementiert (Paper & Live)
 - **28.02.2026:** Settings UI in drei Tabs aufgeteilt (Paper/Live/Strategie)
 - **28.02.2026:** Backend-Modelle für getrennte Paper/Live Settings erweitert
+- **28.02.2026:** API `/api/account/balance` erweitert mit optionalem `mode` Parameter
