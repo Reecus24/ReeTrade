@@ -225,9 +225,9 @@ const OverviewTab = ({ status, onRefresh }) => {
                   <tr key={idx} className="border-b border-zinc-900 last:border-0" data-testid={`position-${idx}`}>
                     <td className="py-3">{pos.symbol}</td>
                     <td className="py-3">
-                      <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                      <span className="inline-flex items-center px-2 py-0.5 text-xs uppercase tracking-wider font-bold bg-green-500/10 text-green-500 border border-green-500/20 rounded">
                         {pos.side}
-                      </Badge>
+                      </span>
                     </td>
                     <td className="text-right py-3">${pos.entry_price.toFixed(4)}</td>
                     <td className="text-right py-3">{pos.qty.toFixed(4)}</td>
