@@ -147,8 +147,8 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Trading loop error: {e}")
             
-            # Wait 15 minutes
-            await asyncio.sleep(900)
+            # Wait 5 minutes
+            await asyncio.sleep(300)
     
     async def process_user(self, user_id: str):
         settings = await self.db.get_settings(user_id)
