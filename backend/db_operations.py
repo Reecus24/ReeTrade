@@ -213,6 +213,33 @@ class Database:
         doc['ts'] = doc['ts'].isoformat()
         await self.trades.insert_one(doc)
     
+    async def get_today_exposure(self, user_id: str, mode: str) -> float:
+        """Get total notional traded today (UTC) for daily cap tracking"""
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Query for trades opened today (BUY trades = new positions)
+        cursor = self.trades.find({
+            'user_id': user_id,
+            'mode': mode,
+            'side': 'BUY'  # Only count position opens
+        })
+        trades = await cursor.to_list(length=10000)
+        
+        today_exposure = 0.0
+        for trade in trades:
+            ts = trade.get('ts')
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            
+            # Check if trade was opened today
+            if ts >= today_start:
+                notional = trade.get('notional') or (trade.get('qty', 0) * trade.get('entry', 0))
+                today_exposure += notional
+        
+        return today_exposure
+    
     async def get_trades(self, user_id: str, limit: int = 50) -> List[Trade]:
         cursor = self.trades.find({'user_id': user_id}).sort('ts', -1).limit(limit)
         trades = await cursor.to_list(length=limit)
