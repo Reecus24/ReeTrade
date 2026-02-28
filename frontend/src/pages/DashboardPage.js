@@ -86,8 +86,13 @@ const DashboardPage = ({ onLogout }) => {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([fetchStatus(), fetchLogs()]);
-      setLoading(false);
+      try {
+        await Promise.all([fetchStatus(), fetchLogs()]);
+      } catch (error) {
+        console.error('Init error:', error);
+      } finally {
+        setLoading(false);
+      }
     };
     init();
     const interval = setInterval(() => {
