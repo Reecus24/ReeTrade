@@ -490,6 +490,11 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
             remaining_budget = min(available_to_bot, budget_remaining)
             
+            # DAILY CAP
+            today_exposure = await db.get_today_exposure(user_id, 'live')
+            daily_cap = settings.live_daily_cap_usdt
+            daily_remaining = max(0, daily_cap - today_exposure)
+            
             # Get non-zero balances for display
             non_zero_balances = [
                 {
@@ -518,8 +523,14 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                     'trading_budget': settings.trading_budget_usdt,
                     'used_budget': round(used_budget, 2),
                     'remaining_budget': round(remaining_budget, 2),
-                    'max_order_notional': settings.max_order_notional_usdt,
+                    'max_order': settings.live_max_order_usdt,
                     'mode': 'live'
+                },
+                # Daily Cap
+                'daily_cap': {
+                    'cap': daily_cap,
+                    'used': round(today_exposure, 2),
+                    'remaining': round(daily_remaining, 2)
                 },
                 'open_positions_count': len(paper_account.open_positions)
             }
@@ -542,6 +553,11 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         budget_remaining = max(0, settings.paper_start_balance_usdt - used_budget)
         available_to_bot = min(paper_account.cash, budget_remaining)
         
+        # DAILY CAP
+        today_exposure = await db.get_today_exposure(user_id, 'paper')
+        daily_cap = settings.paper_daily_cap_usdt
+        daily_remaining = max(0, daily_cap - today_exposure)
+        
         # Calculate PnL from paper_start_balance
         pnl = paper_account.equity - settings.paper_start_balance_usdt
         pnl_pct = (pnl / settings.paper_start_balance_usdt * 100) if settings.paper_start_balance_usdt > 0 else 0
@@ -558,13 +574,17 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'error': None,
             # Budget info (PAPER)
             'budget': {
-                'paper_cash': round(paper_account.cash, 2),
                 'start_balance': settings.paper_start_balance_usdt,
-                'trading_budget': settings.paper_start_balance_usdt,
                 'used_budget': round(used_budget, 2),
                 'remaining_budget': round(available_to_bot, 2),
-                'max_order_notional': settings.max_order_notional_usdt,
+                'max_order': settings.paper_max_order_usdt,
                 'mode': 'paper'
+            },
+            # Daily Cap
+            'daily_cap': {
+                'cap': daily_cap,
+                'used': round(today_exposure, 2),
+                'remaining': round(daily_remaining, 2)
             },
             'pnl': {
                 'amount': round(pnl, 2),
@@ -573,8 +593,8 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'open_positions_count': len(paper_account.open_positions),
             # Fee settings for transparency
             'fees': {
-                'fee_bps': settings.fee_bps,
-                'slippage_bps': settings.slippage_bps
+                'fee_bps': settings.paper_fee_bps,
+                'slippage_bps': settings.paper_slippage_bps
             }
         }
 
