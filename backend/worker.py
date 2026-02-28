@@ -93,22 +93,61 @@ class MultiUserTradingWorker:
         await self.scan_and_trade(user_id, settings)
     
     async def refresh_top_pairs(self, user_id: str):
+        # MOMENTUM ROTATION: Select Top 10 by momentum score
         try:
-            await self.db.log(user_id, "INFO", "Refreshing top pairs...")
+            await self.db.log(user_id, "INFO", "Running Momentum Rotation...")
             
-            # Use default MEXC client for public data
             mexc = MexcClient()
-            top_pairs = await mexc.get_top_pairs(quote="USDT", limit=20)
+            
+            # Get momentum-scored universe (Top 50 by volume)
+            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=50)
+            
+            # Filter: Only BULLISH regime
+            filtered_pairs = []
+            for pair_data in momentum_pairs[:20]:  # Check top 20 momentum
+                symbol = pair_data['symbol']
+                
+                try:
+                    # Get 4H candles for regime
+                    klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
+                    
+                    if len(klines_4h) >= 200:
+                        regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
+                        
+                        # Only include BULLISH symbols
+                        if regime == "BULLISH":
+                            filtered_pairs.append({
+                                **pair_data,
+                                'regime': regime,
+                                'adx': regime_ctx.get('adx', 0)
+                            })
+                            
+                            if len(filtered_pairs) >= 10:
+                                break
+                except Exception as e:
+                    logger.warning(f"Error checking regime for {symbol}: {e}")
+                    continue
+            
+            # Extract symbols
+            tradable_symbols = [p['symbol'] for p in filtered_pairs]
             
             await self.db.update_settings(user_id, {
-                'top_pairs': top_pairs,
+                'top_pairs': tradable_symbols,
                 'last_pairs_refresh': datetime.now(timezone.utc)
             })
             
-            await self.db.log(user_id, "INFO", f"Top pairs updated: {len(top_pairs)} symbols", 
-                            {'pairs': top_pairs[:5]})
+            await self.db.log(
+                user_id, 
+                "INFO", 
+                f"Momentum Rotation complete: {len(tradable_symbols)} BULLISH symbols selected",
+                {
+                    'symbols': tradable_symbols[:5],
+                    'scores': [f"{p['symbol']}={p['score']:.2f}" for p in filtered_pairs[:5]]
+                }
+            )
+            
         except Exception as e:
-            await self.db.log(user_id, "ERROR", f"Failed to refresh top pairs: {str(e)}")
+            await self.db.log(user_id, "ERROR", f"Failed to run momentum rotation: {str(e)}")
     
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
         account = await self.db.get_paper_account(user_id)
