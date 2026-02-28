@@ -19,6 +19,7 @@ class MultiUserTradingWorker:
         self.running = False
         self.user_initial_equity: Dict[str, float] = {}  # Track for daily loss limit
         self.user_last_trade_time: Dict[str, datetime] = {}  # Cooldown tracking
+        self.regime_detector = RegimeDetector()
     
     async def heartbeat(self):
         while self.running:
