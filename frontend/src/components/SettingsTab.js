@@ -95,20 +95,35 @@ const SettingsTab = () => {
 
   return (
     <div className="space-y-6" data-testid="settings-tab">
-      {/* Budget Limits - NEW SECTION */}
+      {/* Budget & Reserve System - NEW SECTION */}
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Wallet className="w-5 h-5 text-green-500" />
-          Budget Limits
+          Budget & Reserve System
         </h3>
         <p className="text-sm text-zinc-500 mb-4">
-          Begrenze das maximale Exposure. Der Bot kann nicht mehr als den erlaubten Betrag nutzen.
+          Schütze dein Wallet: Der Bot nutzt nur den erlaubten Betrag. Reserve bleibt unangetastet.
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="col-span-2 md:col-span-1 p-3 bg-zinc-900/50 border border-blue-900/30 rounded-lg">
+            <Label htmlFor="reserve_usdt" className="text-blue-400 font-medium">
+              Reserve (USDT)
+              <span className="block text-xs text-zinc-600 mt-1">Sicherheitsreserve - wird nie angetastet</span>
+            </Label>
+            <Input
+              id="reserve_usdt"
+              type="number"
+              step="100"
+              value={settings.reserve_usdt || 0}
+              onChange={(e) => setSettings({...settings, reserve_usdt: parseFloat(e.target.value) || 0})}
+              className="mt-2 bg-zinc-900 border-blue-900/50 text-white"
+              data-testid="setting-reserve"
+            />
+          </div>
           <div>
             <Label htmlFor="trading_budget_usdt" className="text-zinc-400">
               Trading Budget (USDT)
-              <span className="block text-xs text-zinc-600">Für Live Mode</span>
+              <span className="block text-xs text-zinc-600">Max Exposure (absolut)</span>
             </Label>
             <Input
               id="trading_budget_usdt"
@@ -122,7 +137,7 @@ const SettingsTab = () => {
           </div>
           <div>
             <Label htmlFor="paper_start_balance_usdt" className="text-zinc-400">
-              Paper Start Balance (USDT)
+              Paper Start (USDT)
               <span className="block text-xs text-zinc-600">Für Paper Mode</span>
             </Label>
             <Input
@@ -137,7 +152,7 @@ const SettingsTab = () => {
           </div>
           <div>
             <Label htmlFor="max_order_notional_usdt" className="text-zinc-400">
-              Max Order Size (USDT)
+              Max Order (USDT)
               <span className="block text-xs text-zinc-600">Pro Trade</span>
             </Label>
             <Input
@@ -150,6 +165,9 @@ const SettingsTab = () => {
               data-testid="setting-max-order"
             />
           </div>
+        </div>
+        <div className="mt-4 p-3 bg-blue-950/30 border border-blue-900/30 rounded text-xs text-blue-300">
+          <strong>Live Mode:</strong> available_to_bot = max(0, USDT_free - Reserve) → capped by Trading Budget
         </div>
       </div>
 
