@@ -153,7 +153,11 @@ class MultiUserTradingWorker:
     async def process_user(self, user_id: str):
         settings = await self.db.get_settings(user_id)
         
-        if not settings.bot_running:
+        # Check if either mode is running
+        paper_running = settings.paper_running
+        live_running = settings.live_running and settings.live_confirmed
+        
+        if not paper_running and not live_running:
             return
         
         # Load exchange info once
@@ -167,12 +171,9 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Failed to load exchange info: {e}")
         
-        await self.db.log(user_id, "INFO", "Starting trading cycle")
-        
         # Refresh top pairs every 4 hours (momentum rotation)
         should_refresh = True
         if settings.last_pairs_refresh:
-            # Make datetime timezone-aware if it isn't
             last_refresh = settings.last_pairs_refresh
             if last_refresh.tzinfo is None:
                 last_refresh = last_refresh.replace(tzinfo=timezone.utc)
@@ -186,8 +187,17 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "WARNING", "No top pairs available")
             return
         
-        # Scan symbols for signals
-        await self.scan_and_trade(user_id, settings)
+        # Process PAPER mode
+        if paper_running:
+            await self.db.log(user_id, "INFO", "[PAPER] Starting trading cycle")
+            await self.scan_and_trade_mode(user_id, settings, mode='paper')
+            await self.db.update_settings(user_id, {'paper_heartbeat': datetime.now(timezone.utc)})
+        
+        # Process LIVE mode (completely separate)
+        if live_running:
+            await self.db.log(user_id, "WARNING", "[LIVE] Starting trading cycle")
+            await self.scan_and_trade_mode(user_id, settings, mode='live')
+            await self.db.update_settings(user_id, {'live_heartbeat': datetime.now(timezone.utc)})
     
     async def refresh_top_pairs(self, user_id: str):
         # MOMENTUM ROTATION: Select Top 10 by momentum score
