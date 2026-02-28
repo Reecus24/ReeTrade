@@ -397,10 +397,10 @@ const OverviewTab = ({ status, onRefresh }) => {
                         {pos.side}
                       </span>
                     </td>
-                    <td className="text-right py-3">${pos.entry_price?.toFixed(4) || '0.0000'}</td>
-                    <td className="text-right py-3">{pos.qty?.toFixed(4) || '0.0000'}</td>
-                    <td className="text-right py-3 text-red-500">${pos.stop_loss?.toFixed(4) || '0.0000'}</td>
-                    <td className="text-right py-3 text-green-500">${pos.take_profit?.toFixed(4) || '0.0000'}</td>
+                    <td className="text-right py-3">${pos.entry_price?.toFixed(8) || '0.00000000'}</td>
+                    <td className="text-right py-3">{pos.qty?.toLocaleString('de-DE') || '0'}</td>
+                    <td className="text-right py-3 text-red-500">${pos.stop_loss?.toFixed(8) || '0.00000000'}</td>
+                    <td className="text-right py-3 text-green-500">${pos.take_profit?.toFixed(8) || '0.00000000'}</td>
                   </tr>
                 ))}
               </tbody>
