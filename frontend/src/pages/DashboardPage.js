@@ -71,6 +71,18 @@ const DashboardPage = ({ onLogout }) => {
     }
   }, [status?.settings?.live_confirmed]);
 
+  const fetchPaperBalance = useCallback(async () => {
+    setPaperBalanceLoading(true);
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/account/balance`, getAuthHeaders());
+      setPaperBalance(response.data);
+    } catch (error) {
+      console.error('Paper balance fetch error:', error);
+    } finally {
+      setPaperBalanceLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
