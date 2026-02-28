@@ -345,107 +345,237 @@ class MultiUserTradingWorker:
             await self.check_position_exit(user_id, pos, account, settings, mexc)
         
         # Check cooldown
-        if self.is_in_cooldown(user_id, 5):
-            await self.db.log(user_id, "DEBUG", f"{mode_prefix} In cooldown period (5 candles), skipping new entries")
+        cooldown_active = self.is_in_cooldown(user_id, settings.cooldown_candles)
+        if cooldown_active:
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⏸️ SKIPPED: Cooldown active ({settings.cooldown_candles} candles)")
+            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'SKIPPED: Cooldown active'})
             return
         
         # Check if we have budget for new positions
         if available_budget < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} Insufficient budget (${available_budget:.2f})")
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Insufficient budget (${available_budget:.2f} < ${settings.min_notional_usdt})")
+            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Insufficient budget'})
             return
         
         # Check DAILY CAP
         if daily_remaining < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} Daily cap reached (${today_exposure:.2f}/${daily_cap:.2f})")
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Daily cap reached (${today_exposure:.2f}/${daily_cap:.2f})")
+            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Daily cap reached'})
+            return
+        
+        # Check max positions
+        if not risk_mgr.can_open_position(account):
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Max positions reached ({len(account.open_positions)}/{settings.max_positions})")
+            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Max positions reached'})
             return
         
         # Look for new entries with REGIME DETECTION
-        if risk_mgr.can_open_position(account):
-            for symbol in settings.top_pairs[:10]:  # Check top 10
-                try:
-                    # Check if symbol is paused (3 losses in 12h)
-                    if await self.db.is_symbol_paused(user_id, symbol):
-                        await self.db.log(user_id, "WARNING", f"{symbol} paused due to consecutive losses")
-                        continue
+        symbols_checked = 0
+        for symbol in settings.top_pairs[:10]:  # Check top 10
+            symbols_checked += 1
+            try:
+                # Check if symbol is paused (3 losses in 12h)
+                is_paused = await self.db.is_symbol_paused(user_id, symbol)
+                if is_paused:
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime="N/A", adx=0, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=True,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason="Symbol paused (consecutive losses)"
+                    )
+                    continue
+                
+                # Get 4H klines for regime detection (MUST HAPPEN FIRST)
+                klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
+                
+                if len(klines_4h) < 200:
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime="N/A", adx=0, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason="Insufficient 4H data for regime detection"
+                    )
+                    continue
+                
+                # DETECT REGIME
+                regime, regime_context = self.regime_detector.detect_regime(klines_4h)
+                adx_value = regime_context.get('adx', 0)
+                
+                # REGIME-BASED FILTERING (BEFORE SIGNAL CHECK)
+                
+                # BEARISH: No long trades
+                if regime == "BEARISH":
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason="BEARISH regime - no long trades"
+                    )
+                    continue
+                
+                # SIDEWAYS: No EMA crossover trading
+                if regime == "SIDEWAYS":
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason="SIDEWAYS regime - no EMA trading"
+                    )
+                    continue
+                
+                # BULLISH: Proceed with entry check
+                if regime != "BULLISH":
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason=f"Regime {regime} not BULLISH"
+                    )
+                    continue
+                
+                # Get 15m klines for entry signal
+                klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
+                
+                if len(klines_15m) < settings.ema_slow:
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason="Insufficient 15m data for EMA"
+                    )
+                    continue
+                
+                # Check EMA signal
+                signal, context = strategy.generate_signal(klines_15m)
+                ema_fast_val = context.get('ema_fast', 0)
+                ema_slow_val = context.get('ema_slow', 0)
+                rsi_val = context.get('rsi', 0)
+                
+                if signal != "LONG":
+                    # Determine specific reason
+                    if ema_fast_val <= ema_slow_val:
+                        skip_reason = f"No EMA crossover (Fast {ema_fast_val:.2f} <= Slow {ema_slow_val:.2f})"
+                    elif rsi_val < settings.rsi_min:
+                        skip_reason = f"RSI below threshold ({rsi_val:.1f} < {settings.rsi_min})"
+                    elif rsi_val > settings.rsi_overbought:
+                        skip_reason = f"RSI overbought ({rsi_val:.1f} > {settings.rsi_overbought})"
+                    else:
+                        skip_reason = f"No LONG signal (Signal: {signal})"
                     
-                    # Get 4H klines for regime detection (MUST HAPPEN FIRST)
-                    klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
-                    
-                    if len(klines_4h) < 200:
-                        await self.db.log(user_id, "DEBUG", f"{symbol} insufficient 4H data for regime detection")
-                        continue
-                    
-                    # DETECT REGIME
-                    regime, regime_context = self.regime_detector.detect_regime(klines_4h)
-                    
-                    # Log detected regime for every symbol
-                    await self.db.log(user_id, "INFO", f"{symbol} Regime: {regime}", regime_context)
-                    
-                    # REGIME-BASED FILTERING (BEFORE SIGNAL CHECK)
-                    
-                    # BEARISH: No long trades
-                    if regime == "BEARISH":
-                        await self.db.log(user_id, "INFO", f"{symbol} blocked - BEARISH regime (no long trades)")
-                        continue
-                    
-                    # SIDEWAYS: No EMA crossover trading
-                    if regime == "SIDEWAYS":
-                        await self.db.log(user_id, "INFO", f"{symbol} blocked - SIDEWAYS regime (no EMA trading)")
-                        continue
-                    
-                    # BULLISH: Proceed with entry check
-                    if regime != "BULLISH":
-                        await self.db.log(user_id, "INFO", f"{symbol} blocked - Regime {regime} not BULLISH")
-                        continue
-                    
-                    # Get 15m klines for entry signal
-                    klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
-                    
-                    if len(klines_15m) < settings.ema_slow:
-                        continue
-                    
-                    # Check EMA signal
-                    signal, context = strategy.generate_signal(klines_15m)
-                    
-                    if signal == "LONG":
-                        # BULLISH REGIME: Adjusted parameters
-                        current_price = float(klines_15m[-1][4])
-                        
-                        # Calculate ATR stop (mult 2.5)
-                        atr = strategy.calculate_atr(klines_15m, 14)
-                        if atr:
-                            stop_loss = current_price - (atr * 2.5)
-                            # TP = 1:2.5 R:R
-                            risk_amount = current_price - stop_loss
-                            take_profit = current_price + (risk_amount * 2.5)
-                        else:
-                            # Fallback
-                            stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
-                            take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
-                        
-                        # Reduce risk to 0.5% for bullish regime
-                        original_risk = settings.risk_per_trade
-                        settings.risk_per_trade = 0.005  # 0.5%
-                        
-                        # Open position with regime-adjusted parameters and budget limit
-                        await self.open_position_with_budget(
-                            user_id, symbol, klines_15m, account, settings,
-                            strategy, risk_mgr, context, mexc, regime,
-                            stop_loss, take_profit, available_budget
-                        )
-                        
-                        # Restore original risk
-                        settings.risk_per_trade = original_risk
-                        
-                        # Update last trade time and break
-                        self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
-                        break  # One entry per cycle
-                    
-                except Exception as e:
-                    await self.db.log(user_id, "ERROR", f"Error scanning {symbol}: {str(e)}")
+                    await self.log_symbol_check(
+                        user_id, mode_prefix, symbol,
+                        regime=regime, adx=adx_value, 
+                        ema_fast=ema_fast_val, ema_slow=ema_slow_val, rsi=rsi_val,
+                        cooldown=False, paused=False,
+                        daily_used=today_exposure, daily_cap=daily_cap,
+                        budget_available=available_budget,
+                        decision="SKIPPED", reason=skip_reason
+                    )
+                    continue
+                
+                # SIGNAL DETECTED!
+                await self.log_symbol_check(
+                    user_id, mode_prefix, symbol,
+                    regime=regime, adx=adx_value,
+                    ema_fast=ema_fast_val, ema_slow=ema_slow_val, rsi=rsi_val,
+                    cooldown=False, paused=False,
+                    daily_used=today_exposure, daily_cap=daily_cap,
+                    budget_available=available_budget,
+                    decision="SIGNAL", reason="LONG signal detected - opening position"
+                )
+                
+                # BULLISH REGIME: Adjusted parameters
+                current_price = float(klines_15m[-1][4])
+                
+                # Calculate ATR stop (mult 2.5)
+                atr = strategy.calculate_atr(klines_15m, 14)
+                if atr:
+                    stop_loss = current_price - (atr * 2.5)
+                    # TP = 1:2.5 R:R
+                    risk_amount = current_price - stop_loss
+                    take_profit = current_price + (risk_amount * 2.5)
+                else:
+                    # Fallback
+                    stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
+                    take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+                
+                # Reduce risk to 0.5% for bullish regime
+                original_risk = settings.risk_per_trade
+                settings.risk_per_trade = 0.005  # 0.5%
+                
+                # Open position with regime-adjusted parameters and budget limit
+                await self.open_position_with_budget(
+                    user_id, symbol, klines_15m, account, settings,
+                    strategy, risk_mgr, context, mexc, regime,
+                    stop_loss, take_profit, available_budget
+                )
+                
+                # Restore original risk
+                settings.risk_per_trade = original_risk
+                
+                # Update last trade time and decision
+                self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
+                await self.db.update_settings(user_id, {
+                    f'{settings.mode}_last_decision': f'TRADE: {symbol}',
+                    f'{settings.mode}_last_regime': regime
+                })
+                break  # One entry per cycle
+                
+            except Exception as e:
+                await self.db.log(user_id, "ERROR", f"{mode_prefix} Error scanning {symbol}: {str(e)}")
+        
+        # Log scan completion
+        if symbols_checked > 0:
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ═══ SCAN COMPLETE ═══ Checked {symbols_checked} symbols")
         
         # Save updated account
         await self.db.update_paper_account(account)
+    
+    async def log_symbol_check(
+        self, user_id: str, mode_prefix: str, symbol: str,
+        regime: str, adx: float, ema_fast: float, ema_slow: float, rsi: float,
+        cooldown: bool, paused: bool,
+        daily_used: float, daily_cap: float, budget_available: float,
+        decision: str, reason: str
+    ):
+        """Log detailed symbol check for transparency"""
+        log_msg = f"""
+{mode_prefix} ══ SYMBOL CHECK ══
+Symbol: {symbol}
+Regime: {regime} | ADX: {adx:.1f}
+EMA Fast: {ema_fast:.2f} | EMA Slow: {ema_slow:.2f}
+RSI: {rsi:.1f}
+Cooldown: {cooldown} | Paused: {paused}
+Daily: ${daily_used:.2f} / ${daily_cap:.2f}
+Budget: ${budget_available:.2f}
+Decision: {decision}
+Reason: {reason}
+══════════════════"""
+        
+        # Use INFO for signals, DEBUG for skips
+        level = "INFO" if decision == "SIGNAL" else "DEBUG"
+        await self.db.log(user_id, level, log_msg.strip(), {
+            'symbol': symbol,
+            'regime': regime,
+            'adx': round(adx, 2),
+            'ema_fast': round(ema_fast, 4),
+            'ema_slow': round(ema_slow, 4),
+            'rsi': round(rsi, 2),
+            'decision': decision,
+            'reason': reason
+        })
     
     def is_in_cooldown(self, user_id: str, cooldown_candles: int) -> bool:
         if user_id not in self.user_last_trade_time:
