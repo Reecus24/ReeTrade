@@ -168,7 +168,8 @@ class MexcClient:
                     'score': momentum_score,
                     'return_24h': price_change_pct,
                     'return_4h': return_4h,
-                    'quoteVolume': float(ticker.get('quoteVolume', 0))
+                    'quoteVolume': float(ticker.get('quoteVolume', 0)),
+                    'price': current_price if len(klines_4h) >= 2 else float(ticker.get('lastPrice', 0))
                 })
             except Exception as e:
                 logger.warning(f"Error calculating momentum for {symbol}: {e}")
