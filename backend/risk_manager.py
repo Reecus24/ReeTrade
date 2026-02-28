@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class RiskManager:
     """Manage position sizing and risk limits"""
     
-    def __init__(self, settings: BotSettings):
+    def __init__(self, settings: UserSettings):
         self.settings = settings
     
     def can_open_position(self, account: PaperAccount) -> bool:
