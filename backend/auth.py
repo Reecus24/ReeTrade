@@ -13,17 +13,17 @@ JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
 
 def hash_password(password: str) -> str:
-    \"\"\"Hash password using bcrypt\"\"\"
+    """Hash password using bcrypt"""
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
-    \"\"\"Verify password against hash\"\"\"
+    """Verify password against hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def create_token(user_id: str, email: str) -> str:
-    \"\"\"Create JWT token\"\"\"
+    """Create JWT token"""
     payload = {
         'user_id': user_id,
         'email': email,
@@ -34,7 +34,7 @@ def create_token(user_id: str, email: str) -> str:
     return token
 
 def decode_token(token: str) -> Optional[dict]:
-    \"\"\"Decode and validate JWT token\"\"\"
+    """Decode and validate JWT token"""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
@@ -44,18 +44,18 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    \"\"\"Dependency to get current authenticated user from JWT token\"\"\"
+    """Dependency to get current authenticated user from JWT token"""
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=\"Authentication required\"
+            detail="Authentication required"
         )
     
     payload = decode_token(credentials.credentials)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=\"Invalid or expired token\"
+            detail="Invalid or expired token"
         )
     
     return {
