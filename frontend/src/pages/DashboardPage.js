@@ -3,10 +3,11 @@ import axios from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import OverviewTab from '@/components/OverviewTab';
 import StrategieTab from '@/components/StrategieTab';
+import TradesTab from '@/components/TradesTab';
 import BacktestTab from '@/components/BacktestTab';
 import LogsTab from '@/components/LogsTab';
 import SettingsTab from '@/components/SettingsTab';
-import { Activity, TrendingUp, FileText, Settings2, Settings } from 'lucide-react';
+import { Activity, TrendingUp, FileText, Settings2, Settings, History } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
