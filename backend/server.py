@@ -323,6 +323,83 @@ async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
     
     return {"message": "MEXC keys deleted"}
 
+# ============ ACCOUNT BALANCE ENDPOINT ============
+
+@app.get("/api/account/balance")
+async def get_account_balance(current_user: dict = Depends(get_current_user)):
+    """Get account balance - Live from MEXC or Paper from DB"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    if settings.mode == 'live':
+        # Get MEXC keys
+        keys = await db.get_mexc_keys(user_id)
+        if not keys:
+            raise HTTPException(
+                status_code=400,
+                detail="MEXC API keys not configured"
+            )
+        
+        try:
+            # Create client with user's keys
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            account_info = await mexc.get_account()
+            
+            # Extract balances
+            balances = account_info.get('balances', [])
+            
+            # Calculate total equity in USDT
+            usdt_balance = next(
+                (b for b in balances if b.get('asset') == 'USDT'),
+                {'free': '0', 'locked': '0'}
+            )
+            usdt_free = float(usdt_balance.get('free', 0))
+            usdt_locked = float(usdt_balance.get('locked', 0))
+            usdt_total = usdt_free + usdt_locked
+            
+            # Get non-zero balances for display
+            non_zero_balances = [
+                {
+                    'asset': b['asset'],
+                    'free': float(b.get('free', 0)),
+                    'locked': float(b.get('locked', 0))
+                }
+                for b in balances
+                if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0
+            ]
+            
+            return {
+                'source': 'live',
+                'source_label': 'MEXC Live',
+                'equity': usdt_total,
+                'cash': usdt_free,
+                'locked': usdt_locked,
+                'balances': non_zero_balances[:20],  # Top 20 non-zero
+                'last_updated': datetime.now(timezone.utc).isoformat(),
+                'error': None
+            }
+            
+        except Exception as e:
+            logger.error(f"MEXC balance fetch failed for user {user_id}: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch MEXC balance: {str(e)}"
+            )
+    else:
+        # Paper mode - return paper account
+        paper_account = await db.get_paper_account(user_id)
+        return {
+            'source': 'paper',
+            'source_label': 'Paper (DB)',
+            'equity': paper_account.equity,
+            'cash': paper_account.cash,
+            'locked': 0,
+            'balances': [],
+            'open_positions': [pos.model_dump() for pos in paper_account.open_positions] if paper_account.open_positions else [],
+            'last_updated': datetime.now(timezone.utc).isoformat(),
+            'error': None
+        }
+
 # ============ MARKET DATA ENDPOINTS ============
 
 @app.get("/api/market/top_pairs")
