@@ -302,7 +302,7 @@ class MultiUserTradingWorker:
                 if usdt_balance:
                     live_usdt_free = float(usdt_balance.get('free', 0))
             except Exception as e:
-                await self.db.log(user_id, "ERROR", f"Failed to fetch MEXC balance: {e}")
+                await self.db.log(user_id, "ERROR", f"{mode_prefix} Failed to fetch MEXC balance: {e}")
                 return
         
         # Calculate budget info
@@ -315,16 +315,29 @@ class MultiUserTradingWorker:
         daily_cap = settings.live_daily_cap_usdt if settings.mode == 'live' else settings.paper_daily_cap_usdt
         daily_remaining = max(0, daily_cap - today_exposure)
         
-        mode_prefix = f"[{settings.mode.upper()}]"
-        await self.db.log(user_id, "INFO", f"{mode_prefix} Budget: ${available_budget:.2f} avail | Daily: ${today_exposure:.2f}/${daily_cap:.2f} used")
+        # Update last scan status in settings
+        scan_status = {
+            f'{settings.mode}_last_scan': scan_time.isoformat(),
+            f'{settings.mode}_last_decision': 'SCANNING',
+            f'{settings.mode}_budget_used': round(used_budget, 2),
+            f'{settings.mode}_budget_available': round(available_budget, 2),
+            f'{settings.mode}_daily_used': round(today_exposure, 2),
+            f'{settings.mode}_daily_remaining': round(daily_remaining, 2),
+            f'{settings.mode}_positions_count': len(account.open_positions)
+        }
+        await self.db.update_settings(user_id, scan_status)
+        
+        # Log scan start with full budget info
+        await self.db.log(user_id, "INFO", 
+            f"{mode_prefix} ═══ SCAN START ═══ Budget: ${available_budget:.2f} avail | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {len(account.open_positions)}/{settings.max_positions}")
         
         # Check daily loss limit
         if risk_mgr.check_daily_loss_limit(account, self.user_initial_equity[user_id]):
-            await self.db.log(user_id, "ERROR", f"{mode_prefix} Daily loss limit hit - stopping bot")
-            if settings.mode == 'live':
-                await self.db.update_settings(user_id, {'live_running': False})
-            else:
-                await self.db.update_settings(user_id, {'paper_running': False})
+            await self.db.log(user_id, "ERROR", f"{mode_prefix} ⛔ BLOCKED: Daily loss limit hit - stopping bot")
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': 'BLOCKED: Daily loss limit',
+                'live_running' if settings.mode == 'live' else 'paper_running': False
+            })
             return
         
         # Check existing positions for exits using LIVE market data
