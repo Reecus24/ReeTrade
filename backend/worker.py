@@ -994,11 +994,12 @@ Mode: {settings.mode.upper()}
             # LOG: ORDER CONFIRMED
             order_confirmed_log = f"""
 {mode_prefix} ══ ORDER CONFIRMED ══
-Exchange: {'MEXC (SIMULATED)' if settings.mode == 'paper' else 'MEXC'}
+Exchange: {'MEXC (LIVE)' if settings.mode == 'live' else 'MEXC (SIMULATED)'}
+Order ID: {order_id or 'N/A (Paper)'}
 Status: FILLED
-Executed Price: {entry_price:.4f}
+Executed Qty: {actual_qty:.6f}
+Executed Price: {executed_price:.4f}
 Fee: {entry_fee:.4f} USDT
-Slippage: {slippage_cost:.4f} USDT
 ══════════════════"""
             await self.db.log(user_id, "INFO", order_confirmed_log.strip())
             
