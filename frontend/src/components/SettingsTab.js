@@ -293,8 +293,8 @@ const SettingsTab = () => {
                 Abbrechen
               </Button>
             </div>
-            <p className=\"text-xs text-zinc-500\">
-              \u26a0\ufe0f Keys werden verschl\u00fcsselt gespeichert und niemals angezeigt
+            <p className="text-xs text-zinc-500">
+              ⚠️ Keys werden verschlüsselt gespeichert und niemals angezeigt
             </p>
           </div>
         )}
