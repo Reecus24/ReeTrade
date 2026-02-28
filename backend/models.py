@@ -155,3 +155,10 @@ class BacktestResult(BaseModel):
 
 class LiveConfirmRequest(BaseModel):
     password: str
+
+class AuditLogEntry(BaseModel):
+    user_id: str
+    ts: datetime
+    action: str  # LOGIN, SETTINGS_UPDATE, KEYS_UPDATE, LIVE_MODE_ENABLE, TRADE_EXECUTED
+    details: Optional[dict] = None
+    ip_address: Optional[str] = None
