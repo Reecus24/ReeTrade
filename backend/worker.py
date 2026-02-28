@@ -453,7 +453,7 @@ class MultiUserTradingWorker:
             )
             
             # Update account
-            position_value = qty * entry_price
+            position_value = rounded_qty * entry_price
             account.cash -= position_value
             account.open_positions.append(position)
             
@@ -463,7 +463,7 @@ class MultiUserTradingWorker:
                 ts=datetime.now(timezone.utc),
                 symbol=symbol,
                 side="BUY",
-                qty=qty,
+                qty=rounded_qty,
                 entry=entry_price,
                 mode=settings.mode,
                 reason=f"Regime: {regime}, EMA crossover, RSI={context.get('rsi', 0)}"
@@ -477,13 +477,14 @@ class MultiUserTradingWorker:
                 details={
                     'symbol': symbol,
                     'side': 'BUY',
-                    'qty': round(qty, 4),
+                    'qty': round(rounded_qty, 6),
                     'entry_price': round(entry_price, 4),
                     'stop_loss': round(stop_loss, 4),
                     'take_profit': round(take_profit, 4),
                     'regime': regime,
                     'risk_pct': settings.risk_per_trade * 100,
-                    'mode': settings.mode
+                    'mode': settings.mode,
+                    'notional': round(rounded_qty * entry_price, 2)
                 }
             )
             
@@ -492,7 +493,7 @@ class MultiUserTradingWorker:
                 "INFO",
                 f"OPEN LONG {symbol} @ {entry_price:.4f} [Regime: {regime}]",
                 {
-                    'qty': round(qty, 4),
+                    'qty': round(rounded_qty, 6),
                     'stop_loss': round(stop_loss, 4),
                     'take_profit': round(take_profit, 4),
                     'position_value': round(position_value, 2),
