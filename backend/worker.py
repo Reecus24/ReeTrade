@@ -837,7 +837,7 @@ Reason: {reason}
                     f'{settings.mode}_last_symbol': symbol
                 })
                 # NO COOLDOWN - try next coin
-                return
+                return False
             
             # Calculate fees and slippage costs
             fee_rate = settings.fee_bps / 10000
