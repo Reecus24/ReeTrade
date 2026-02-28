@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  TrendingUp, Wifi, WifiOff, Shield, RefreshCw, LogOut, Wallet, Lock, DollarSign
+  TrendingUp, Wifi, WifiOff, Shield, RefreshCw, LogOut, Wallet, Lock, DollarSign, Clock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
