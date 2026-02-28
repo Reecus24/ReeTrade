@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
@@ -14,6 +14,10 @@ from slowapi.errors import RateLimitExceeded
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from auth import create_token, hash_password, verify_password, get_current_user
 from models import (
@@ -39,6 +43,7 @@ logger = logging.getLogger(__name__)
 db = Database()
 worker: MultiUserTradingWorker = None
 worker_task: asyncio.Task = None
+limiter = Limiter(key_func=get_remote_address)
 limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
@@ -70,6 +75,9 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -108,7 +116,8 @@ async def register(data: UserRegister):
     )
 
 @app.post("/api/auth/login", response_model=LoginResponse)
-async def login(data: UserLogin):
+@limiter.limit("5/minute")
+async def login(request: Request, data: UserLogin):
     """Login with email and password"""
     # Get user
     user = await db.get_user_by_email(data.email)
@@ -121,6 +130,14 @@ async def login(data: UserLogin):
     
     # Create token
     token = create_token(user['_id'], user['email'])
+    
+    # Audit log
+    await db.audit_log(
+        user_id=user['_id'],
+        action="LOGIN",
+        details={'email': user['email']},
+        ip_address=request.client.host if request.client else None
+    )
     
     return LoginResponse(
         token=token,
