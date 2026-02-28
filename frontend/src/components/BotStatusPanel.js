@@ -14,6 +14,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
   const lastScan = settings?.[`${prefix}_last_scan`];
   const lastDecision = settings?.[`${prefix}_last_decision`];
   const lastRegime = settings?.[`${prefix}_last_regime`];
+  const lastSymbol = settings?.[`${prefix}_last_symbol`];
   const budgetUsed = balance?.budget?.used_budget || settings?.[`${prefix}_budget_used`] || 0;
   const budgetAvailable = balance?.budget?.remaining_budget || settings?.[`${prefix}_budget_available`] || 0;
   const dailyUsed = balance?.daily_cap?.used || settings?.[`${prefix}_daily_used`] || 0;
