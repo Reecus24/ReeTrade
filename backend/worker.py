@@ -741,6 +741,7 @@ Reason: {reason}
     ):
         """Open position with budget limit enforcement"""
         try:
+            mode_prefix = f"[{settings.mode.upper()}]"
             current_price = float(klines[-1][4])
             
             # Calculate position size with adjusted risk (0.5% for bullish)
