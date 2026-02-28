@@ -269,7 +269,7 @@ const SettingsTab = ({ mode = 'paper' }) => {
             <h4 className="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2">
               <Shield className="w-4 h-4 text-blue-500" />Live Budget & Reserve
             </h4>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <Field label="Reserve" tip="Sicherheitsreserve - Bot fasst diesen Betrag NIEMALS an" unit="USDT" highlight>
                 <Input
                   type="number" step="100"
