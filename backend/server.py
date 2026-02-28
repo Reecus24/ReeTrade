@@ -327,7 +327,7 @@ async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/account/balance")
 async def get_account_balance(current_user: dict = Depends(get_current_user)):
-    """Get account balance with budget info - Live from MEXC or Paper from DB"""
+    """Get account balance with reserve & budget info - Live from MEXC or Paper from DB"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     paper_account = await db.get_paper_account(user_id)
@@ -361,9 +361,12 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             usdt_locked = float(usdt_balance.get('locked', 0))
             usdt_total = usdt_free + usdt_locked
             
-            # Calculate effective balance with budget limit
-            budget_remaining = settings.trading_budget_usdt - used_budget
-            available_budget = min(usdt_free, max(0, budget_remaining))
+            # RESERVE SYSTEM: Calculate available to bot
+            available_to_bot = max(0, usdt_free - settings.reserve_usdt)
+            
+            # Apply trading budget cap
+            budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
+            remaining_budget = min(available_to_bot, budget_remaining)
             
             # Get non-zero balances for display
             non_zero_balances = [
@@ -385,14 +388,16 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'balances': non_zero_balances[:20],
                 'last_updated': datetime.now(timezone.utc).isoformat(),
                 'error': None,
-                # Budget info
+                # Reserve & Budget info (LIVE)
                 'budget': {
-                    'total_budget': settings.trading_budget_usdt,
+                    'usdt_free': round(usdt_free, 2),
+                    'reserve_usdt': settings.reserve_usdt,
+                    'available_to_bot': round(available_to_bot, 2),
+                    'trading_budget': settings.trading_budget_usdt,
                     'used_budget': round(used_budget, 2),
-                    'available_budget': round(available_budget, 2),
+                    'remaining_budget': round(remaining_budget, 2),
                     'max_order_notional': settings.max_order_notional_usdt,
-                    'wallet_free': usdt_free,
-                    'effective_available': round(available_budget, 2)
+                    'mode': 'live'
                 },
                 'open_positions_count': len(paper_account.open_positions)
             }
@@ -411,8 +416,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             paper_account.cash = settings.paper_start_balance_usdt
             await db.update_paper_account(paper_account)
         
-        # Calculate available budget for paper
-        available_budget = max(0, settings.paper_start_balance_usdt - used_budget)
+        # Calculate budget for paper mode
+        budget_remaining = max(0, settings.paper_start_balance_usdt - used_budget)
+        available_to_bot = min(paper_account.cash, budget_remaining)
         
         # Calculate PnL from paper_start_balance
         pnl = paper_account.equity - settings.paper_start_balance_usdt
@@ -428,14 +434,15 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'open_positions': [pos.model_dump() for pos in paper_account.open_positions] if paper_account.open_positions else [],
             'last_updated': datetime.now(timezone.utc).isoformat(),
             'error': None,
-            # Budget info
+            # Budget info (PAPER)
             'budget': {
-                'total_budget': settings.paper_start_balance_usdt,
-                'used_budget': round(used_budget, 2),
-                'available_budget': round(available_budget, 2),
-                'max_order_notional': settings.max_order_notional_usdt,
+                'paper_cash': round(paper_account.cash, 2),
                 'start_balance': settings.paper_start_balance_usdt,
-                'effective_available': round(available_budget, 2)
+                'trading_budget': settings.paper_start_balance_usdt,
+                'used_budget': round(used_budget, 2),
+                'remaining_budget': round(available_to_bot, 2),
+                'max_order_notional': settings.max_order_notional_usdt,
+                'mode': 'paper'
             },
             'pnl': {
                 'amount': round(pnl, 2),
