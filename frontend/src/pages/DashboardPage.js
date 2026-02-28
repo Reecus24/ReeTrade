@@ -1,147 +1,409 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import OverviewTab from '@/components/OverviewTab';
-import StrategieTab from '@/components/StrategieTab';
-import TradesTab from '@/components/TradesTab';
-import BacktestTab from '@/components/BacktestTab';
-import LogsTab from '@/components/LogsTab';
-import SettingsTab from '@/components/SettingsTab';
-import { Activity, TrendingUp, FileText, Settings2, Settings, History } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { 
+  Activity, Play, Square, AlertTriangle, Settings, FileText, History,
+  TrendingUp, Wifi, WifiOff, Shield, RefreshCw, LogOut
+} from 'lucide-react';
+import { format } from 'date-fns';
+import TradesTab from '@/components/TradesTab';
+import SettingsTab from '@/components/SettingsTab';
+import LogsTab from '@/components/LogsTab';
+import LiveModeConfirm from '@/components/LiveModeConfirm';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('auth_token');
-  return {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  };
+  return { headers: { Authorization: `Bearer ${token}` } };
 };
 
 const DashboardPage = ({ onLogout }) => {
   const [status, setStatus] = useState(null);
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState('overview');
-  const userEmail = localStorage.getItem('user_email') || 'User';
+  const [loading, setLoading] = useState(true);
+  const [activeMainTab, setActiveMainTab] = useState('paper');
+  const [paperLoading, setPaperLoading] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [showLiveConfirm, setShowLiveConfirm] = useState(false);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/status`, getAuthHeaders());
       setStatus(response.data);
     } catch (error) {
       if (error.response?.status === 401) {
-        toast.error('Session abgelaufen');
         onLogout();
       }
     }
-  };
+  }, [onLogout]);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/logs?limit=100`, getAuthHeaders());
       setLogs(response.data.logs || []);
     } catch (error) {
       console.error('Logs fetch error:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchStatus();
-    fetchLogs();
-
+    const init = async () => {
+      setLoading(true);
+      await Promise.all([fetchStatus(), fetchLogs()]);
+      setLoading(false);
+    };
+    init();
     const interval = setInterval(() => {
       fetchStatus();
       fetchLogs();
-    }, 5000);
-
+    }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchStatus, fetchLogs]);
+
+  // Paper controls
+  const handlePaperStart = async () => {
+    setPaperLoading(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/paper/start`, {}, getAuthHeaders());
+      toast.success('Paper Bot gestartet');
+      await fetchStatus();
+    } catch (error) {
+      toast.error('Fehler beim Starten');
+    } finally {
+      setPaperLoading(false);
+    }
+  };
+
+  const handlePaperStop = async () => {
+    setPaperLoading(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/paper/stop`, {}, getAuthHeaders());
+      toast.success('Paper Bot gestoppt');
+      await fetchStatus();
+    } catch (error) {
+      toast.error('Fehler beim Stoppen');
+    } finally {
+      setPaperLoading(false);
+    }
+  };
+
+  // Live controls
+  const handleLiveStart = async () => {
+    setLiveLoading(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/live/start`, {}, getAuthHeaders());
+      toast.success('Live Bot gestartet - ECHTES TRADING AKTIV!');
+      await fetchStatus();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Fehler beim Starten');
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  const handleLiveStop = async () => {
+    setLiveLoading(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/live/stop`, {}, getAuthHeaders());
+      toast.success('Live Bot gestoppt');
+      await fetchStatus();
+    } catch (error) {
+      toast.error('Fehler beim Stoppen');
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  const handleLiveConfirmed = async () => {
+    setShowLiveConfirm(false);
+    await fetchStatus();
+  };
+
+  const handleRevokeLive = async () => {
+    try {
+      await axios.post(`${BACKEND_URL}/api/live/revoke`, {}, getAuthHeaders());
+      toast.success('Live Mode widerrufen');
+      await fetchStatus();
+    } catch (error) {
+      toast.error('Fehler');
+    }
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(value || 0);
+  };
+
+  if (loading || !status) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Activity className="w-8 h-8 text-zinc-600 animate-spin" />
+      </div>
+    );
+  }
+
+  const { settings, paper_account, mexc_keys_connected } = status;
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <header className="border-b border-zinc-900 bg-black/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center">
-              <Activity className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">ReeTrade Terminal</h1>
-              <p className="text-xs text-zinc-500">Multi-User MEXC Bot</p>
-            </div>
+    <div className="min-h-screen bg-black text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">ReeTrade Terminal</h1>
+            <p className="text-zinc-500">Trading Bot Dashboard</p>
           </div>
-
           <div className="flex items-center gap-4">
-            <span className="text-sm text-zinc-400">{userEmail}</span>
-            <button
-              onClick={onLogout}
-              className="text-sm text-zinc-400 hover:text-white transition-colors"
-              data-testid="logout-button"
-            >
-              Abmelden
-            </button>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-lg">
+              {mexc_keys_connected ? (
+                <><Wifi className="w-4 h-4 text-green-500" /><span className="text-sm text-green-500">MEXC Connected</span></>
+              ) : (
+                <><WifiOff className="w-4 h-4 text-zinc-500" /><span className="text-sm text-zinc-500">Keys nicht konfiguriert</span></>
+              )}
+            </div>
+            <Button onClick={onLogout} variant="ghost" size="sm" className="text-zinc-400">
+              <LogOut className="w-4 h-4 mr-2" />Logout
+            </Button>
           </div>
         </div>
-      </header>
 
-      <div className="container mx-auto px-6 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-zinc-950 border border-zinc-800" data-testid="dashboard-tabs">
-            <TabsTrigger value="overview" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-overview">
-              <Activity className="w-4 h-4 mr-2" />
-              Overview
+        {/* Main Mode Tabs */}
+        <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-zinc-950 border border-zinc-800 h-14 mb-6">
+            <TabsTrigger 
+              value="paper" 
+              className="data-[state=active]:bg-yellow-500/10 data-[state=active]:text-yellow-500 data-[state=active]:border-yellow-500/30 h-12 text-lg"
+              data-testid="main-tab-paper"
+            >
+              <Shield className="w-5 h-5 mr-2" />
+              PAPER
+              {settings.paper_running && (
+                <Badge className="ml-2 bg-green-500/20 text-green-500 border-0">RUNNING</Badge>
+              )}
             </TabsTrigger>
-            <TabsTrigger value="trades" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-trades">
-              <History className="w-4 h-4 mr-2" />
-              Trades
-            </TabsTrigger>
-            <TabsTrigger value="strategie" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-strategie">
-              <Settings2 className="w-4 h-4 mr-2" />
-              Strategie
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-settings">
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
-            </TabsTrigger>
-            <TabsTrigger value="backtest" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-backtest">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Backtest
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-logs">
-              <FileText className="w-4 h-4 mr-2" />
-              Logs
+            <TabsTrigger 
+              value="live" 
+              className="data-[state=active]:bg-red-500/10 data-[state=active]:text-red-500 data-[state=active]:border-red-500/30 h-12 text-lg"
+              data-testid="main-tab-live"
+            >
+              <AlertTriangle className="w-5 h-5 mr-2" />
+              LIVE
+              {settings.live_running && (
+                <Badge className="ml-2 bg-red-500/20 text-red-500 border-0 animate-pulse">RUNNING</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-6">
-            <TabsContent value="overview" className="mt-0">
-              <OverviewTab status={status} onRefresh={fetchStatus} />
-            </TabsContent>
+          {/* PAPER MODE TAB */}
+          <TabsContent value="paper" className="mt-0">
+            <div className="space-y-6">
+              {/* Paper Status Bar */}
+              <div className="p-4 bg-zinc-950 border border-yellow-900/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-yellow-500" />
+                      <span className="text-lg font-semibold text-yellow-500">Paper Trading</span>
+                    </div>
+                    <Badge className={settings.paper_running 
+                      ? 'bg-green-500/10 text-green-500 border-green-500/20' 
+                      : 'bg-zinc-800 text-zinc-400'
+                    }>
+                      {settings.paper_running ? 'RUNNING' : 'STOPPED'}
+                    </Badge>
+                    {status.paper_heartbeat && settings.paper_running && (
+                      <span className="text-xs text-zinc-500 font-mono">
+                        Last: {format(new Date(status.paper_heartbeat), 'HH:mm:ss')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {!settings.paper_running ? (
+                      <Button onClick={handlePaperStart} disabled={paperLoading} className="bg-yellow-600 hover:bg-yellow-700 text-black font-medium">
+                        <Play className="w-4 h-4 mr-2" />Start Paper
+                      </Button>
+                    ) : (
+                      <Button onClick={handlePaperStop} disabled={paperLoading} variant="outline" className="border-yellow-900 text-yellow-500">
+                        <Square className="w-4 h-4 mr-2" />Stop
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-            <TabsContent value="trades" className="mt-0">
-              <TradesTab currentMode={status?.settings?.mode} />
-            </TabsContent>
+              {/* Paper Metrics */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                  <div className="text-xs text-zinc-500 uppercase mb-2">Paper Equity</div>
+                  <div className="text-2xl font-bold font-mono">{formatCurrency(paper_account?.equity || settings.paper_start_balance_usdt)}</div>
+                </div>
+                <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                  <div className="text-xs text-zinc-500 uppercase mb-2">Paper Cash</div>
+                  <div className="text-2xl font-bold font-mono">{formatCurrency(paper_account?.cash || settings.paper_start_balance_usdt)}</div>
+                </div>
+                <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                  <div className="text-xs text-zinc-500 uppercase mb-2">Paper PnL</div>
+                  <div className={`text-2xl font-bold font-mono ${(paper_account?.equity - settings.paper_start_balance_usdt) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {formatCurrency((paper_account?.equity || settings.paper_start_balance_usdt) - settings.paper_start_balance_usdt)}
+                  </div>
+                </div>
+                <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                  <div className="text-xs text-zinc-500 uppercase mb-2">Positionen</div>
+                  <div className="text-2xl font-bold font-mono">{paper_account?.open_positions?.length || 0} / {settings.max_positions}</div>
+                </div>
+              </div>
 
-            <TabsContent value="strategie" className="mt-0">
-              <StrategieTab status={status} />
-            </TabsContent>
+              {/* Paper Sub-Tabs */}
+              <Tabs defaultValue="trades" className="w-full">
+                <TabsList className="bg-zinc-950 border border-zinc-800">
+                  <TabsTrigger value="trades"><History className="w-4 h-4 mr-2" />Trades</TabsTrigger>
+                  <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
+                  <TabsTrigger value="settings"><Settings className="w-4 h-4 mr-2" />Settings</TabsTrigger>
+                </TabsList>
+                <div className="mt-4">
+                  <TabsContent value="trades"><TradesTab currentMode="paper" /></TabsContent>
+                  <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[PAPER]') || !l.msg?.includes('[LIVE]'))} /></TabsContent>
+                  <TabsContent value="settings"><SettingsTab /></TabsContent>
+                </div>
+              </Tabs>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="settings" className="mt-0">
-              <SettingsTab />
-            </TabsContent>
+          {/* LIVE MODE TAB */}
+          <TabsContent value="live" className="mt-0">
+            <div className="space-y-6">
+              {/* Live Warning Banner */}
+              {!settings.live_confirmed && (
+                <div className="p-4 bg-red-950/30 border border-red-900 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="w-6 h-6 text-red-500" />
+                      <div>
+                        <div className="font-semibold text-red-500">Live Trading nicht aktiviert</div>
+                        <div className="text-sm text-red-400">Bestätige Live Mode mit deinem Passwort um echtes Trading zu ermöglichen.</div>
+                      </div>
+                    </div>
+                    <Button onClick={() => setShowLiveConfirm(true)} className="bg-red-600 hover:bg-red-700 text-white">
+                      Live Mode aktivieren
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-            <TabsContent value="backtest" className="mt-0">
-              <BacktestTab />
-            </TabsContent>
+              {/* Live Status Bar */}
+              <div className={`p-4 rounded-lg ${settings.live_running ? 'bg-red-950/50 border-2 border-red-500 animate-pulse' : 'bg-zinc-950 border border-red-900/30'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className={`w-5 h-5 ${settings.live_running ? 'text-red-500 animate-bounce' : 'text-red-500'}`} />
+                      <span className="text-lg font-semibold text-red-500">Live Trading</span>
+                    </div>
+                    <Badge className={settings.live_running 
+                      ? 'bg-red-500 text-white border-0 animate-pulse' 
+                      : settings.live_confirmed 
+                        ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                        : 'bg-zinc-800 text-zinc-400'
+                    }>
+                      {settings.live_running ? 'ACTIVE - ECHTES GELD!' : settings.live_confirmed ? 'BEREIT' : 'NICHT AKTIVIERT'}
+                    </Badge>
+                    {status.live_heartbeat && settings.live_running && (
+                      <span className="text-xs text-red-400 font-mono">
+                        Last: {format(new Date(status.live_heartbeat), 'HH:mm:ss')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {!settings.live_confirmed ? (
+                      <Button onClick={() => setShowLiveConfirm(true)} className="bg-red-600 hover:bg-red-700">
+                        <AlertTriangle className="w-4 h-4 mr-2" />Aktivieren
+                      </Button>
+                    ) : !settings.live_running ? (
+                      <>
+                        <Button onClick={handleLiveStart} disabled={liveLoading || !mexc_keys_connected} className="bg-red-600 hover:bg-red-700">
+                          <Play className="w-4 h-4 mr-2" />Start Live
+                        </Button>
+                        <Button onClick={handleRevokeLive} variant="ghost" className="text-zinc-400">
+                          Widerrufen
+                        </Button>
+                      </>
+                    ) : (
+                      <Button onClick={handleLiveStop} disabled={liveLoading} className="bg-white text-red-600 hover:bg-gray-200 font-bold">
+                        <Square className="w-4 h-4 mr-2" />STOP LIVE
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {settings.live_running && (
+                  <div className="mt-3 p-2 bg-red-900/30 rounded text-center text-red-300 text-sm font-medium">
+                    ⚠️ ACHTUNG: Echtes Geld wird gehandelt! Verluste sind real!
+                  </div>
+                )}
+              </div>
 
-            <TabsContent value="logs" className="mt-0">
-              <LogsTab logs={logs} />
-            </TabsContent>
-          </div>
+              {/* Live Metrics - placeholder when not confirmed */}
+              {settings.live_confirmed ? (
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
+                    <div className="text-xs text-zinc-500 uppercase mb-2">Trading Budget</div>
+                    <div className="text-2xl font-bold font-mono text-red-400">{formatCurrency(settings.trading_budget_usdt)}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
+                    <div className="text-xs text-zinc-500 uppercase mb-2">Reserve (geschützt)</div>
+                    <div className="text-2xl font-bold font-mono text-blue-400">{formatCurrency(settings.reserve_usdt)}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
+                    <div className="text-xs text-zinc-500 uppercase mb-2">Max Order</div>
+                    <div className="text-2xl font-bold font-mono">{formatCurrency(settings.max_order_notional_usdt)}</div>
+                  </div>
+                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
+                    <div className="text-xs text-zinc-500 uppercase mb-2">MEXC Status</div>
+                    <div className="text-2xl font-bold">
+                      {mexc_keys_connected ? (
+                        <span className="text-green-500 flex items-center gap-2"><Wifi className="w-5 h-5" />OK</span>
+                      ) : (
+                        <span className="text-red-500 flex items-center gap-2"><WifiOff className="w-5 h-5" />Fehlt</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-zinc-500">
+                  <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-zinc-700" />
+                  <p>Live Mode muss zuerst aktiviert werden um Metriken anzuzeigen.</p>
+                </div>
+              )}
+
+              {/* Live Sub-Tabs */}
+              {settings.live_confirmed && (
+                <Tabs defaultValue="trades" className="w-full">
+                  <TabsList className="bg-zinc-950 border border-red-900/30">
+                    <TabsTrigger value="trades" className="data-[state=active]:text-red-500"><History className="w-4 h-4 mr-2" />Live Trades</TabsTrigger>
+                    <TabsTrigger value="logs" className="data-[state=active]:text-red-500"><FileText className="w-4 h-4 mr-2" />Live Logs</TabsTrigger>
+                    <TabsTrigger value="settings" className="data-[state=active]:text-red-500"><Settings className="w-4 h-4 mr-2" />Settings</TabsTrigger>
+                  </TabsList>
+                  <div className="mt-4">
+                    <TabsContent value="trades"><TradesTab currentMode="live" /></TabsContent>
+                    <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
+                    <TabsContent value="settings"><SettingsTab /></TabsContent>
+                  </div>
+                </Tabs>
+              )}
+            </div>
+          </TabsContent>
         </Tabs>
+
+        {/* Live Mode Confirmation Dialog */}
+        <LiveModeConfirm 
+          open={showLiveConfirm} 
+          onClose={() => setShowLiveConfirm(false)} 
+          onConfirm={handleLiveConfirmed}
+        />
       </div>
     </div>
   );
