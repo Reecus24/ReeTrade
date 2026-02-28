@@ -763,8 +763,8 @@ Reason: {reason}
         stop_loss: float,
         take_profit: float,
         available_budget: float
-    ):
-        """Open position with budget limit enforcement"""
+    ) -> bool:
+        """Open position with budget limit enforcement. Returns True if trade was successful."""
         try:
             mode_prefix = f"[{settings.mode.upper()}]"
             current_price = float(klines[-1][4])
