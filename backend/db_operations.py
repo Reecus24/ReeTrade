@@ -39,7 +39,6 @@ class Database:
     # ========== USER OPERATIONS ==========
     
     async def create_user(self, email: str, password_hash: str) -> str:
-        "'"'"'Create new user and return user_id"'"'"'
         user = User(email=email, password_hash=password_hash)
         doc = user.model_dump()
         result = await self.users.insert_one(doc)
@@ -52,14 +51,12 @@ class Database:
         return user_id
     
     async def get_user_by_email(self, email: str) -> Optional[Dict]:
-        "'"'"'Get user by email"'"'"'
         user = await self.users.find_one({'email': email})
         if user:
             user['_id'] = str(user['_id'])
         return user
     
     async def get_user_by_id(self, user_id: str) -> Optional[Dict]:
-        "'"'"'Get user by ID"'"'"'
         from bson import ObjectId
         user = await self.users.find_one({'_id': ObjectId(user_id)})
         if user:
@@ -67,7 +64,6 @@ class Database:
         return user
     
     async def initialize_user_data(self, user_id: str):
-        "'"'"'Initialize default settings and paper account for new user"'"'"'
         # Default settings
         default_settings = UserSettings(user_id=user_id).model_dump()
         await self.settings.insert_one(default_settings)
@@ -81,7 +77,6 @@ class Database:
     # ========== SETTINGS OPERATIONS ==========
     
     async def get_settings(self, user_id: str) -> UserSettings:
-        "'"'"'Get user settings"'"'"'
         doc = await self.settings.find_one({'user_id': user_id})
         if not doc:
             # Create default if not exists
@@ -94,7 +89,6 @@ class Database:
         return UserSettings(**doc)
     
     async def update_settings(self, user_id: str, updates: Dict[str, Any]):
-        "'"'"'Update user settings"'"'"'
         await self.settings.update_one(
             {'user_id': user_id},
             {'$set': updates},
@@ -102,7 +96,6 @@ class Database:
         )
     
     async def get_all_active_users(self) -> List[Dict]:
-        "'"'"'Get all users with bot_running=true"'"'"'
         cursor = self.settings.find({'bot_running': True})
         settings_list = await cursor.to_list(length=1000)
         return settings_list
@@ -110,7 +103,6 @@ class Database:
     # ========== MEXC KEYS OPERATIONS ==========
     
     async def set_mexc_keys(self, user_id: str, api_key: str, api_secret: str):
-        "'"'"'Store encrypted MEXC API keys"'"'"'
         encrypted_key = crypto_manager.encrypt(api_key)
         encrypted_secret = crypto_manager.encrypt(api_secret)
         
@@ -126,7 +118,6 @@ class Database:
         logger.info(f"MEXC keys updated for user {user_id}")
     
     async def get_mexc_keys(self, user_id: str) -> Optional[Dict[str, str]]:
-        "'"'"'Get decrypted MEXC API keys (for backend use only)"'"'"'
         doc = await self.user_keys.find_one({'user_id': user_id})
         if not doc:
             return None
@@ -140,12 +131,10 @@ class Database:
             return None
     
     async def has_mexc_keys(self, user_id: str) -> bool:
-        "'"'"'Check if user has MEXC keys configured"'"'"'
         doc = await self.user_keys.find_one({'user_id': user_id})
         return doc is not None and 'api_key_encrypted' in doc
     
     async def get_mexc_keys_status(self, user_id: str) -> Dict:
-        "'"'"'Get MEXC keys status (connection info only, no keys)"'"'"'
         doc = await self.user_keys.find_one({'user_id': user_id})
         if not doc:
             return {'connected': False, 'last_updated': None}
@@ -157,7 +146,6 @@ class Database:
     # ========== LOG OPERATIONS ==========
     
     async def log(self, user_id: str, level: str, msg: str, context: Optional[dict] = None):
-        "'"'"'Add log entry for user"'"'"'
         log_entry = LogEntry(
             user_id=user_id,
             ts=datetime.now(timezone.utc),
@@ -174,7 +162,6 @@ class Database:
         log_func(f"[User {user_id[:8]}] {msg} {context if context else ''}")
     
     async def get_logs(self, user_id: str, limit: int = 100) -> List[LogEntry]:
-        "'"'"'Get recent logs for user"'"'"'
         cursor = self.logs.find({'user_id': user_id}).sort('ts', -1).limit(limit)
         logs = await cursor.to_list(length=limit)
         
@@ -190,7 +177,6 @@ class Database:
     # ========== PAPER ACCOUNT OPERATIONS ==========
     
     async def get_paper_account(self, user_id: str) -> PaperAccount:
-        "'"'"'Get paper trading account for user"'"'"'
         doc = await self.paper_accounts.find_one({'user_id': user_id})
         if not doc:
             # Create default if not exists
@@ -202,7 +188,6 @@ class Database:
         return PaperAccount(**doc)
     
     async def update_paper_account(self, account: PaperAccount):
-        "'"'"'Update paper account for user"'"'"'
         doc = account.model_dump()
         # Convert datetime objects to ISO strings
         for pos in doc.get('open_positions', []):
@@ -218,13 +203,11 @@ class Database:
     # ========== TRADE OPERATIONS ==========
     
     async def add_trade(self, trade: Trade):
-        "'"'"'Add trade record for user"'"'"'
         doc = trade.model_dump()
         doc['ts'] = doc['ts'].isoformat()
         await self.trades.insert_one(doc)
     
     async def get_trades(self, user_id: str, limit: int = 50) -> List[Trade]:
-        "'"'"'Get recent trades for user"'"'"'
         cursor = self.trades.find({'user_id': user_id}).sort('ts', -1).limit(limit)
         trades = await cursor.to_list(length=limit)
         
@@ -238,7 +221,6 @@ class Database:
     # ========== METRICS OPERATIONS ==========
     
     async def update_daily_metrics(self, user_id: str, date: str, pnl: float, drawdown: float, trades_count: int):
-        "'"'"'Update daily metrics for user"'"'"'
         await self.daily_metrics.update_one(
             {'user_id': user_id, 'date': date},
             {'$set': {
@@ -250,7 +232,6 @@ class Database:
         )
     
     async def get_daily_metrics(self, user_id: str, days: int = 30) -> List[DailyMetrics]:
-        "'"'"'Get daily metrics for user"'"'"'
         cursor = self.daily_metrics.find({'user_id': user_id}).sort('date', -1).limit(days)
         metrics = await cursor.to_list(length=days)
         for m in metrics:
@@ -258,5 +239,4 @@ class Database:
         return [DailyMetrics(**m) for m in reversed(metrics)]
     
     def close(self):
-        "'"'"'Close database connection"'"'"'
         self.client.close()

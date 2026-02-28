@@ -20,7 +20,6 @@ class MultiUserTradingWorker:
         self.user_last_trade_time: Dict[str, datetime] = {}  # Cooldown tracking
     
     async def heartbeat(self):
-        "'"'"'Update heartbeat for all active users every 60 seconds"'"'"'
         while self.running:
             try:
                 active_settings = await self.db.get_all_active_users()
@@ -35,7 +34,6 @@ class MultiUserTradingWorker:
             await asyncio.sleep(60)
     
     async def trading_loop(self):
-        "'"'"'Main trading loop - runs every 15 minutes for all active users"'"'"'
         while self.running:
             try:
                 # Get all users with bot_running=true
@@ -65,7 +63,6 @@ class MultiUserTradingWorker:
             await asyncio.sleep(900)
     
     async def process_user(self, user_id: str):
-        "'"'"'Process trading cycle for one user"'"'"'
         settings = await self.db.get_settings(user_id)
         
         if not settings.bot_running:
@@ -91,7 +88,6 @@ class MultiUserTradingWorker:
         await self.scan_and_trade(user_id, settings)
     
     async def refresh_top_pairs(self, user_id: str):
-        "'"'"'Refresh top 20 USDT pairs by volume"'"'"'
         try:
             await self.db.log(user_id, "INFO", "Refreshing top pairs...")
             
@@ -110,7 +106,6 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "ERROR", f"Failed to refresh top pairs: {str(e)}")
     
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
-        "'"'"'Scan symbols and execute trades for user"'"'"'
         account = await self.db.get_paper_account(user_id)
         
         # Initialize tracking
@@ -168,7 +163,6 @@ class MultiUserTradingWorker:
         await self.db.update_paper_account(account)
     
     def is_in_cooldown(self, user_id: str, cooldown_candles: int) -> bool:
-        "'"'"'Check if user is in cooldown period after last trade"'"'"'
         if user_id not in self.user_last_trade_time:
             return False
         
@@ -179,7 +173,6 @@ class MultiUserTradingWorker:
         return (datetime.now(timezone.utc) - last_trade) < cooldown_duration
     
     async def get_user_mexc_client(self, user_id: str, settings: UserSettings) -> MexcClient:
-        "'"'"'Get MEXC client with user's keys if in live mode"'"'"'
         if settings.mode == 'live' and settings.live_confirmed:
             keys = await self.db.get_mexc_keys(user_id)
             if keys:
@@ -202,7 +195,6 @@ class MultiUserTradingWorker:
         context: dict,
         mexc: MexcClient
     ):
-        "'"'"'Open new position for user"'"'"'
         try:
             current_price = float(klines[-1][4])  # Close price
             
@@ -278,7 +270,6 @@ class MultiUserTradingWorker:
         settings: UserSettings,
         mexc: MexcClient
     ):
-        "'"'"'Check if position should be closed for user"'"'"'
         try:
             # Get current price
             ticker = await mexc.get_ticker_24h(position.symbol)
@@ -312,7 +303,6 @@ class MultiUserTradingWorker:
         settings: UserSettings,
         reason: str
     ):
-        "'"'"'Close position for user"'"'"'
         try:
             risk_mgr = RiskManager(settings)
             
@@ -366,7 +356,6 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "ERROR", f"Failed to close position {position.symbol}: {str(e)}")
     
     async def start(self):
-        "'"'"'Start worker"'"'"'
         if self.running:
             return
         
@@ -380,6 +369,5 @@ class MultiUserTradingWorker:
         )
     
     async def stop(self):
-        "'"'"'Stop worker"'"'"'
         self.running = False
         logger.info("Multi-user trading worker stopped")
