@@ -23,6 +23,36 @@ class MultiUserTradingWorker:
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
     
+    def calculate_used_budget(self, account: PaperAccount) -> float:
+        """Calculate total notional of all open positions"""
+        used = 0.0
+        for pos in account.open_positions:
+            used += pos.entry_price * pos.qty
+        return used
+    
+    def calculate_effective_balance(
+        self, 
+        settings: UserSettings, 
+        account: PaperAccount,
+        live_usdt_free: float = None
+    ) -> tuple[float, float, float]:
+        """
+        Calculate effective balance for trading.
+        Returns: (effective_balance, used_budget, available_budget)
+        """
+        used_budget = self.calculate_used_budget(account)
+        
+        if settings.mode == 'live' and live_usdt_free is not None:
+            # Live mode: min(usdt_free, trading_budget - used)
+            budget_remaining = settings.trading_budget_usdt - used_budget
+            effective = min(live_usdt_free, budget_remaining)
+        else:
+            # Paper mode: budget - used
+            effective = settings.paper_start_balance_usdt - used_budget
+        
+        available = max(0, effective)
+        return available, used_budget, settings.trading_budget_usdt if settings.mode == 'live' else settings.paper_start_balance_usdt
+    
     async def heartbeat(self):
         while self.running:
             try:
