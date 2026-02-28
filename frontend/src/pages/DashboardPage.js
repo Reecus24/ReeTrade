@@ -372,36 +372,137 @@ const DashboardPage = ({ onLogout }) => {
                 )}
               </div>
 
-              {/* Live Metrics - placeholder when not confirmed */}
+              {/* Live Metrics - MEXC Wallet + Budget System */}
               {settings.live_confirmed ? (
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
-                    <div className="text-xs text-zinc-500 uppercase mb-2">Trading Budget</div>
-                    <div className="text-2xl font-bold font-mono text-red-400">{formatCurrency(settings.trading_budget_usdt)}</div>
+                <div className="space-y-4">
+                  {/* MEXC Spot Wallet (Read-Only) */}
+                  <div className="bg-zinc-950 border border-green-900/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Wallet className="w-5 h-5 text-green-500" />
+                        MEXC Spot Wallet
+                        <Badge className="bg-green-500/10 text-green-500 text-xs">READ-ONLY</Badge>
+                      </h3>
+                      <Button 
+                        onClick={fetchLiveBalance} 
+                        disabled={liveBalanceLoading}
+                        variant="ghost" 
+                        size="sm"
+                        className="text-zinc-400"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${liveBalanceLoading ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
+                    
+                    {liveBalanceError ? (
+                      <div className="p-4 bg-red-950/30 border border-red-900 rounded text-red-400 text-sm">
+                        {liveBalanceError}
+                      </div>
+                    ) : liveBalance ? (
+                      <div className="grid grid-cols-4 gap-4">
+                        <div className="p-3 bg-zinc-900 rounded-lg">
+                          <div className="text-xs text-zinc-500 mb-1">USDT Free</div>
+                          <div className="text-xl font-bold font-mono text-green-500">
+                            {formatCurrency(liveBalance.budget?.usdt_free || liveBalance.cash || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-600">Verfügbar zum Handeln</div>
+                        </div>
+                        <div className="p-3 bg-zinc-900 rounded-lg">
+                          <div className="text-xs text-zinc-500 mb-1">USDT Locked</div>
+                          <div className="text-xl font-bold font-mono text-orange-500">
+                            {formatCurrency(liveBalance.locked || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-600">In offenen Orders</div>
+                        </div>
+                        <div className="p-3 bg-zinc-900 rounded-lg">
+                          <div className="text-xs text-zinc-500 mb-1">Total USDT</div>
+                          <div className="text-xl font-bold font-mono text-white">
+                            {formatCurrency(liveBalance.equity || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-600">Free + Locked</div>
+                        </div>
+                        <div className="p-3 bg-zinc-900 rounded-lg">
+                          <div className="text-xs text-zinc-500 mb-1">MEXC Status</div>
+                          <div className="text-xl font-bold">
+                            {mexc_keys_connected ? (
+                              <span className="text-green-500 flex items-center gap-2"><Wifi className="w-5 h-5" />Verbunden</span>
+                            ) : (
+                              <span className="text-red-500 flex items-center gap-2"><WifiOff className="w-5 h-5" />Fehler</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-zinc-600">
+                            {liveBalance.last_updated && format(new Date(liveBalance.last_updated), 'HH:mm:ss')}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center text-zinc-500 py-4">
+                        <Activity className="w-6 h-6 mx-auto animate-spin mb-2" />
+                        Lade Wallet-Daten...
+                      </div>
+                    )}
                   </div>
-                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
-                    <div className="text-xs text-zinc-500 uppercase mb-2">Reserve (geschützt)</div>
-                    <div className="text-2xl font-bold font-mono text-blue-400">{formatCurrency(settings.reserve_usdt)}</div>
-                  </div>
-                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
-                    <div className="text-xs text-zinc-500 uppercase mb-2">Max Order</div>
-                    <div className="text-2xl font-bold font-mono">{formatCurrency(settings.max_order_notional_usdt)}</div>
-                  </div>
-                  <div className="p-4 bg-zinc-950 border border-red-900/30 rounded-lg">
-                    <div className="text-xs text-zinc-500 uppercase mb-2">MEXC Status</div>
-                    <div className="text-2xl font-bold">
-                      {mexc_keys_connected ? (
-                        <span className="text-green-500 flex items-center gap-2"><Wifi className="w-5 h-5" />OK</span>
-                      ) : (
-                        <span className="text-red-500 flex items-center gap-2"><WifiOff className="w-5 h-5" />Fehlt</span>
-                      )}
+                  
+                  {/* Budget System (Calculated) */}
+                  <div className="bg-zinc-950 border border-blue-900/30 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                      <Shield className="w-5 h-5 text-blue-500" />
+                      Budget System
+                      <span className="text-xs text-zinc-500 font-normal ml-2">
+                        Schützt dein Wallet vor Übertrading
+                      </span>
+                    </h3>
+                    
+                    <div className="grid grid-cols-5 gap-4">
+                      <div className="p-3 bg-blue-950/30 border border-blue-900/30 rounded-lg">
+                        <div className="text-xs text-blue-400 mb-1">Reserve</div>
+                        <div className="text-xl font-bold font-mono text-blue-400">
+                          {formatCurrency(settings.reserve_usdt)}
+                        </div>
+                        <div className="text-xs text-blue-600">Wird nie angetastet</div>
+                      </div>
+                      <div className="p-3 bg-zinc-900 rounded-lg">
+                        <div className="text-xs text-zinc-500 mb-1">Trading Budget</div>
+                        <div className="text-xl font-bold font-mono text-white">
+                          {formatCurrency(settings.trading_budget_usdt)}
+                        </div>
+                        <div className="text-xs text-zinc-600">Max. Gesamt-Exposure</div>
+                      </div>
+                      <div className="p-3 bg-zinc-900 rounded-lg">
+                        <div className="text-xs text-zinc-500 mb-1">Used Budget</div>
+                        <div className="text-xl font-bold font-mono text-orange-500">
+                          {formatCurrency(liveBalance?.budget?.used_budget || 0)}
+                        </div>
+                        <div className="text-xs text-zinc-600">In Positionen</div>
+                      </div>
+                      <div className="p-3 bg-green-950/30 border border-green-900/30 rounded-lg">
+                        <div className="text-xs text-green-400 mb-1">Available to Bot</div>
+                        <div className={`text-xl font-bold font-mono ${
+                          (liveBalance?.budget?.remaining_budget || 0) > 50 ? 'text-green-500' : 
+                          (liveBalance?.budget?.remaining_budget || 0) > 0 ? 'text-yellow-500' : 'text-red-500'
+                        }`}>
+                          {formatCurrency(liveBalance?.budget?.remaining_budget || 0)}
+                        </div>
+                        <div className="text-xs text-green-600">Für neue Trades</div>
+                      </div>
+                      <div className="p-3 bg-zinc-900 rounded-lg">
+                        <div className="text-xs text-zinc-500 mb-1">Max Order</div>
+                        <div className="text-xl font-bold font-mono text-white">
+                          {formatCurrency(settings.max_order_notional_usdt)}
+                        </div>
+                        <div className="text-xs text-zinc-600">Pro Trade</div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3 p-2 bg-zinc-900 rounded text-xs text-zinc-500">
+                      <strong>Berechnung:</strong> Available = min(USDT_Free - Reserve, Trading Budget - Used Budget)
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-zinc-500">
                   <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-zinc-700" />
-                  <p>Live Mode muss zuerst aktiviert werden um Metriken anzuzeigen.</p>
+                  <p>Live Mode muss zuerst aktiviert werden um Wallet-Daten anzuzeigen.</p>
                 </div>
               )}
 
