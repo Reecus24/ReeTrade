@@ -1,83 +1,81 @@
 <analysis>**original_problem_statement:**
-The user initially requested a full-stack application (FastAPI + React + MongoDB) to serve as an automated SPOT trading bot for the MEXC exchange. The core requirements included:
-- A single admin password for access control.
-- A background worker process to run the trading logic.
-- A simple trading strategy based on EMA crossover and RSI on a 15-minute timeframe for the top 20 USDT pairs by volume.
-- Robust risk management rules (risk per trade, max positions, max daily loss).
-- A minimal dark-themed frontend dashboard to control the bot and view its status.
-
-Over the course of the session, the requirements were significantly expanded to include:
-- **Rebranding:** Change the application name to ReeTrade Terminal.
-- **Multi-User System:** Replace the single admin password with a full multi-user system, including user registration, login, and data isolation. Each user has their own settings, paper account, trades, and can securely store their own encrypted MEXC API keys.
-- **Advanced Strategy:**
-    - **Adaptive Market Regime:** Implement a strategy that detects the market regime (Bullish, Sideways, Bearish) on a 4H timeframe using EMA and ADX, and adapts trading behavior accordingly (e.g., no longs in a bearish regime).
-    - **Momentum Rotation:** Replace the Top 20 by Volume universe selection with a momentum-based approach, selecting the top 10 symbols from a list of 50 based on a weighted return score.
-- **Security & Sizing:**
-    - Implement API rate limiting for login and live-mode confirmation endpoints.
-    - Create an audit log for critical user actions.
-    - Implement a minimum notional value check and order quantity rounding to handle exchange rules and small account sizes.
+The user initially requested a full-stack application (FastAPI + React + MongoDB) to serve as an automated SPOT trading bot for the MEXC exchange. The core requirements have evolved significantly to include:
+- A full multi-user system with registration, login, and data isolation.
+- An advanced adaptive trading strategy that detects market regimes (Bullish, Sideways, Bearish) and uses momentum-based asset selection.
+- A comprehensive, multi-layered risk management and budgeting system:
+    - **Reserve:** A user-defined amount in the live wallet that the bot will never touch.
+    - **Trading Budget:** An absolute maximum exposure limit for all open positions.
+    - **Daily Trading Cap:** A limit on the total notional value of trades opened within a single day.
+    - **Per-Trade Cap:** A maximum notional size for any single order.
+- A Simulated Live paper trading mode that uses real-time market data for forward testing.
+- A dashboard with a strict separation between LIVE and PAPER modes, each with its own controls, status, and metrics.
+- A detailed analytics view, including a daily PnL bar chart and an extensive trade history list.
+- User-friendly UI with clear explanations, tooltips, and data visualization for all settings and metrics.
 
 **User's preferred language**: The user's primary language is **German**. The next agent MUST respond in German only.
 
 **what currently exists?**
-A complete multi-user, full-stack trading bot application. The backend is built with FastAPI and the frontend with React. Users can register, log in, configure their individual trading strategy settings, and run the bot in paper-trading mode. The bot employs an advanced adaptive strategy based on market regimes and momentum scoring. Security features like rate limiting, audit logging, and encrypted API key storage are implemented.
+A sophisticated, multi-user, full-stack trading bot application named ReeTrade Terminal. The backend is FastAPI, and the frontend is React. It features a complete user authentication system. The core logic has been refactored to strictly separate Paper and Live trading modes, each with independent controls and state management. The UI reflects this with distinct LIVE and PAPER tabs.
+
+The application includes advanced budgeting features (reserve, total budget, daily cap), a detailed trade history log, and a daily PnL chart. The settings page has been made more user-friendly with detailed explanations. The live dashboard shows a real-time view of the user's MEXC wallet balance, separate from the bot's budgeting system.
 
 **Last working item**:
-- **Last item agent was working:** Debugging a 500 Internal Server Error that occurs when a user tries to switch the bot from paper to live mode. The agent identified the root cause from the logs: a  in . This happens when initializing the  encryption object, as the encryption key is read as a string from the environment but is required to be in bytes format.
+- **Last item agent was working:** Implementing two user requests simultaneously:
+    1.  A **Daily Trading Cap** system to limit the total value of trades opened per day.
+    2.  A **hard separation of settings** between Paper and Live modes in the UI and backend data models.
+The agent has already updated the backend models (), database operations (), the main worker logic (), and API endpoints () to support these features. It was in the process of rewriting the frontend settings page () to reflect these changes but has not completed it.
 - **Status:** IN PROGRESS
 - **Agent Testing Done:** N
-- **Which testing method agent to use?** backend testing agent. After fixing the code, the agent should use  to test the  endpoint with valid credentials to verify the fix.
+- **Which testing method agent to use?** both. This is a significant change. After implementation is complete, the agent should first test the backend endpoints with  to ensure the new settings structure and daily cap logic are working. Then, use the  tool to verify the new settings UI. Finally, a full regression test using the  is recommended to ensure no existing functionality was broken.
 - **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1:** 500 Internal Server Error when switching to live mode (P0)
+-   **Issue 1:** Complete Daily Cap and Separated Settings Implementation (P0)
 
 **Issues Detail:**
 -   **Issue 1:**
-    -   **Attempted fixes:** None. The agent only diagnosed the problem from the logs.
+    -   **Attempted fixes:** The agent has laid the backend groundwork. It created a blank  and needs to build the UI.
     -   **Next debug checklist:**
-        1.  Open .
-        2.  Locate the  method of the  class.
-        3.  The line  is causing the error.
-        4.  The  is passed as a string from .
-        5.  Modify the code to encode the string key into bytes before passing it to the  constructor. The fix should look like this: .
-        6.  Restart the backend server and re-test the live mode confirmation flow.
-    -   **Why fix this issue and what will be achieved with the fix?** This is a critical bug blocking the core functionality of enabling live trading. Fixing it will allow users to use the bot with real funds on the MEXC exchange.
+        1.  Implement the UI in . This component should fetch the separated settings and render two distinct sections: Live Trading Settings and Paper Trading Settings.
+        2.  Each section should contain the relevant input fields (e.g.,  should be present in both).
+        3.  Ensure the  functionality correctly sends the structured settings object to the  endpoint.
+        4.  Update the  to correctly pass down the separated settings to the respective LIVE and PAPER tabs.
+        5.  Test the entire flow: change a setting in the UI, save it, and verify via the  or  endpoints that the new setting is active.
+    -   **Why fix this issue and what will be achieved with the fix?** This will complete a core user request for enhanced risk management and a more intuitive, less error-prone settings interface. It is a blocker for any further development on the settings page.
     -   **Status:** IN PROGRESS
     -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Backend
+    -   **Should Test frontend/backend/both after fix?** Both
     -   **Blocked on other issue:** None
 
 **In progress Task List**:
-There are no other tasks in progress. The sole focus is on fixing the critical bug mentioned above.
+-   **Task 1:** Daily Trading Cap and Hard Setting Separation (P0)
+    -   **Where to resume:** The file  was just created as a blank slate. The immediate next step is to build the React component within this file to display and manage the newly separated paper and live settings.
+    -   **What will be achieved with this?** A clear, user-friendly settings page that prevents confusion between live and paper configurations, and the implementation of a daily trading volume limit for added safety.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on something:** None
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
-    - **P1: User Management Tab:** Implement a dashboard view for an admin role to see and manage all registered users.
-    - **P1: Rate Limiting on More Endpoints:** Extend rate limiting to other sensitive API endpoints to enhance security.
+  - **P1: User Management Tab:** Implement a dashboard view for an admin role to see and manage all registered users.
+  - **P1: Rate Limiting on More Endpoints:** Extend rate limiting to other sensitive API endpoints to enhance security.
 - **Future Tasks:**
-    - **P2: Email Verification:** Add an email verification step during registration to ensure user emails are valid.
-    - **P2: Password Reset:** Implement a Forgot Password flow.
-    - **P2: Performance Dashboard:** Create charts and graphs to visualize performance metrics like Sharpe Ratio, Win Rate, and Equity Curve.
-    - **P3: Notifications:** Integrate Telegram or Email notifications for trade executions and critical bot events.
-    - **P3: Enhanced Audit Log UI:** Create a user-friendly interface to view and filter the audit logs.
+  - **P2: Email Verification:** Add an email verification step during registration.
+  - **P2: Password Reset:** Implement a Forgot Password flow.
+  - **P2: Performance Dashboard:** Create more advanced charts to visualize performance metrics like Sharpe Ratio, Win Rate, and Equity Curve.
+  - **P3: Notifications:** Integrate Telegram or Email notifications for trade executions and critical bot events.
+  - **P3: Enhanced Audit Log UI:** Create a user-friendly interface to view and filter the audit logs.
 
 **Completed work in this session**
-- **Multi-User System:** Fully implemented user registration, login (JWT), and per-user data isolation.
-- **Rebranding:** App renamed to ReeTrade Terminal across the frontend and documentation.
-- **Encrypted API Keys:** Users can store their MEXC API keys, which are encrypted at rest using Fernet.
-- **Adaptive Trading Strategy:**
-    - Implemented market regime detection (Bullish, Bearish, Sideways) on a 4H timeframe.
-    - Trading logic now adapts to the detected regime (e.g., blocks longs in a bearish market).
-- **Momentum-Based Universe Selection:** The bot now selects trading pairs based on a momentum rotation strategy instead of just volume.
-- **Advanced Order Sizing:** Implemented minimum notional value checks and order quantity rounding based on exchange rules.
-- **Security Enhancements:**
-    - Added API rate limiting for login and live-mode confirmation.
-    - Created a detailed audit log for tracking critical actions.
-- **Full Stack Implementation:** Developed both the FastAPI backend and the React frontend dashboard for managing and monitoring the bot.
+- **Live Mode Bug Fix:** Resolved a critical 500 Internal Server Error that blocked users from enabling live mode.
+- **Live Wallet & Budget Display:** The UI now shows the real MEXC wallet balance (read-only) and a separate, detailed budget system (, , ) in the Live tab.
+- **Simulated Live Paper Mode:** Paper trading now uses live MEXC market data for realistic forward testing.
+- **Daily PnL Chart & Trade History:** Implemented a new Trades tab featuring a Recharts bar chart for daily PnL and a detailed, filterable list of all historical trades.
+- **Strict UI/Backend Separation:** Completed a major refactoring to create distinct LIVE and PAPER tabs in the UI, each with its own state, controls, and API endpoints, preventing any overlap.
+- **Settings Page Overhaul:** Redesigned the settings page for clarity, adding detailed explanations, tooltips, and logical grouping for all parameters.
 
 **Earlier issues found/mentioned but not fixed**
-- **Issue 1: Rate Limiting IP Detection:** The  library identifies all requests in the development environment as coming from a single internal Kubernetes proxy IP. This means the rate limiting is not effective on a per-user-IP basis during local testing. The agent correctly noted that this is a limitation of the dev setup and will function as expected behind a proper load balancer in production. No immediate fix is required.
+- **Issue 1: Rate Limiting IP Detection:** The  library identifies all requests in the dev environment as coming from a single internal proxy IP. This is a known limitation of the development setup and is expected to work correctly in a production environment with a proper load balancer. No fix is required at this stage.
 
 **Known issue recurrence from previous fork**
 - None.
@@ -87,99 +85,83 @@ There are no other tasks in progress. The sole focus is on fixing the critical b
 
 **Key Technical Concepts**
 - **Backend:** FastAPI, Motor (async MongoDB driver), Pydantic
-- **Frontend:** React, Tailwind CSS, Axios
+- **Frontend:** React, Tailwind CSS, Axios, **Recharts** (for charting)
 - **Database:** MongoDB
-- **Authentication:** JWT stored in HttpOnly cookies, with password hashing via .
-- **Async Processing:** The main trading loop runs as a  in FastAPI, initiated on startup.
-- **Encryption:** User API keys are encrypted at rest using .
-- **API Security:** Rate limiting implemented with .
-- **Trading Strategy:** A multi-layered strategy involving Momentum Rotation for universe selection, Market Regime detection (using ADX/EMA on 4H candles) as a filter, and EMA Crossover on 15m candles for entry signals.
+- **Authentication:** JWT stored in HttpOnly cookies.
+- **State Management:** Complex component state managed within  to control the two separate modes (Live/Paper).
+- **Encryption:** Fernet for user API keys.
 
 **key DB schema**
-- **users:**  - Stores user credentials.
-- **settings:**  - Stores all user-specific settings and bot status.
-- **logs:**  - General logs from the worker.
-- **audit_logs:**  - Security-relevant audit logs (logins, settings changes, etc.).
-- **trades:**  - Records of all paper and live trades.
-- **paper_accounts:**  - Manages the state of each user's paper trading account.
+- **users:** 
+- **settings:**  - The structure was refactored. It now contains two nested objects,  and , each holding their own settings (, , etc.) and running state.
+- **logs:** 
+- **audit_logs:** 
+- **trades:**  - Stores all trades for both modes.
 
 **changes in tech stack**
-The following Python libraries were added to :
-- To use the fastapi command, please install "fastapi[standard]":
-
-	pip install "fastapi[standard]", , , , , 
-- ,  (for JWT auth)
--  (for password hashing)
--  (for encrypting API keys)
--  (for rate limiting)
--  (for technical analysis indicators like ADX, EMA, RSI)
+-  is used on the frontend for the Daily PnL chart.
 
 **All files of reference**
-- : Defines all API endpoints, authentication logic, and rate limiting.
-- : Contains the core multi-user trading loop, including momentum rotation, regime detection, and trade execution logic.
-- : Interacts with the MEXC exchange API. **This file contains the bug.**
-- : Centralizes all database logic.
-- : Manages password hashing and API key encryption.
-- : Implements the market regime detection logic.
-- : Main frontend router, manages auth state.
-- : The main layout after login, containing all tabs.
-- : Allows users to modify their strategy parameters.
+- : Defines the new nested structure for settings. **CRITICAL REFERENCE.**
+- : Contains the main trading loops, now separated for paper and live modes, including all budget/cap checks.
+- : Defines all new segregated API endpoints (, ) and updated logic for status/balance endpoints.
+- : Contains the  function.
+- : The new main container with the  component separating Live and Paper views.
+- : The new component containing the PnL chart and trade history table.
+- : **The file currently being implemented.**
 
 **Areas that need refactoring**:
--  is becoming large and could be broken down into smaller, more manageable API routers (e.g., , ).
-- The agent's repeated failures with  due to docstring escaping issues indicate a potential weakness in the tool's handling of complex string literals. The current code is functional but was difficult to generate.
+-  has grown significantly and is the primary candidate for refactoring. The logic should be split into separate FastAPI  files (e.g., , , ).
+- The state management in  is complex. Consolidating state with React's Context API or a lightweight state manager like Zustand could simplify props drilling and logic.
 
 **key api endpoints**
-- 
-- 
-- 
-- 
-- 
-- 
--  **(Endpoint that triggers the 500 error)**
-- 
-- 
-- 
-- 
+- **Separated Bot Controls:**
+  -  & 
+  -  & 
+  -  & 
+- **Data Endpoints:**
+  -  (Returns separated  and  states)
+  -  (Returns wallet, budget, and daily cap info)
+  -  (Expects the new nested settings structure)
+  - 
+  - 
 
 **Critical Info for New Agent**
-- The application is now a **multi-user system**. The original  is no longer in use.
-- The primary test user is  with the password .
-- An  environment variable in  is critical for decrypting user API keys. It is generated automatically if not present.
-- The immediate priority is to fix the critical bug preventing users from switching to live mode. All other feature development is secondary.
+- **IMMEDIATE TASK:** Your first priority is to complete the implementation of the new  to align with the backend changes for separated paper/live settings.
+- **DATA MODEL CHANGE:** Be aware that the  object is no longer flat. It now has a  structure. All interactions with settings must respect this new model.
+- **TESTING:** The user is , password .
 
 **documents and test reports created in this job**
-- : Project documentation.
-- The  was used to perform a health check, which helped identify a compilation error that was subsequently fixed.
+-  (updated multiple times)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Requested implementation of a momentum rotation strategy, minimum notional sizing for small accounts, and order quantity rounding.
-2.  **Agent:** Implemented the requested features.
-3.  **User:** Requested to call the deployer agent and run a health check.
-4.  **Agent:** Ran the health check, found a critical compilation error.
-5.  **Agent:** Fixed the compilation error and re-ran the health check, which passed.
-6.  **User:** Asked for the admin password.
-7.  **Agent:** Explained that the system is now multi-user and provided the credentials for the test account ().
-8.  **User:** Reported a 500 error with a screenshot when trying to switch to live mode.
-9.  **Agent:** Acknowledged the error and started checking backend logs.
-10. **Agent:** Found the  in the logs, identifying the root cause of the 500 error.
+1.  **User:** Requested a Daily PnL chart and a detailed Trade History tab.
+2.  **Agent:** Implemented both features in a new Trades tab.
+3.  **User:** Requested a hard separation of Paper and Live modes (UI tabs, backend state, API endpoints).
+4.  **Agent:** Completed the major refactoring to separate the modes.
+5.  **User:** Requested the Live tab to show the real MEXC wallet balance (free/locked) separately from the bot's budget system.
+6.  **Agent:** Implemented the requested UI changes in the Live tab.
+7.  **User:** Requested to make the Settings page more user-friendly with better explanations.
+8.  **Agent:** Overhauled the Settings page UI with detailed descriptions and tooltips.
+9.  **User:** (PENDING) Requested the implementation of a Daily Trading Cap.
+10. **User:** (PENDING) Requested that settings for Paper and Live modes be completely separate in the UI. This is part of the current in-progress task.
 
 **Project Health Check:**
-- **Broken:** The switch to live mode functionality is critically broken due to an encryption key handling error.
-- **Mocked:** Paper trading is the default and fully functional mode. Live trading is intended to work but is currently blocked by the bug.
+- **Broken:** The settings functionality is currently broken as the agent was in the middle of rewriting . The rest of the application should be functional, but settings cannot be changed.
+- **Mocked:** The entire paper trading mode is a sophisticated mock of live trading.
 
 **3rd Party Integrations**
-- **MEXC Exchange API:** Used for fetching market data (public endpoints) and will be used for placing orders (private endpoints) once the live mode bug is fixed.
+- **MEXC Exchange API:** Used for fetching live market data and for executing live trades.
 
 **Testing status**
-- **Testing agent used after significant changes:** YES, initially.
-- **Troubleshoot agent used after agent stuck in loop:** N/A.
-- **Test files created:** None.
-- **Known regressions:** The ability to switch to live mode is broken.
+- **Testing agent used after significant changes:** NO
+- **Troubleshoot agent used after agent stuck in loop:** NO
+- **Test files created:** None
+- **Known regressions:** None, but the settings page is intentionally non-functional pending completion of the rewrite.
 
 **Credentials to test flow:**
 - **Email:** 
 - **Password:** 
 
 **What agent forgot to execute**
-- The agent had correctly identified the cause of the 500 error but had not yet executed the code change to fix it. The very next step should be to apply the fix in .</analysis>
+- The agent was in the middle of a large feature implementation and did not forget to execute anything. The work needs to be resumed and completed.</analysis>
