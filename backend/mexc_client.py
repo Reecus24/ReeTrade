@@ -61,7 +61,11 @@ class MexcClient:
                 if method == "GET":
                     response = await client.get(url, params=params, headers=headers)
                 elif method == "POST":
-                    response = await client.post(url, json=params, headers=headers)
+                    # MEXC requires params as query string for signed POST requests
+                    if signed:
+                        response = await client.post(url, params=params, headers=headers)
+                    else:
+                        response = await client.post(url, json=params, headers=headers)
                 elif method == "DELETE":
                     response = await client.delete(url, params=params, headers=headers)
                 else:
