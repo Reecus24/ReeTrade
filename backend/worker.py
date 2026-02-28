@@ -788,7 +788,7 @@ Reason: {reason}
                 symbol, 
                 rounded_qty, 
                 current_price, 
-                user_min_notional=settings.min_notional_usdt
+                user_min_notional=min_notional
             )
             
             if not valid:
