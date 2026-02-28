@@ -5,6 +5,12 @@ import os
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load environment variables
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
 
 from auth import create_session, verify_admin_password, require_auth
 from models import (
