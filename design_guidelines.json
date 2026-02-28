@@ -1,0 +1,136 @@
+{
+  "app_name": "AlgoTrade_Terminal",
+  "theme": "dark",
+  "design_system": {
+    "palette": {
+      "mode": "dark",
+      "background": {
+        "default": "#050505",
+        "paper": "#0A0A0A",
+        "subtle": "#121212",
+        "terminal": "#000000"
+      },
+      "text": {
+        "primary": "#EDEDED",
+        "secondary": "#A1A1AA",
+        "muted": "#52525B",
+        "accent": "#FFFFFF"
+      },
+      "brand": {
+        "primary": "#FFFFFF",
+        "secondary": "#27272A",
+        "accent": "#00E0FF"
+      },
+      "functional": {
+        "success": "#22C55E",
+        "warning": "#EAB308",
+        "error": "#EF4444",
+        "info": "#3B82F6",
+        "live": "#FF3B30",
+        "paper": "#F59E0B"
+      },
+      "border": {
+        "default": "#27272A",
+        "subtle": "#18181B",
+        "active": "#52525B"
+      }
+    },
+    "typography": {
+      "font_family": {
+        "headings": "Manrope, sans-serif",
+        "body": "Manrope, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "scale": {
+        "h1": "text-3xl font-bold tracking-tight",
+        "h2": "text-2xl font-semibold tracking-tight",
+        "h3": "text-xl font-medium",
+        "body": "text-sm leading-relaxed",
+        "small": "text-xs text-muted-foreground",
+        "mono_lg": "font-mono text-lg tracking-tight",
+        "mono_sm": "font-mono text-xs"
+      }
+    },
+    "spacing": {
+      "container_padding": "p-4 md:p-6 lg:p-8",
+      "section_gap": "gap-6",
+      "item_gap": "gap-3",
+      "radius": {
+        "default": "rounded-sm",
+        "card": "rounded-md",
+        "button": "rounded-md",
+        "input": "rounded-md"
+      }
+    },
+    "effects": {
+      "glass": "bg-black/50 backdrop-blur-md border-b border-white/5",
+      "glow_success": "shadow-[0_0_15px_rgba(34,197,94,0.3)]",
+      "glow_error": "shadow-[0_0_15px_rgba(239,68,68,0.3)]"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-white text-black hover:bg-gray-200 font-medium transition-all shadow-[0_0_10px_rgba(255,255,255,0.1)]",
+      "secondary": "bg-zinc-900 text-white border border-zinc-800 hover:bg-zinc-800 transition-all",
+      "destructive": "bg-red-900/20 text-red-500 border border-red-900/50 hover:bg-red-900/40",
+      "ghost": "hover:bg-white/5 text-zinc-400 hover:text-white"
+    },
+    "cards": {
+      "default": "bg-card border border-border/50 p-5 rounded-lg shadow-none",
+      "interactive": "bg-card border border-border/50 p-5 rounded-lg hover:border-zinc-700 transition-colors cursor-pointer",
+      "metric": "bg-transparent border-r border-border/50 last:border-r-0 p-4"
+    },
+    "inputs": {
+      "default": "bg-zinc-950 border-zinc-800 focus:border-white/40 focus:ring-0 rounded-md h-10 text-sm placeholder:text-zinc-600 font-mono"
+    },
+    "badges": {
+      "live": "bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold animate-pulse",
+      "paper": "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-2 py-0.5 text-[10px] uppercase tracking-wider font-bold",
+      "neutral": "bg-zinc-800 text-zinc-400 px-2 py-0.5 text-[10px] uppercase tracking-wider"
+    },
+    "charts": {
+      "tooltip": "bg-zinc-950 border border-zinc-800 rounded-md shadow-xl text-xs font-mono p-2",
+      "grid": "stroke-zinc-800 stroke-[1] stroke-dasharray-4",
+      "axis": "text-xs text-zinc-500 font-mono"
+    }
+  },
+  "layout_strategies": {
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-12 gap-4 auto-rows-[minmax(180px,auto)]",
+    "bento_items": {
+      "overview": "col-span-full md:col-span-8 row-span-2",
+      "strategy": "col-span-full md:col-span-4 row-span-2",
+      "logs": "col-span-full md:col-span-12 row-span-1 h-[300px]"
+    }
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-width={1.5} size={18}"
+    },
+    "fonts": [
+      "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    ]
+  },
+  "image_urls": {},
+  "instructions_to_main_agent": [
+    "INSTALL_DEPENDENCIES: yarn add clsx tailwind-merge framer-motion date-fns recharts lucide-react sonner",
+    "SETUP_FONTS: Add the Google Fonts link to public/index.html immediately.",
+    "THEME_ENFORCEMENT: Force 'dark' class on the html/body tag. This is a dark-mode only app.",
+    "COMPONENT_OVERRIDE: Do not use default Shadcn cards for everything. Use the 'metric' style (border-only) for top-level stats to save space.",
+    "TERMINAL_VIEW: The Logs component must look like a terminal. Black background, green/white monospaced text, small font size (11px or 12px), auto-scroll to bottom.",
+    "CONFIRMATION_FLOW: When switching from Paper -> Live, trigger a 'Dialog' with a red border and 'destructive' action button. Require explicit confirmation.",
+    "CHART_STYLING: Use Recharts 'ResponsiveContainer'. Hide CartesianGrid unless necessary. Use CustomTooltip for hover states.",
+    "NAVIGATION: Use a top-bar navigation for simplicity, or a very thin side rail. Active tab should have a bottom border (glow) or white text vs gray text.",
+    "DATA_FORMATTING: All currency values must use a formatter util (e.g., '$1,234.56'). All timestamps in logs must be 'HH:mm:ss' format.",
+    "ACCESSIBILITY: Ensure all form inputs have associated labels. Use aria-live for the log stream updates."
+  ],
+  "universal_guidelines": [
+    "Do NOT use gradients for backgrounds. Use solid deep blacks or zinc-950.",
+    "Avoid 'Inter' font. Use 'Manrope' for UI and 'JetBrains Mono' for data.",
+    "Use 'sonner' for toast notifications (position: bottom-right).",
+    "Add 'data-testid' to all interactive elements (buttons, inputs, tabs).",
+    "Do not center-align dashboard text. Left-align for readability.",
+    "Use 24px (p-6) padding inside cards/sections.",
+    "Live data updates should trigger a subtle text-color flash (green/red) rather than moving the layout."
+  ]
+}
