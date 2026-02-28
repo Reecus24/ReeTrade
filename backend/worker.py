@@ -140,24 +140,89 @@ class MultiUserTradingWorker:
             await self.check_position_exit(user_id, pos, account, settings, mexc)
         
         # Check cooldown
-        if self.is_in_cooldown(user_id, settings.cooldown_candles):
-            await self.db.log(user_id, "DEBUG", "In cooldown period, skipping new entries")
+        if self.is_in_cooldown(user_id, 5):  # Fixed 5 candles cooldown
+            await self.db.log(user_id, "DEBUG", "In cooldown period (5 candles), skipping new entries")
             return
         
-        # Look for new entries
+        # Look for new entries with REGIME DETECTION
         if risk_mgr.can_open_position(account):
             for symbol in settings.top_pairs[:10]:  # Check top 10
                 try:
-                    # Get 15m klines
-                    klines = await mexc.get_klines(symbol, interval="15m", limit=500)
-                    
-                    if len(klines) < settings.ema_slow:
+                    # Check if symbol is paused (3 losses in 12h)
+                    if await self.db.is_symbol_paused(user_id, symbol):
+                        await self.db.log(user_id, "WARNING", f"{symbol} paused due to consecutive losses")
                         continue
                     
-                    signal, context = strategy.generate_signal(klines)
+                    # Get 4H klines for regime detection (MUST HAPPEN FIRST)
+                    klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
+                    
+                    if len(klines_4h) < 200:
+                        await self.db.log(user_id, "DEBUG", f"{symbol} insufficient 4H data for regime detection")
+                        continue
+                    
+                    # DETECT REGIME
+                    regime, regime_context = self.regime_detector.detect_regime(klines_4h)
+                    
+                    # Log detected regime for every symbol
+                    await self.db.log(user_id, "INFO", f"{symbol} Regime: {regime}", regime_context)
+                    
+                    # REGIME-BASED FILTERING (BEFORE SIGNAL CHECK)
+                    
+                    # BEARISH: No long trades
+                    if regime == "BEARISH":
+                        await self.db.log(user_id, "INFO", f"{symbol} blocked - BEARISH regime (no long trades)")
+                        continue
+                    
+                    # SIDEWAYS: No EMA crossover trading
+                    if regime == "SIDEWAYS":
+                        await self.db.log(user_id, "INFO", f"{symbol} blocked - SIDEWAYS regime (no EMA trading)")
+                        continue
+                    
+                    # BULLISH: Proceed with entry check
+                    if regime != "BULLISH":
+                        await self.db.log(user_id, "INFO", f"{symbol} blocked - Regime {regime} not BULLISH")
+                        continue
+                    
+                    # Get 15m klines for entry signal
+                    klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
+                    
+                    if len(klines_15m) < settings.ema_slow:
+                        continue
+                    
+                    # Check EMA signal
+                    signal, context = strategy.generate_signal(klines_15m)
                     
                     if signal == "LONG":
-                        await self.open_position(user_id, symbol, klines, account, settings, strategy, risk_mgr, context, mexc)
+                        # BULLISH REGIME: Adjusted parameters
+                        current_price = float(klines_15m[-1][4])
+                        
+                        # Calculate ATR stop (mult 2.5)
+                        atr = strategy.calculate_atr(klines_15m, 14)
+                        if atr:
+                            stop_loss = current_price - (atr * 2.5)
+                            # TP = 1:2.5 R:R
+                            risk_amount = current_price - stop_loss
+                            take_profit = current_price + (risk_amount * 2.5)
+                        else:
+                            # Fallback
+                            stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
+                            take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+                        
+                        # Reduce risk to 0.5% for bullish regime
+                        original_risk = settings.risk_per_trade
+                        settings.risk_per_trade = 0.005  # 0.5%
+                        
+                        # Open position with regime-adjusted parameters
+                        await self.open_position_with_regime(
+                            user_id, symbol, klines_15m, account, settings,
+                            strategy, risk_mgr, context, mexc, regime,
+                            stop_loss, take_profit
+                        )
+                        
+                        # Restore original risk
+                        settings.risk_per_trade = original_risk
+                        
+                        # Update last trade time and break
                         self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
                         break  # One entry per cycle
                     
