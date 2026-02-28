@@ -279,3 +279,46 @@ class Database:
             log.pop('_id', None)
         
         return logs
+    
+    # ========== SYMBOL TRADING PAUSE OPERATIONS ==========
+    
+    async def set_symbol_pause(self, user_id: str, symbol: str, pause_hours: int, reason: str, consecutive_losses: int):
+        from models import SymbolTradingPause
+        pause_until = datetime.now(timezone.utc) + timedelta(hours=pause_hours)
+        
+        pause = SymbolTradingPause(
+            user_id=user_id,
+            symbol=symbol,
+            pause_until=pause_until,
+            reason=reason,
+            consecutive_losses=consecutive_losses
+        )
+        
+        await self.symbol_pauses.update_one(
+            {'user_id': user_id, 'symbol': symbol},
+            {'$set': pause.model_dump()},
+            upsert=True
+        )
+        
+        logger.info(f"[User {user_id[:8]}] Symbol {symbol} paused for {pause_hours}h - {reason}")
+    
+    async def is_symbol_paused(self, user_id: str, symbol: str) -> bool:
+        pause = await self.symbol_pauses.find_one({
+            'user_id': user_id,
+            'symbol': symbol,
+            'pause_until': {'$gt': datetime.now(timezone.utc)}
+        })
+        return pause is not None
+    
+    async def get_recent_symbol_losses(self, user_id: str, symbol: str, hours: int = 12) -> int:
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        
+        # Count losing trades
+        count = await self.trades.count_documents({
+            'user_id': user_id,
+            'symbol': symbol,
+            'ts': {'$gte': since.isoformat()},
+            'pnl': {'$lt': 0}
+        })
+        
+        return count
