@@ -1,15 +1,32 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Literal
 from datetime import datetime
 
-class LoginRequest(BaseModel):
+# ============ AUTH MODELS ============
+
+class UserRegister(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
     password: str
 
 class LoginResponse(BaseModel):
     token: str
     message: str
+    user: dict
 
-class BotSettings(BaseModel):
+class User(BaseModel):
+    email: EmailStr
+    password_hash: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = True
+
+# ============ SETTINGS MODELS ============
+
+class UserSettings(BaseModel):
+    user_id: str
     mode: Literal["paper", "live"] = "paper"
     bot_running: bool = False
     live_requested: bool = False
@@ -29,6 +46,7 @@ class BotSettings(BaseModel):
     take_profit_rr: float = 2.0  # Risk:Reward
     atr_stop: bool = False
     atr_mult: float = 1.5
+    cooldown_candles: int = 3  # Wait N candles after trade
     
     # Fees
     fee_bps: int = 10  # 0.1%
@@ -39,7 +57,41 @@ class BotSettings(BaseModel):
     last_pairs_refresh: Optional[datetime] = None
     last_heartbeat: Optional[datetime] = None
 
+class SettingsUpdate(BaseModel):
+    # Strategy
+    ema_fast: Optional[int] = None
+    ema_slow: Optional[int] = None
+    rsi_period: Optional[int] = None
+    rsi_min: Optional[int] = None
+    rsi_overbought: Optional[int] = None
+    
+    # Risk
+    risk_per_trade: Optional[float] = None
+    max_positions: Optional[int] = None
+    max_daily_loss: Optional[float] = None
+    take_profit_rr: Optional[float] = None
+    atr_stop: Optional[bool] = None
+    atr_mult: Optional[float] = None
+    cooldown_candles: Optional[int] = None
+    
+    # Fees
+    fee_bps: Optional[int] = None
+    slippage_bps: Optional[int] = None
+
+# ============ KEYS MODELS ============
+
+class MexcKeysInput(BaseModel):
+    api_key: str
+    api_secret: str
+
+class MexcKeysStatus(BaseModel):
+    connected: bool
+    last_updated: Optional[datetime] = None
+
+# ============ TRADING MODELS ============
+
 class LogEntry(BaseModel):
+    user_id: str
     ts: datetime
     level: Literal["INFO", "WARNING", "ERROR", "DEBUG"]
     msg: str
@@ -55,11 +107,13 @@ class Position(BaseModel):
     entry_time: datetime
 
 class PaperAccount(BaseModel):
+    user_id: str
     equity: float = 10000.0  # Start with $10k
     cash: float = 10000.0
     open_positions: List[Position] = Field(default_factory=list)
 
 class Trade(BaseModel):
+    user_id: str
     ts: datetime
     symbol: str
     side: Literal["BUY", "SELL"]
@@ -71,16 +125,20 @@ class Trade(BaseModel):
     reason: Optional[str] = None
 
 class DailyMetrics(BaseModel):
+    user_id: str
     date: str
     pnl: float
     drawdown: float
     trades_count: int
 
+# ============ RESPONSE MODELS ============
+
 class StatusResponse(BaseModel):
-    settings: BotSettings
+    settings: UserSettings
     paper_account: Optional[PaperAccount] = None
     heartbeat: Optional[datetime] = None
     is_alive: bool = True
+    mexc_keys_connected: bool = False
 
 class BacktestRequest(BaseModel):
     start_date: Optional[str] = None
