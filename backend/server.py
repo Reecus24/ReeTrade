@@ -468,6 +468,82 @@ async def get_top_pairs(current_user: dict = Depends(get_current_user)):
         "last_refresh": settings.last_pairs_refresh
     }
 
+# ============ METRICS ENDPOINTS ============
+
+@app.get("/api/metrics/daily_pnl")
+async def get_daily_pnl(
+    days: int = 30,
+    mode: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get daily PnL aggregation for chart"""
+    user_id = current_user['user_id']
+    
+    # If no mode specified, use current mode from settings
+    if not mode:
+        settings = await db.get_settings(user_id)
+        mode = settings.mode
+    
+    daily_data = await db.get_daily_pnl(user_id, mode=mode, days=days)
+    
+    # Calculate summary stats
+    total_pnl = sum(d['pnl'] for d in daily_data)
+    total_trades = sum(d['trades_count'] for d in daily_data)
+    winning_days = sum(1 for d in daily_data if d['pnl'] > 0)
+    losing_days = sum(1 for d in daily_data if d['pnl'] < 0)
+    
+    return {
+        'data': daily_data,
+        'summary': {
+            'total_pnl': round(total_pnl, 2),
+            'total_trades': total_trades,
+            'winning_days': winning_days,
+            'losing_days': losing_days,
+            'win_rate': round(winning_days / (winning_days + losing_days) * 100, 1) if (winning_days + losing_days) > 0 else 0
+        },
+        'mode': mode,
+        'days': days
+    }
+
+# ============ TRADES HISTORY ENDPOINTS ============
+
+@app.get("/api/trades")
+async def get_trades_history(
+    mode: Optional[str] = None,
+    symbol: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get paginated trade history"""
+    user_id = current_user['user_id']
+    
+    trades, total = await db.get_trades_paginated(
+        user_id, 
+        mode=mode, 
+        symbol=symbol,
+        limit=min(limit, 500),  # Cap at 500
+        offset=offset
+    )
+    
+    return {
+        'trades': trades,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+        'has_more': offset + len(trades) < total
+    }
+
+@app.get("/api/trades/symbols")
+async def get_traded_symbols(current_user: dict = Depends(get_current_user)):
+    """Get list of all symbols the user has traded"""
+    user_id = current_user['user_id']
+    
+    # Get distinct symbols from trades
+    symbols = await db.trades.distinct('symbol', {'user_id': user_id})
+    
+    return {'symbols': sorted(symbols)}
+
 @app.get("/api/market/candles")
 async def get_candles(
     symbol: str,
