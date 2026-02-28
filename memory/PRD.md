@@ -19,7 +19,7 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 ## Implementierte Features (Stand: 28. Februar 2026)
 - [x] Multi-User-System (Registrierung, Login, JWT-Auth)
 - [x] Per-User Daten-Isolation
-- [x] Paper-Trading-Modus
+- [x] Paper-Trading-Modus mit Live-Marktdaten (Simulated Live)
 - [x] Live-Trading-Modus
 - [x] Verschlüsselte MEXC API-Key-Speicherung
 - [x] Adaptive Market Regime Detection (Bullish/Bearish/Sideways)
@@ -27,30 +27,45 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] EMA Crossover + RSI Strategie
 - [x] Rate Limiting für Login und Live-Mode Endpoints
 - [x] Audit Logging
-- [x] **NEU:** Live Balance von MEXC API (`GET /api/account/balance`)
-- [x] **NEU:** Balance Source Indicator (Paper/Live + Timestamp)
-- [x] **NEU:** Fehlerbehandlung bei MEXC API Fehlern im UI
+- [x] Live Balance von MEXC API (`GET /api/account/balance`)
+- [x] Balance Source Indicator (Paper/Live + Timestamp)
+- [x] Fehlerbehandlung bei MEXC API Fehlern im UI
+- [x] **NEU:** Trading Budget Limits (pro User)
+- [x] **NEU:** Paper Start Balance konfigurierbar
+- [x] **NEU:** Max Order Notional Limit
+- [x] **NEU:** Fees & Slippage Simulation für Paper Trades
+- [x] **NEU:** Budget-Anzeige im Dashboard (Budget/Used/Available)
+
+## Neue Features (28. Februar 2026)
+
+### 1. Paper "Simulated Live" (Forward Test)
+- Paper-Mode nutzt echte MEXC 15m Candles und Last Price
+- Trades werden mit Fees (bps) und Slippage (bps) simuliert
+- Equity/PnL wird realistisch berechnet
+- Alle Trades in `trades` Collection gespeichert
+
+### 2. Trading Budget Limits
+**Neue Settings (pro User, UI editierbar):**
+- `trading_budget_usdt`: Max Exposure für Live Mode (default: 500)
+- `paper_start_balance_usdt`: Startkapital für Paper Mode (default: 500)
+- `max_order_notional_usdt`: Max Größe pro Trade (default: 50)
+
+**Live Mode Regeln:**
+- `effective_balance = min(usdt_free, trading_budget - used_budget)`
+- Keine Position wenn `effective_balance < min_notional_usdt`
+- Hard Stop: Nie mehr als `trading_budget_usdt` gesamtes Exposure
+
+**Paper Mode Regeln:**
+- Startet bei `paper_start_balance_usdt`
+- Kein Exposure über `paper_start_balance_usdt`
+
+**Dashboard Anzeige:**
+- Budget (Total)
+- Used Budget (in Positionen)
+- Available Budget (für neue Trades)
 
 ## Bug Fixes (28. Februar 2026)
 - [x] **P0:** 500 Internal Server Error beim Live-Modus-Wechsel behoben
-  - Ursache: `slowapi` Parameter-Naming-Konflikt (`req: Request` vs `request: LiveConfirmRequest`)
-  - Fix: Parameter umbenannt zu `request: Request` und `body: LiveConfirmRequest`
-
-## Neue Features (28. Februar 2026)
-- [x] **Live Balance Endpoint** (`GET /api/account/balance`)
-  - Im Paper-Modus: Zeigt Paper Account aus DB
-  - Im Live-Modus: Ruft echte Balance von MEXC Spot API ab
-  - Bei Fehler: HTTP 502 mit klarer Fehlermeldung
-- [x] **Balance Source Indicator**
-  - Zeigt "Paper (DB)" oder "MEXC Live" mit entsprechendem Icon
-  - Last Updated Timestamp
-  - Refresh-Button zum manuellen Aktualisieren
-- [x] **Error State im Live-Modus**
-  - Roter Alert-Banner bei MEXC API Fehler
-  - Retry-Button
-  - Werte zeigen "---" statt Paper-Fallback
-- [x] **MEXC Spot Balances Tabelle**
-  - Zeigt alle Non-Zero Balances im Live-Modus
 
 ## Offene Aufgaben
 
@@ -81,4 +96,4 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - `POST /api/bot/live/confirm` - Live-Modus bestätigen (Rate Limited: 3/min)
 - `POST /api/keys/mexc` - MEXC API-Keys setzen
 - `GET /api/keys/mexc/status` - Key-Status prüfen
-- `GET /api/account/balance` - **NEU:** Balance abrufen (Paper oder Live)
+- `GET /api/account/balance` - Balance + Budget Info abrufen
