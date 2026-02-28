@@ -224,6 +224,110 @@ class Database:
         
         return [Trade(**trade) for trade in reversed(trades)]
     
+    async def get_trades_paginated(
+        self, 
+        user_id: str, 
+        mode: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 200, 
+        offset: int = 0
+    ) -> tuple[List[dict], int]:
+        """Get trades with pagination and filters. Returns (trades, total_count)"""
+        query = {'user_id': user_id}
+        
+        if mode:
+            query['mode'] = mode
+        if symbol:
+            query['symbol'] = symbol
+        
+        # Get total count
+        total = await self.trades.count_documents(query)
+        
+        # Get paginated results
+        cursor = self.trades.find(query).sort('ts', -1).skip(offset).limit(limit)
+        trades = await cursor.to_list(length=limit)
+        
+        result = []
+        for trade in trades:
+            trade.pop('_id', None)
+            if isinstance(trade['ts'], str):
+                trade['ts'] = datetime.fromisoformat(trade['ts']).isoformat()
+            result.append(trade)
+        
+        return result, total
+    
+    async def get_daily_pnl(
+        self, 
+        user_id: str, 
+        mode: Optional[str] = None,
+        days: int = 30
+    ) -> List[dict]:
+        """Aggregate PnL by day for the last N days"""
+        # Calculate date range
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=days - 1)
+        
+        # Build query
+        query = {
+            'user_id': user_id,
+            'exit': {'$exists': True, '$ne': None}  # Only closed trades
+        }
+        if mode:
+            query['mode'] = mode
+        
+        # Get all relevant trades
+        cursor = self.trades.find(query)
+        trades = await cursor.to_list(length=10000)
+        
+        # Aggregate by date
+        daily_pnl = {}
+        for trade in trades:
+            ts = trade.get('ts')
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts)
+            
+            trade_date = ts.date()
+            
+            # Only include trades in the date range
+            if start_date <= trade_date <= end_date:
+                date_str = trade_date.isoformat()
+                pnl = trade.get('pnl', 0) or 0
+                
+                if date_str not in daily_pnl:
+                    daily_pnl[date_str] = {
+                        'date': date_str,
+                        'pnl': 0,
+                        'trades_count': 0,
+                        'wins': 0,
+                        'losses': 0
+                    }
+                
+                daily_pnl[date_str]['pnl'] += pnl
+                daily_pnl[date_str]['trades_count'] += 1
+                if pnl > 0:
+                    daily_pnl[date_str]['wins'] += 1
+                elif pnl < 0:
+                    daily_pnl[date_str]['losses'] += 1
+        
+        # Fill in missing dates with 0
+        result = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.isoformat()
+            if date_str in daily_pnl:
+                result.append(daily_pnl[date_str])
+            else:
+                result.append({
+                    'date': date_str,
+                    'pnl': 0,
+                    'trades_count': 0,
+                    'wins': 0,
+                    'losses': 0
+                })
+            current_date += timedelta(days=1)
+        
+        return result
+    
     # ========== METRICS OPERATIONS ==========
     
     async def update_daily_metrics(self, user_id: str, date: str, pnl: float, drawdown: float, trades_count: int):
