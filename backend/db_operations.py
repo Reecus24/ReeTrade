@@ -243,3 +243,36 @@ class Database:
     
     def close(self):
         self.client.close()
+    
+    # ========== AUDIT LOG OPERATIONS ==========
+    
+    async def audit_log(self, user_id: str, action: str, details: Optional[dict] = None, ip_address: Optional[str] = None):
+        from models import AuditLogEntry
+        entry = AuditLogEntry(
+            user_id=user_id,
+            ts=datetime.now(timezone.utc),
+            action=action,
+            details=details,
+            ip_address=ip_address
+        )
+        doc = entry.model_dump()
+        doc['ts'] = doc['ts'].isoformat()
+        await self.audit_logs.insert_one(doc)
+        logger.info(f"[Audit] User {user_id[:8]} - {action}")
+    
+    async def get_audit_logs(self, user_id: Optional[str] = None, action: Optional[str] = None, limit: int = 100) -> List[dict]:
+        query = {}
+        if user_id:
+            query['user_id'] = user_id
+        if action:
+            query['action'] = action
+        
+        cursor = self.audit_logs.find(query).sort('ts', -1).limit(limit)
+        logs = await cursor.to_list(length=limit)
+        
+        for log in logs:
+            if isinstance(log['ts'], str):
+                log['ts'] = datetime.fromisoformat(log['ts'])
+            log.pop('_id', None)
+        
+        return logs
