@@ -20,15 +20,18 @@ class MexcClient:
         self.timeout = httpx.Timeout(10.0, read=30.0)
     
     def _generate_signature(self, params: Dict[str, Any]) -> str:
-        """Generate HMAC-SHA256 signature for private endpoints"""
+        """Generate HMAC-SHA256 signature for private endpoints
+        
+        MEXC requires the signature to be calculated from the query string
+        in the SAME ORDER as the parameters will be sent.
+        """
         if not self.api_secret:
             raise ValueError("MEXC_API_SECRET not configured")
         
-        # Sort parameters alphabetically
-        sorted_params = sorted(params.items())
-        query_string = "&".join([f"{k}={v}" for k, v in sorted_params])
+        # Build query string in the order parameters were added (NOT sorted)
+        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
         
-        # Create signature
+        # Create signature (lowercase hexdigest)
         signature = hmac.new(
             self.api_secret.encode('utf-8'),
             query_string.encode('utf-8'),
