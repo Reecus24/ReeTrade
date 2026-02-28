@@ -172,7 +172,8 @@ async def request_live_mode(current_user: dict = Depends(get_current_user)):
     return {"message": "Live mode requested. Please confirm."}
 
 @app.post("/api/bot/live/confirm")
-async def confirm_live_mode(request: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("3/minute")
+async def confirm_live_mode(req: Request, request: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
     """Confirm live trading mode with password verification"""
     user_id = current_user['user_id']
     
@@ -194,7 +195,14 @@ async def confirm_live_mode(request: LiveConfirmRequest, current_user: dict = De
         'live_confirmed': True,
         'live_requested': False
     })
-    await db.log(user_id, "WARNING", "LIVE MODE ENABLED - Real trading active!")
+    await db.log(user_id, "WARNING", "LIVE MODE ENABLED - Real trading active!")    
+    # Audit log
+    await db.audit_log(
+        user_id=user_id,
+        action="LIVE_MODE_ENABLE",
+        details={'mode': 'live', 'live_confirmed': True},
+        ip_address=req.client.host if req.client else None
+    )
     return {"message": "Live mode confirmed", "mode": "live"}
 
 @app.post("/api/bot/live/disable")
@@ -254,7 +262,13 @@ async def update_settings(updates: SettingsUpdate, current_user: dict = Depends(
     if not updates_dict:
         raise HTTPException(status_code=400, detail="No updates provided")
     
-    await db.update_settings(user_id, updates_dict)
+    await db.update_settings(user_id, updates_dict)    
+    # Audit log
+    await db.audit_log(
+        user_id=user_id,
+        action="SETTINGS_UPDATE",
+        details=updates_dict
+    )
     await db.log(user_id, "INFO", "Settings updated", updates_dict)
     
     # Get updated settings
@@ -271,7 +285,13 @@ async def set_mexc_keys(keys: MexcKeysInput, current_user: dict = Depends(get_cu
     if not keys.api_key or not keys.api_secret:
         raise HTTPException(status_code=400, detail="Both API key and secret required")
     
-    await db.set_mexc_keys(user_id, keys.api_key, keys.api_secret)
+    await db.set_mexc_keys(user_id, keys.api_key, keys.api_secret)    
+    # Audit log
+    await db.audit_log(
+        user_id=user_id,
+        action="KEYS_UPDATE",
+        details={'keys_configured': True}
+    )
     await db.log(user_id, "INFO", "MEXC API keys updated")
     
     return {"message": "MEXC keys saved securely", "connected": True}
