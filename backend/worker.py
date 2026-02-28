@@ -1296,11 +1296,13 @@ Fee: {entry_fee:.4f} USDT
         
         self.running = True
         logger.info("Multi-user trading worker started")
+        logger.info("Exit checks every 30 seconds | Signal scans every 5 minutes")
         
-        # Start both tasks
+        # Start all tasks
         await asyncio.gather(
             self.heartbeat(),
-            self.trading_loop()
+            self.trading_loop(),
+            self.exit_check_loop()  # Fast exit monitoring
         )
     
     async def stop(self):
