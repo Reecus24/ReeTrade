@@ -34,38 +34,44 @@ class UserSettings(BaseModel):
     live_requested: bool = False
     live_confirmed: bool = False
     
-    # Legacy field for backwards compatibility (will be removed)
+    # Legacy field for backwards compatibility
     mode: Literal["paper", "live"] = "paper"
     bot_running: bool = False
     
-    # Strategy parameters
+    # ========== SHARED STRATEGY PARAMETERS ==========
     ema_fast: int = 50
     ema_slow: int = 200
     rsi_period: int = 14
     rsi_min: int = 50
     rsi_overbought: int = 75
     
-    # Risk parameters
+    # ========== SHARED RISK PARAMETERS ==========
     risk_per_trade: float = 0.01  # 1%
     max_positions: int = 3
     max_daily_loss: float = 0.03  # 3%
     take_profit_rr: float = 2.0  # Risk:Reward
     atr_stop: bool = False
     atr_mult: float = 1.5
-    cooldown_candles: int = 3  # Wait N candles after trade
+    cooldown_candles: int = 3
+    min_notional_usdt: float = 10.0
     
-    # Fees
-    fee_bps: int = 10  # 0.1%
-    slippage_bps: int = 5  # 0.05%
+    # ========== PAPER MODE SETTINGS ==========
+    paper_start_balance_usdt: float = 500.0
+    paper_daily_cap_usdt: float = 200.0  # Daily trading limit
+    paper_max_order_usdt: float = 50.0  # Max order size
+    paper_fee_bps: int = 10  # 0.1%
+    paper_slippage_bps: int = 5  # 0.05%
     
-    # Order Sizing
-    min_notional_usdt: float = 10.0  # Minimum position size in USDT
+    # ========== LIVE MODE SETTINGS ==========
+    reserve_usdt: float = 0.0  # Safety reserve
+    trading_budget_usdt: float = 500.0  # Max total exposure
+    live_daily_cap_usdt: float = 200.0  # Daily trading limit
+    live_max_order_usdt: float = 50.0  # Max order size
     
-    # Budget & Reserve System
-    reserve_usdt: float = 0.0  # Safety reserve - bot won't touch this amount
-    trading_budget_usdt: float = 500.0  # Max total exposure allowed (absolute cap)
-    paper_start_balance_usdt: float = 500.0  # Paper mode starting balance
-    max_order_notional_usdt: Optional[float] = 50.0  # Max single order size
+    # Legacy (for backwards compat)
+    fee_bps: int = 10
+    slippage_bps: int = 5
+    max_order_notional_usdt: Optional[float] = 50.0
     
     # Market data
     top_pairs: List[str] = Field(default_factory=list)
@@ -74,14 +80,14 @@ class UserSettings(BaseModel):
     live_heartbeat: Optional[datetime] = None
 
 class SettingsUpdate(BaseModel):
-    # Strategy
+    # Strategy (shared)
     ema_fast: Optional[int] = None
     ema_slow: Optional[int] = None
     rsi_period: Optional[int] = None
     rsi_min: Optional[int] = None
     rsi_overbought: Optional[int] = None
     
-    # Risk
+    # Risk (shared)
     risk_per_trade: Optional[float] = None
     max_positions: Optional[int] = None
     max_daily_loss: Optional[float] = None
@@ -89,18 +95,24 @@ class SettingsUpdate(BaseModel):
     atr_stop: Optional[bool] = None
     atr_mult: Optional[float] = None
     cooldown_candles: Optional[int] = None
-    
-    # Fees
-    fee_bps: Optional[int] = None
-    slippage_bps: Optional[int] = None
-    
-    # Order Sizing
     min_notional_usdt: Optional[float] = None
     
-    # Budget & Reserve System
+    # Paper Settings
+    paper_start_balance_usdt: Optional[float] = None
+    paper_daily_cap_usdt: Optional[float] = None
+    paper_max_order_usdt: Optional[float] = None
+    paper_fee_bps: Optional[int] = None
+    paper_slippage_bps: Optional[int] = None
+    
+    # Live Settings
     reserve_usdt: Optional[float] = None
     trading_budget_usdt: Optional[float] = None
-    paper_start_balance_usdt: Optional[float] = None
+    live_daily_cap_usdt: Optional[float] = None
+    live_max_order_usdt: Optional[float] = None
+    
+    # Legacy
+    fee_bps: Optional[int] = None
+    slippage_bps: Optional[int] = None
     max_order_notional_usdt: Optional[float] = None
 
 # ============ KEYS MODELS ============
