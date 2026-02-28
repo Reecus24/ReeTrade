@@ -36,9 +36,13 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] Fees & Slippage Simulation für Paper Trades
 - [x] Budget-Anzeige im Dashboard (Budget/Used/Available)
 - [x] Reserve-System für Wallet-Schutz
-- [x] **NEU:** Daily PnL Chart (Balkendiagramm, 7/30/90 Tage)
-- [x] **NEU:** Trade History Tab mit Pagination und Filtern
-- [x] **NEU:** Trade Detail Drawer bei Klick auf Trade
+- [x] Daily PnL Chart (Balkendiagramm, 7/30/90 Tage)
+- [x] Trade History Tab mit Pagination und Filtern
+- [x] Trade Detail Drawer bei Klick auf Trade
+- [x] **NEU:** Strikte Trennung Paper/Live Modi
+- [x] **NEU:** Getrennte Running-States (paper_running, live_running)
+- [x] **NEU:** Separate Endpoints (/api/paper/*, /api/live/*)
+- [x] **NEU:** Zwei-Tab UI (PAPER gelb, LIVE rot)
 
 ## Neue Features (28. Februar 2026)
 
