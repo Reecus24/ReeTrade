@@ -27,10 +27,16 @@ class User(BaseModel):
 
 class UserSettings(BaseModel):
     user_id: str
-    mode: Literal["paper", "live"] = "paper"
-    bot_running: bool = False
+    
+    # SEPARATE RUNNING STATES
+    paper_running: bool = False
+    live_running: bool = False
     live_requested: bool = False
     live_confirmed: bool = False
+    
+    # Legacy field for backwards compatibility (will be removed)
+    mode: Literal["paper", "live"] = "paper"
+    bot_running: bool = False
     
     # Strategy parameters
     ema_fast: int = 50
@@ -55,7 +61,7 @@ class UserSettings(BaseModel):
     # Order Sizing
     min_notional_usdt: float = 10.0  # Minimum position size in USDT
     
-    # Budget & Reserve System (NEW)
+    # Budget & Reserve System
     reserve_usdt: float = 0.0  # Safety reserve - bot won't touch this amount
     trading_budget_usdt: float = 500.0  # Max total exposure allowed (absolute cap)
     paper_start_balance_usdt: float = 500.0  # Paper mode starting balance
@@ -64,7 +70,8 @@ class UserSettings(BaseModel):
     # Market data
     top_pairs: List[str] = Field(default_factory=list)
     last_pairs_refresh: Optional[datetime] = None
-    last_heartbeat: Optional[datetime] = None
+    paper_heartbeat: Optional[datetime] = None
+    live_heartbeat: Optional[datetime] = None
 
 class SettingsUpdate(BaseModel):
     # Strategy
