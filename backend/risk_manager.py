@@ -1,6 +1,6 @@
 from typing import Optional, Tuple
 import logging
-from models import BotSettings, PaperAccount, Position
+from models import UserSettings, PaperAccount, Position
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
