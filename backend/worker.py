@@ -72,6 +72,17 @@ class MultiUserTradingWorker:
         if not settings.bot_running:
             return
         
+        # Load exchange info once
+        if not self.exchange_info_loaded:
+            try:
+                mexc = MexcClient()
+                exchange_info = await mexc.get_exchange_info()
+                order_sizer.update_symbol_filters(exchange_info)
+                self.exchange_info_loaded = True
+                logger.info("Exchange info loaded for order sizing")
+            except Exception as e:
+                logger.error(f"Failed to load exchange info: {e}")
+        
         await self.db.log(user_id, "INFO", "Starting trading cycle")
         
         # Refresh top pairs every 4 hours (momentum rotation)
