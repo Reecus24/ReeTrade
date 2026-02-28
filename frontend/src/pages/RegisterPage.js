@@ -7,9 +7,10 @@ import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-const LoginPage = ({ onLogin, onSwitchToRegister }) => {
+const RegisterPage = ({ onRegister, onSwitchToLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -17,7 +18,7 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${BACKEND_URL}/api/auth/login`, {
+      const response = await axios.post(`${BACKEND_URL}/api/auth/register`, {
         email,
         password
       });
@@ -25,11 +26,12 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
       if (response.data.token) {
         localStorage.setItem('auth_token', response.data.token);
         localStorage.setItem('user_email', email);
-        toast.success('Login erfolgreich');
-        onLogin();
+        localStorage.setItem('user_name', name || email.split('@')[0]);
+        toast.success('Registrierung erfolgreich!');
+        onRegister();
       }
     } catch (error) {
-      toast.error('Falsches Email oder Passwort');
+      toast.error(error.response?.data?.detail || 'Registrierung fehlgeschlagen');
     } finally {
       setLoading(false);
     }
@@ -43,10 +45,25 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
             <Lock className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">ReeTrade Terminal</h1>
-          <p className="text-zinc-500 text-sm">Zugang für registrierte Nutzer</p>
+          <p className="text-zinc-500 text-sm">Neues Konto erstellen</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-zinc-400 mb-2">
+              Name
+            </label>
+            <Input
+              id="name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Dein Name"
+              className="w-full bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+              data-testid="register-name-input"
+            />
+          </div>
+
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-zinc-400 mb-2">
               Email
@@ -58,7 +75,7 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="deine@email.com"
               className="w-full bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
-              data-testid="login-email-input"
+              data-testid="register-email-input"
               required
             />
           </div>
@@ -72,9 +89,9 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Dein Passwort"
+              placeholder="Mindestens 6 Zeichen"
               className="w-full bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
-              data-testid="login-password-input"
+              data-testid="register-password-input"
               required
             />
           </div>
@@ -83,19 +100,19 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
             type="submit"
             className="w-full bg-white text-black hover:bg-gray-200 font-medium"
             disabled={loading}
-            data-testid="login-submit-button"
+            data-testid="register-submit-button"
           >
-            {loading ? 'Anmeldung...' : 'Anmelden'}
+            {loading ? 'Registrierung...' : 'Konto erstellen'}
           </Button>
         </form>
 
         <div className="mt-6 text-center">
           <button
-            onClick={onSwitchToRegister}
+            onClick={onSwitchToLogin}
             className="text-sm text-zinc-400 hover:text-white transition-colors"
-            data-testid="switch-to-register-button"
+            data-testid="switch-to-login-button"
           >
-            Noch kein Konto? Jetzt registrieren
+            Bereits registriert? Zum Login
           </button>
         </div>
 
@@ -107,4 +124,4 @@ const LoginPage = ({ onLogin, onSwitchToRegister }) => {
   );
 };
 
-export default LoginPage;
+export default RegisterPage;
