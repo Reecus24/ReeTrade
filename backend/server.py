@@ -146,25 +146,76 @@ async def login(request: Request, data: UserLogin):
         user={'email': user['email'], 'user_id': user['_id']}
     )
 
-# ============ BOT CONTROL ENDPOINTS ============
+# ============ BOT CONTROL ENDPOINTS (SEPARATED) ============
 
-@app.post("/api/bot/start")
-async def start_bot(current_user: dict = Depends(get_current_user)):
-    """Start the trading bot for current user"""
+# ----- PAPER MODE -----
+
+@app.post("/api/paper/start")
+async def start_paper_bot(current_user: dict = Depends(get_current_user)):
+    """Start the PAPER trading bot"""
     user_id = current_user['user_id']
-    await db.update_settings(user_id, {'bot_running': True})
-    await db.log(user_id, "INFO", "Bot started by user")
-    return {"message": "Bot started", "status": "running"}
+    await db.update_settings(user_id, {'paper_running': True})
+    await db.log(user_id, "INFO", "[PAPER] Bot started")
+    return {"message": "Paper bot started", "mode": "paper", "running": True}
 
-@app.post("/api/bot/stop")
-async def stop_bot(current_user: dict = Depends(get_current_user)):
-    """Stop the trading bot for current user"""
+@app.post("/api/paper/stop")
+async def stop_paper_bot(current_user: dict = Depends(get_current_user)):
+    """Stop the PAPER trading bot"""
     user_id = current_user['user_id']
-    await db.update_settings(user_id, {'bot_running': False})
-    await db.log(user_id, "INFO", "Bot stopped by user")
-    return {"message": "Bot stopped", "status": "stopped"}
+    await db.update_settings(user_id, {'paper_running': False})
+    await db.log(user_id, "INFO", "[PAPER] Bot stopped")
+    return {"message": "Paper bot stopped", "mode": "paper", "running": False}
 
-@app.post("/api/bot/live/request")
+# ----- LIVE MODE -----
+
+@app.post("/api/live/start")
+async def start_live_bot(current_user: dict = Depends(get_current_user)):
+    """Start the LIVE trading bot (requires confirmation + keys)"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    # Check if live is confirmed
+    if not settings.live_confirmed:
+        raise HTTPException(
+            status_code=400,
+            detail="Live mode not confirmed. Please confirm live mode first."
+        )
+    
+    # Check if API keys are configured
+    has_keys = await db.has_mexc_keys(user_id)
+    if not has_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="MEXC API keys not configured."
+        )
+    
+    await db.update_settings(user_id, {'live_running': True})
+    await db.log(user_id, "WARNING", "[LIVE] Bot started - REAL TRADING ACTIVE!")
+    
+    await db.audit_log(
+        user_id=user_id,
+        action="LIVE_BOT_START",
+        details={'live_running': True}
+    )
+    
+    return {"message": "Live bot started", "mode": "live", "running": True}
+
+@app.post("/api/live/stop")
+async def stop_live_bot(current_user: dict = Depends(get_current_user)):
+    """Stop the LIVE trading bot"""
+    user_id = current_user['user_id']
+    await db.update_settings(user_id, {'live_running': False})
+    await db.log(user_id, "INFO", "[LIVE] Bot stopped")
+    
+    await db.audit_log(
+        user_id=user_id,
+        action="LIVE_BOT_STOP",
+        details={'live_running': False}
+    )
+    
+    return {"message": "Live bot stopped", "mode": "live", "running": False}
+
+@app.post("/api/live/request")
 async def request_live_mode(current_user: dict = Depends(get_current_user)):
     """Request to enable live trading"""
     user_id = current_user['user_id']
@@ -172,7 +223,7 @@ async def request_live_mode(current_user: dict = Depends(get_current_user)):
     await db.log(user_id, "WARNING", "Live mode requested - awaiting confirmation")
     return {"message": "Live mode requested. Please confirm."}
 
-@app.post("/api/bot/live/confirm")
+@app.post("/api/live/confirm")
 @limiter.limit("3/minute")
 async def confirm_live_mode(request: Request, body: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
     """Confirm live trading mode with password verification"""
@@ -192,31 +243,55 @@ async def confirm_live_mode(request: Request, body: LiveConfirmRequest, current_
         )
     
     await db.update_settings(user_id, {
-        'mode': 'live',
         'live_confirmed': True,
         'live_requested': False
     })
-    await db.log(user_id, "WARNING", "LIVE MODE ENABLED - Real trading active!")    
-    # Audit log
+    await db.log(user_id, "WARNING", "LIVE MODE CONFIRMED - Ready to start live trading!")
+    
     await db.audit_log(
         user_id=user_id,
-        action="LIVE_MODE_ENABLE",
-        details={'mode': 'live', 'live_confirmed': True},
+        action="LIVE_MODE_CONFIRM",
+        details={'live_confirmed': True},
         ip_address=request.client.host if request.client else None
     )
-    return {"message": "Live mode confirmed", "mode": "live"}
+    return {"message": "Live mode confirmed. You can now start the live bot.", "confirmed": True}
 
-@app.post("/api/bot/live/disable")
-async def disable_live_mode(current_user: dict = Depends(get_current_user)):
-    """Disable live trading mode"""
+@app.post("/api/live/revoke")
+async def revoke_live_mode(current_user: dict = Depends(get_current_user)):
+    """Revoke live trading confirmation"""
     user_id = current_user['user_id']
     await db.update_settings(user_id, {
-        'mode': 'paper',
         'live_confirmed': False,
-        'live_requested': False
+        'live_requested': False,
+        'live_running': False
     })
-    await db.log(user_id, "INFO", "Switched back to paper mode")
-    return {"message": "Switched to paper mode", "mode": "paper"}
+    await db.log(user_id, "INFO", "Live mode revoked")
+    return {"message": "Live mode revoked", "confirmed": False}
+
+# ----- LEGACY ENDPOINTS (for backwards compatibility) -----
+
+@app.post("/api/bot/start")
+async def start_bot_legacy(current_user: dict = Depends(get_current_user)):
+    """Legacy: Start bot (defaults to paper)"""
+    return await start_paper_bot(current_user)
+
+@app.post("/api/bot/stop")
+async def stop_bot_legacy(current_user: dict = Depends(get_current_user)):
+    """Legacy: Stop bot (stops paper)"""
+    return await stop_paper_bot(current_user)
+
+@app.post("/api/bot/live/request")
+async def request_live_legacy(current_user: dict = Depends(get_current_user)):
+    return await request_live_mode(current_user)
+
+@app.post("/api/bot/live/confirm")
+@limiter.limit("3/minute")
+async def confirm_live_legacy(request: Request, body: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
+    return await confirm_live_mode(request, body, current_user)
+
+@app.post("/api/bot/live/disable")
+async def disable_live_legacy(current_user: dict = Depends(get_current_user)):
+    return await revoke_live_mode(current_user)
 
 # ============ STATUS ENDPOINTS ============
 
