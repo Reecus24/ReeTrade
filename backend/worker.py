@@ -366,14 +366,20 @@ class MultiUserTradingWorker:
         
         # Check DAILY CAP
         if daily_remaining < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Daily cap reached (${today_exposure:.2f}/${daily_cap:.2f})")
-            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Daily cap reached'})
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': f'BLOCKED: Tageslimit (${today_exposure:.0f}/${daily_cap:.0f})',
+                f'{settings.mode}_last_symbol': '-'
+            })
             return
         
         # Check max positions
         if not risk_mgr.can_open_position(account):
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Max positions reached ({len(account.open_positions)}/{settings.max_positions})")
-            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Max positions reached'})
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Max Positionen erreicht ({len(account.open_positions)}/{settings.max_positions})")
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': f'BLOCKED: Max Positionen ({len(account.open_positions)}/{settings.max_positions})',
+                f'{settings.mode}_last_symbol': '-'
+            })
             return
         
         # Look for new entries with REGIME DETECTION
