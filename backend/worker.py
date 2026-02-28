@@ -916,12 +916,55 @@ Mode: {settings.mode.upper()}
 ══════════════════"""
             await self.db.log(user_id, "INFO", trade_opened_log.strip())
             
-            # Create position with rounded qty
+            # ═══ EXECUTE REAL ORDER FOR LIVE MODE ═══
+            order_id = None
+            executed_price = entry_price
+            actual_qty = rounded_qty
+            
+            if settings.mode == 'live' and settings.live_confirmed:
+                try:
+                    await self.db.log(user_id, "INFO", f"{mode_prefix} 📤 Sende Order an MEXC: {symbol} BUY {rounded_qty}")
+                    
+                    # Place MARKET order on MEXC
+                    order_result = await mexc.place_order(
+                        symbol=symbol,
+                        side="BUY",
+                        order_type="MARKET",
+                        quantity=rounded_qty
+                    )
+                    
+                    order_id = order_result.get('orderId')
+                    executed_price = float(order_result.get('price', entry_price))
+                    actual_qty = float(order_result.get('executedQty', rounded_qty))
+                    status = order_result.get('status', 'UNKNOWN')
+                    
+                    if status not in ['FILLED', 'PARTIALLY_FILLED']:
+                        fail_reason = f"Order nicht ausgeführt: {status}"
+                        await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ {symbol} - {fail_reason}")
+                        await self.db.update_settings(user_id, {
+                            f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                            f'{settings.mode}_last_symbol': symbol
+                        })
+                        return False
+                    
+                    await self.db.log(user_id, "INFO", 
+                        f"{mode_prefix} ✅ MEXC Order erfolgreich! ID: {order_id}, Status: {status}, Preis: {executed_price}")
+                    
+                except Exception as order_error:
+                    fail_reason = f"MEXC Order Fehler: {str(order_error)}"
+                    await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ {symbol} - {fail_reason}")
+                    await self.db.update_settings(user_id, {
+                        f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                        f'{settings.mode}_last_symbol': symbol
+                    })
+                    return False
+            
+            # Create position with actual executed values
             position = Position(
                 symbol=symbol,
                 side="LONG",
-                entry_price=entry_price,
-                qty=rounded_qty,
+                entry_price=executed_price,
+                qty=actual_qty,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 entry_time=datetime.now(timezone.utc)
