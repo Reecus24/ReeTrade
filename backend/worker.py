@@ -332,6 +332,98 @@ class MultiUserTradingWorker:
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
     
+    async def open_position_with_regime(
+        self,
+        user_id: str,
+        symbol: str,
+        klines: list,
+        account: PaperAccount,
+        settings: UserSettings,
+        strategy: TradingStrategy,
+        risk_mgr: RiskManager,
+        context: dict,
+        mexc: MexcClient,
+        regime: str,
+        stop_loss: float,
+        take_profit: float
+    ):
+        try:
+            current_price = float(klines[-1][4])
+            
+            # Calculate position size with adjusted risk (0.5% for bullish)
+            qty, reason = risk_mgr.calculate_position_size(account, current_price, stop_loss)
+            
+            if qty == 0:
+                await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
+                return
+            
+            # Apply fees and slippage
+            entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
+            
+            # Create position
+            position = Position(
+                symbol=symbol,
+                side="LONG",
+                entry_price=entry_price,
+                qty=qty,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                entry_time=datetime.now(timezone.utc)
+            )
+            
+            # Update account
+            position_value = qty * entry_price
+            account.cash -= position_value
+            account.open_positions.append(position)
+            
+            # Log trade
+            trade = Trade(
+                user_id=user_id,
+                ts=datetime.now(timezone.utc),
+                symbol=symbol,
+                side="BUY",
+                qty=qty,
+                entry=entry_price,
+                mode=settings.mode,
+                reason=f"Regime: {regime}, EMA crossover, RSI={context.get('rsi', 0)}"
+            )
+            await self.db.add_trade(trade)
+            
+            # AUDIT LOG for trade execution
+            await self.db.audit_log(
+                user_id=user_id,
+                action="TRADE_EXECUTED",
+                details={
+                    'symbol': symbol,
+                    'side': 'BUY',
+                    'qty': round(qty, 4),
+                    'entry_price': round(entry_price, 4),
+                    'stop_loss': round(stop_loss, 4),
+                    'take_profit': round(take_profit, 4),
+                    'regime': regime,
+                    'risk_pct': settings.risk_per_trade * 100,
+                    'mode': settings.mode
+                }
+            )
+            
+            await self.db.log(
+                user_id,
+                "INFO",
+                f"OPEN LONG {symbol} @ {entry_price:.4f} [Regime: {regime}]",
+                {
+                    'qty': round(qty, 4),
+                    'stop_loss': round(stop_loss, 4),
+                    'take_profit': round(take_profit, 4),
+                    'position_value': round(position_value, 2),
+                    'regime': regime,
+                    'risk_pct': settings.risk_per_trade * 100,
+                    **context
+                }
+            )
+            
+        except Exception as e:
+            await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
+    
     async def check_position_exit(
         self,
         user_id: str,
