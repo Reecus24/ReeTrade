@@ -542,7 +542,8 @@ class MultiUserTradingWorker:
                 self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
                 await self.db.update_settings(user_id, {
                     f'{settings.mode}_last_decision': f'TRADE: {symbol}',
-                    f'{settings.mode}_last_regime': regime
+                    f'{settings.mode}_last_regime': regime,
+                    f'{settings.mode}_last_symbol': symbol
                 })
                 break  # One entry per cycle
                 
