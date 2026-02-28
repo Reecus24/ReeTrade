@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 class MexcClient:
     """MEXC API Client for Public and Private endpoints"""
     
-    def __init__(self):
+    def __init__(self, api_key: str = None, api_secret: str = None):
         self.base_url = "https://api.mexc.com"
-        self.api_key = os.environ.get('MEXC_API_KEY', '')
-        self.api_secret = os.environ.get('MEXC_API_SECRET', '')
+        # Use provided keys or fall back to env vars
+        self.api_key = api_key or os.environ.get('MEXC_API_KEY', '')
+        self.api_secret = api_secret or os.environ.get('MEXC_API_SECRET', '')
         self.timeout = httpx.Timeout(10.0, read=30.0)
     
     def _generate_signature(self, params: Dict[str, Any]) -> str:
