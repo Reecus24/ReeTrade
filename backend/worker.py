@@ -557,7 +557,7 @@ class MultiUserTradingWorker:
                 settings.risk_per_trade = 0.005  # 0.5%
                 
                 # Open position with regime-adjusted parameters and budget limit
-                await self.open_position_with_budget(
+                trade_success = await self.open_position_with_budget(
                     user_id, symbol, klines_15m, account, settings,
                     strategy, risk_mgr, context, mexc, regime,
                     stop_loss, take_profit, available_budget
@@ -566,14 +566,17 @@ class MultiUserTradingWorker:
                 # Restore original risk
                 settings.risk_per_trade = original_risk
                 
-                # Update last trade time (MODE SPECIFIC) and decision
-                self.set_last_trade_time(user_id, settings.mode)
-                await self.db.update_settings(user_id, {
-                    f'{settings.mode}_last_decision': f'TRADE: {symbol}',
-                    f'{settings.mode}_last_regime': regime,
-                    f'{settings.mode}_last_symbol': symbol
-                })
-                break  # One entry per cycle
+                # Only set cooldown if trade was SUCCESSFUL
+                if trade_success:
+                    self.set_last_trade_time(user_id, settings.mode)
+                    await self.db.update_settings(user_id, {
+                        f'{settings.mode}_last_decision': f'TRADE: {symbol}',
+                        f'{settings.mode}_last_regime': regime,
+                        f'{settings.mode}_last_symbol': symbol
+                    })
+                    trade_opened = True
+                    break  # One entry per cycle
+                # If trade failed, continue to next symbol (no break, no cooldown)
                 
             except Exception as e:
                 await self.db.log(user_id, "ERROR", f"{mode_prefix} Error scanning {symbol}: {str(e)}")
