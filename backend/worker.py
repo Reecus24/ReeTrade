@@ -409,15 +409,44 @@ class MultiUserTradingWorker:
                 await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
                 return
             
+            # Round quantity to exchange stepSize
+            rounded_qty = order_sizer.round_quantity(symbol, qty)
+            
+            if rounded_qty == 0:
+                await self.db.log(user_id, "WARNING", f"{symbol} qty {qty:.6f} below exchange minimum after rounding")
+                return
+            
+            # Validate notional value
+            valid, notional_reason = order_sizer.validate_notional(
+                symbol, 
+                rounded_qty, 
+                current_price, 
+                user_min_notional=settings.min_notional_usdt
+            )
+            
+            if not valid:
+                await self.db.log(
+                    user_id, 
+                    "INFO", 
+                    f"{symbol} skipped - {notional_reason}",
+                    {
+                        'qty': round(rounded_qty, 6),
+                        'price': round(current_price, 4),
+                        'notional': round(rounded_qty * current_price, 2),
+                        'min_notional': settings.min_notional_usdt
+                    }
+                )
+                return
+            
             # Apply fees and slippage
             entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
             
-            # Create position
+            # Create position with rounded qty
             position = Position(
                 symbol=symbol,
                 side="LONG",
                 entry_price=entry_price,
-                qty=qty,
+                qty=rounded_qty,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 entry_time=datetime.now(timezone.utc)
