@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Request
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from typing import Optional
 import os
 import logging
 import asyncio
