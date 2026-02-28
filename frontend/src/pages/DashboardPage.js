@@ -97,6 +97,13 @@ const DashboardPage = ({ onLogout }) => {
     return () => clearInterval(interval);
   }, [fetchStatus, fetchLogs]);
 
+  // Fetch paper balance on paper tab
+  useEffect(() => {
+    if (activeMainTab === 'paper') {
+      fetchPaperBalance();
+    }
+  }, [activeMainTab, fetchPaperBalance]);
+
   // Fetch live balance when tab changes or live is confirmed
   useEffect(() => {
     if (activeMainTab === 'live' && status?.settings?.live_confirmed) {
