@@ -72,14 +72,14 @@ class MultiUserTradingWorker:
         
         await self.db.log(user_id, "INFO", "Starting trading cycle")
         
-        # Refresh top pairs daily
+        # Refresh top pairs every 4 hours (momentum rotation)
         should_refresh = True
         if settings.last_pairs_refresh:
             # Make datetime timezone-aware if it isn't
             last_refresh = settings.last_pairs_refresh
             if last_refresh.tzinfo is None:
                 last_refresh = last_refresh.replace(tzinfo=timezone.utc)
-            should_refresh = (datetime.now(timezone.utc) - last_refresh) > timedelta(hours=24)
+            should_refresh = (datetime.now(timezone.utc) - last_refresh) > timedelta(hours=4)
         
         if should_refresh:
             await self.refresh_top_pairs(user_id)
