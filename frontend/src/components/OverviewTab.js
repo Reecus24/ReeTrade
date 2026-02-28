@@ -251,20 +251,26 @@ const OverviewTab = ({ status, onRefresh }) => {
       {/* Balance Source Indicator */}
       <div className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg" data-testid="balance-source-indicator">
         <div className="flex items-center gap-3">
-          {balanceData?.source === 'live' ? (
+          {hasLiveError ? (
+            <WifiOff className="w-4 h-4 text-red-500" />
+          ) : balanceData?.source === 'live' ? (
             <Wifi className="w-4 h-4 text-green-500" />
           ) : (
             <Database className="w-4 h-4 text-yellow-500" />
           )}
           <span className="text-sm text-zinc-400">
             Balance Source: 
-            <span className={`ml-2 font-medium ${balanceData?.source === 'live' ? 'text-green-500' : 'text-yellow-500'}`}>
-              {balanceData?.source_label || (settings.mode === 'live' ? 'Loading...' : 'Paper (DB)')}
+            <span className={`ml-2 font-medium ${
+              hasLiveError ? 'text-red-500' :
+              balanceData?.source === 'live' ? 'text-green-500' : 'text-yellow-500'
+            }`}>
+              {hasLiveError ? 'MEXC Fehler' :
+               balanceData?.source_label || (settings.mode === 'live' ? 'Loading...' : 'Paper (DB)')}
             </span>
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {balanceData?.last_updated && (
+          {balanceData?.last_updated && !hasLiveError && (
             <span className="text-xs text-zinc-500 font-mono">
               Updated: {format(new Date(balanceData.last_updated), 'HH:mm:ss')}
             </span>
