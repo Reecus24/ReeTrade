@@ -362,6 +362,9 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               )}
 
+              {/* Paper Bot Status Panel */}
+              <BotStatusPanel settings={settings} mode="paper" balance={paperBalance} />
+
               {/* Paper Sub-Tabs */}
               <Tabs defaultValue="trades" className="w-full">
                 <TabsList className="bg-zinc-950 border border-zinc-800">
