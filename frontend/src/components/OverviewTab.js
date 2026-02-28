@@ -125,11 +125,42 @@ const OverviewTab = ({ status, onRefresh }) => {
     }).format(value || 0);
   };
 
-  const daily_pnl = paper_account ? (paper_account.equity - 10000) : 0;
-  const daily_pnl_pct = (daily_pnl / 10000) * 100;
+  // Use balance data if available, otherwise fallback to paper_account
+  const displayEquity = balanceData?.equity ?? paper_account?.equity ?? 10000;
+  const displayCash = balanceData?.cash ?? paper_account?.cash ?? 10000;
+  const startingEquity = settings.mode === 'live' ? displayEquity : 10000;
+  const daily_pnl = displayEquity - startingEquity;
+  const daily_pnl_pct = startingEquity > 0 ? (daily_pnl / startingEquity) * 100 : 0;
+
+  // Determine open positions based on source
+  const openPositions = settings.mode === 'live' 
+    ? [] // Live mode doesn't track positions the same way
+    : (paper_account?.open_positions || []);
 
   return (
     <div className="space-y-6" data-testid="overview-tab">
+      {/* Balance Error Alert */}
+      {balanceError && settings.mode === 'live' && (
+        <div className="p-4 bg-red-950/50 border border-red-900 rounded-lg flex items-center justify-between" data-testid="balance-error-alert">
+          <div className="flex items-center gap-3">
+            <WifiOff className="w-5 h-5 text-red-500" />
+            <div>
+              <div className="text-red-500 font-medium">MEXC Balance Fehler</div>
+              <div className="text-red-400 text-sm">{balanceError}</div>
+            </div>
+          </div>
+          <Button
+            onClick={fetchBalance}
+            disabled={balanceLoading}
+            className="bg-red-900/30 text-red-400 border border-red-900 hover:bg-red-900/50"
+            size="sm"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${balanceLoading ? 'animate-spin' : ''}`} />
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* Status Bar */}
       <div className="flex items-center justify-between p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
         <div className="flex items-center gap-4">
@@ -209,36 +240,119 @@ const OverviewTab = ({ status, onRefresh }) => {
         </div>
       </div>
 
+      {/* Balance Source Indicator */}
+      <div className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg" data-testid="balance-source-indicator">
+        <div className="flex items-center gap-3">
+          {balanceData?.source === 'live' ? (
+            <Wifi className="w-4 h-4 text-green-500" />
+          ) : (
+            <Database className="w-4 h-4 text-yellow-500" />
+          )}
+          <span className="text-sm text-zinc-400">
+            Balance Source: 
+            <span className={`ml-2 font-medium ${balanceData?.source === 'live' ? 'text-green-500' : 'text-yellow-500'}`}>
+              {balanceData?.source_label || (settings.mode === 'live' ? 'Loading...' : 'Paper (DB)')}
+            </span>
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {balanceData?.last_updated && (
+            <span className="text-xs text-zinc-500 font-mono">
+              Updated: {format(new Date(balanceData.last_updated), 'HH:mm:ss')}
+            </span>
+          )}
+          <Button
+            onClick={fetchBalance}
+            disabled={balanceLoading}
+            variant="ghost"
+            size="sm"
+            className="text-zinc-400 hover:text-white"
+            data-testid="refresh-balance-button"
+          >
+            <RefreshCw className={`w-4 h-4 ${balanceLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </div>
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-equity">
           <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Equity</div>
-          <div className="text-2xl font-bold font-mono">{formatCurrency(paper_account?.equity || 10000)}</div>
+          <div className="text-2xl font-bold font-mono">{formatCurrency(displayEquity)}</div>
+          {balanceData?.locked > 0 && (
+            <div className="text-xs text-zinc-500 mt-1">Locked: {formatCurrency(balanceData.locked)}</div>
+          )}
         </div>
 
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-cash">
-          <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Cash</div>
-          <div className="text-2xl font-bold font-mono">{formatCurrency(paper_account?.cash || 10000)}</div>
+          <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+            {settings.mode === 'live' ? 'Available USDT' : 'Cash'}
+          </div>
+          <div className="text-2xl font-bold font-mono">{formatCurrency(displayCash)}</div>
         </div>
 
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-pnl">
-          <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">PnL</div>
-          <div className={`text-2xl font-bold font-mono ${daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {formatCurrency(daily_pnl)}
+          <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+            {settings.mode === 'live' ? 'Balance' : 'PnL'}
           </div>
-          <div className={`text-xs ${daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {daily_pnl_pct >= 0 ? '+' : ''}{daily_pnl_pct.toFixed(2)}%
-          </div>
+          {settings.mode === 'paper' ? (
+            <>
+              <div className={`text-2xl font-bold font-mono ${daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {formatCurrency(daily_pnl)}
+              </div>
+              <div className={`text-xs ${daily_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {daily_pnl_pct >= 0 ? '+' : ''}{daily_pnl_pct.toFixed(2)}%
+              </div>
+            </>
+          ) : (
+            <div className="text-2xl font-bold font-mono text-white">
+              {formatCurrency(displayEquity)}
+            </div>
+          )}
         </div>
 
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-positions">
           <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Open Positions</div>
-          <div className="text-2xl font-bold font-mono">{paper_account?.open_positions?.length || 0} / {settings.max_positions}</div>
+          <div className="text-2xl font-bold font-mono">
+            {openPositions.length} / {settings.max_positions}
+          </div>
         </div>
       </div>
 
-      {/* Open Positions */}
-      {paper_account?.open_positions && paper_account.open_positions.length > 0 && (
+      {/* Non-Zero Balances (Live Mode Only) */}
+      {settings.mode === 'live' && balanceData?.balances && balanceData.balances.length > 0 && (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6" data-testid="live-balances-table">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Wifi className="w-5 h-5 text-green-500" />
+            MEXC Spot Balances
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left py-2 text-zinc-500 font-medium">Asset</th>
+                  <th className="text-right py-2 text-zinc-500 font-medium">Free</th>
+                  <th className="text-right py-2 text-zinc-500 font-medium">Locked</th>
+                  <th className="text-right py-2 text-zinc-500 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {balanceData.balances.map((balance, idx) => (
+                  <tr key={idx} className="border-b border-zinc-900 last:border-0" data-testid={`balance-${balance.asset}`}>
+                    <td className="py-3 font-medium">{balance.asset}</td>
+                    <td className="text-right py-3">{balance.free.toFixed(8)}</td>
+                    <td className="text-right py-3 text-zinc-500">{balance.locked.toFixed(8)}</td>
+                    <td className="text-right py-3 text-white">{(balance.free + balance.locked).toFixed(8)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Open Positions (Paper Mode) */}
+      {settings.mode === 'paper' && openPositions.length > 0 && (
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6" data-testid="open-positions-table">
           <h3 className="text-lg font-semibold mb-4">Offene Positionen</h3>
           <div className="overflow-x-auto">
