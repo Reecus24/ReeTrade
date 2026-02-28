@@ -347,14 +347,21 @@ class MultiUserTradingWorker:
         # Check cooldown
         cooldown_active = self.is_in_cooldown(user_id, settings.cooldown_candles)
         if cooldown_active:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⏸️ SKIPPED: Cooldown active ({settings.cooldown_candles} candles)")
-            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'SKIPPED: Cooldown active'})
+            cooldown_mins = settings.cooldown_candles * 15
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min nach letztem Trade)")
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': f'SKIPPED: Cooldown ({cooldown_mins} Min)',
+                f'{settings.mode}_last_symbol': 'Warte auf Cooldown-Ende'
+            })
             return
         
         # Check if we have budget for new positions
         if available_budget < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Insufficient budget (${available_budget:.2f} < ${settings.min_notional_usdt})")
-            await self.db.update_settings(user_id, {f'{settings.mode}_last_decision': 'BLOCKED: Insufficient budget'})
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Kein Budget (${available_budget:.2f} < ${settings.min_notional_usdt})")
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': f'BLOCKED: Budget zu niedrig (${available_budget:.2f})',
+                f'{settings.mode}_last_symbol': '-'
+            })
             return
         
         # Check DAILY CAP
