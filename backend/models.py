@@ -52,6 +52,9 @@ class UserSettings(BaseModel):
     fee_bps: int = 10  # 0.1%
     slippage_bps: int = 5  # 0.05%
     
+    # Order Sizing
+    min_notional_usdt: float = 10.0  # Minimum position size in USDT
+    
     # Market data
     top_pairs: List[str] = Field(default_factory=list)
     last_pairs_refresh: Optional[datetime] = None
