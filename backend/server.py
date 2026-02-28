@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 db = Database()
 worker: MultiUserTradingWorker = None
 worker_task: asyncio.Task = None
+limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
