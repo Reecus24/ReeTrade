@@ -32,6 +32,8 @@ const DashboardPage = ({ onLogout }) => {
   const [liveBalance, setLiveBalance] = useState(null);
   const [liveBalanceLoading, setLiveBalanceLoading] = useState(false);
   const [liveBalanceError, setLiveBalanceError] = useState(null);
+  const [paperBalance, setPaperBalance] = useState(null);
+  const [paperBalanceLoading, setPaperBalanceLoading] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     try {
