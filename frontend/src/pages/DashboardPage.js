@@ -637,6 +637,11 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               )}
 
+              {/* Live Bot Status Panel */}
+              {settings.live_confirmed && (
+                <BotStatusPanel settings={settings} mode="live" balance={liveBalance} />
+              )}
+
               {/* Live Sub-Tabs */}
               {settings.live_confirmed && (
                 <Tabs defaultValue="trades" className="w-full">
