@@ -143,3 +143,28 @@ remaining_budget = min(available_to_bot, trading_budget - used_budget)
 - `GET /api/account/balance` - Balance + Budget Info
 - `POST /api/keys/mexc` - MEXC API-Keys setzen
 - `GET /api/keys/mexc/status` - Key-Status prüfen
+
+### Settings
+- `GET /api/settings` - Alle Einstellungen abrufen
+- `PUT /api/settings` - Einstellungen aktualisieren (inkl. daily caps)
+
+## Settings Model Struktur
+```python
+# Paper Mode Settings
+paper_start_balance_usdt: float = 500.0
+paper_daily_cap_usdt: float = 200.0     # Daily Trading Cap
+paper_max_order_usdt: float = 50.0
+paper_fee_bps: int = 10
+paper_slippage_bps: int = 5
+
+# Live Mode Settings
+reserve_usdt: float = 0.0               # Sicherheitsreserve
+trading_budget_usdt: float = 500.0      # Max Exposure
+live_daily_cap_usdt: float = 200.0      # Daily Trading Cap
+live_max_order_usdt: float = 50.0
+```
+
+## Changelog
+- **28.02.2026:** Daily Trading Cap implementiert (Paper & Live)
+- **28.02.2026:** Settings UI in drei Tabs aufgeteilt (Paper/Live/Strategie)
+- **28.02.2026:** Backend-Modelle für getrennte Paper/Live Settings erweitert
