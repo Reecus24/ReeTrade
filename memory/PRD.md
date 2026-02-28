@@ -110,3 +110,6 @@ remaining_budget = min(available_to_bot, trading_budget - used_budget)
 - `POST /api/keys/mexc` - MEXC API-Keys setzen
 - `GET /api/keys/mexc/status` - Key-Status prüfen
 - `GET /api/account/balance` - Balance + Budget Info abrufen
+- `GET /api/metrics/daily_pnl?days=30&mode=paper` - Daily PnL Aggregation
+- `GET /api/trades?mode=paper&limit=200&offset=0` - Trade History
+- `GET /api/trades/symbols` - Liste aller gehandelten Symbols
