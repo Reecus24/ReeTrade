@@ -55,8 +55,9 @@ class UserSettings(BaseModel):
     # Order Sizing
     min_notional_usdt: float = 10.0  # Minimum position size in USDT
     
-    # Budget Limits (NEW)
-    trading_budget_usdt: float = 500.0  # Max total exposure allowed
+    # Budget & Reserve System (NEW)
+    reserve_usdt: float = 0.0  # Safety reserve - bot won't touch this amount
+    trading_budget_usdt: float = 500.0  # Max total exposure allowed (absolute cap)
     paper_start_balance_usdt: float = 500.0  # Paper mode starting balance
     max_order_notional_usdt: Optional[float] = 50.0  # Max single order size
     
