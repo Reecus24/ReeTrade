@@ -354,7 +354,10 @@ const OverviewTab = ({ status, onRefresh }) => {
       {/* Open Positions (Paper Mode) */}
       {settings.mode === 'paper' && openPositions.length > 0 && (
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6" data-testid="open-positions-table">
-          <h3 className="text-lg font-semibold mb-4">Offene Positionen</h3>
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Database className="w-5 h-5 text-yellow-500" />
+            Offene Positionen (Paper)
+          </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -368,7 +371,7 @@ const OverviewTab = ({ status, onRefresh }) => {
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {paper_account.open_positions.map((pos, idx) => (
+                {openPositions.map((pos, idx) => (
                   <tr key={idx} className="border-b border-zinc-900 last:border-0" data-testid={`position-${idx}`}>
                     <td className="py-3">{pos.symbol}</td>
                     <td className="py-3">
@@ -376,10 +379,10 @@ const OverviewTab = ({ status, onRefresh }) => {
                         {pos.side}
                       </span>
                     </td>
-                    <td className="text-right py-3">${pos.entry_price.toFixed(4)}</td>
-                    <td className="text-right py-3">{pos.qty.toFixed(4)}</td>
-                    <td className="text-right py-3 text-red-500">${pos.stop_loss.toFixed(4)}</td>
-                    <td className="text-right py-3 text-green-500">${pos.take_profit.toFixed(4)}</td>
+                    <td className="text-right py-3">${pos.entry_price?.toFixed(4) || '0.0000'}</td>
+                    <td className="text-right py-3">{pos.qty?.toFixed(4) || '0.0000'}</td>
+                    <td className="text-right py-3 text-red-500">${pos.stop_loss?.toFixed(4) || '0.0000'}</td>
+                    <td className="text-right py-3 text-green-500">${pos.take_profit?.toFixed(4) || '0.0000'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -395,6 +398,7 @@ const OverviewTab = ({ status, onRefresh }) => {
         onConfirm={() => {
           setShowLiveDialog(false);
           onRefresh();
+          fetchBalance();
         }}
       />
     </div>
