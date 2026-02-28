@@ -126,16 +126,24 @@ const OverviewTab = ({ status, onRefresh }) => {
   };
 
   // Use balance data if available, otherwise fallback to paper_account
-  const displayEquity = balanceData?.equity ?? paper_account?.equity ?? 10000;
-  const displayCash = balanceData?.cash ?? paper_account?.cash ?? 10000;
+  // In live mode with error, show dashes instead of paper values
+  const hasLiveError = settings.mode === 'live' && balanceError;
+  const displayEquity = hasLiveError ? null : (balanceData?.equity ?? paper_account?.equity ?? 10000);
+  const displayCash = hasLiveError ? null : (balanceData?.cash ?? paper_account?.cash ?? 10000);
   const startingEquity = settings.mode === 'live' ? displayEquity : 10000;
-  const daily_pnl = displayEquity - startingEquity;
+  const daily_pnl = displayEquity !== null ? displayEquity - startingEquity : 0;
   const daily_pnl_pct = startingEquity > 0 ? (daily_pnl / startingEquity) * 100 : 0;
 
   // Determine open positions based on source
   const openPositions = settings.mode === 'live' 
     ? [] // Live mode doesn't track positions the same way
     : (paper_account?.open_positions || []);
+
+  // Format currency with null check
+  const formatValue = (value) => {
+    if (value === null) return '---';
+    return formatCurrency(value);
+  };
 
   return (
     <div className="space-y-6" data-testid="overview-tab">
