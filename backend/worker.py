@@ -927,8 +927,12 @@ Slippage: {slippage_cost:.4f} USDT
                 }
             )
             
+            # Trade was successful
+            return True
+            
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
+            return False
     
     async def check_position_exit(
         self,
