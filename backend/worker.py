@@ -30,7 +30,7 @@ class MultiUserTradingWorker:
                         'last_heartbeat': datetime.now(timezone.utc)
                     })
             except Exception as e:
-                logger.error(f\"Heartbeat error: {e}\")
+                logger.error(f"Heartbeat error: {e}")
             
             await asyncio.sleep(60)
     
@@ -45,7 +45,7 @@ class MultiUserTradingWorker:
                     await asyncio.sleep(900)  # 15 min
                     continue
                 
-                logger.info(f\"Trading cycle for {len(active_settings)} active user(s)\")
+                logger.info(f"Trading cycle for {len(active_settings)} active user(s)")
                 
                 # Process each user
                 for settings_doc in active_settings:
@@ -55,11 +55,11 @@ class MultiUserTradingWorker:
                         # Small delay between users to avoid rate limits
                         await asyncio.sleep(2)
                     except Exception as e:
-                        await self.db.log(user_id, \"ERROR\", f\"User trading cycle error: {str(e)}\")
-                        logger.exception(f\"Error processing user {user_id}: {e}\")
+                        await self.db.log(user_id, "ERROR", f"User trading cycle error: {str(e)}")
+                        logger.exception(f"Error processing user {user_id}: {e}")
             
             except Exception as e:
-                logger.error(f\"Trading loop error: {e}\")
+                logger.error(f"Trading loop error: {e}")
             
             # Wait 15 minutes
             await asyncio.sleep(900)
@@ -71,7 +71,7 @@ class MultiUserTradingWorker:
         if not settings.bot_running:
             return
         
-        await self.db.log(user_id, \"INFO\", \"Starting trading cycle\")
+        await self.db.log(user_id, "INFO", "Starting trading cycle")
         
         # Refresh top pairs daily
         should_refresh = (
@@ -84,7 +84,7 @@ class MultiUserTradingWorker:
             settings = await self.db.get_settings(user_id)  # Reload
         
         if not settings.top_pairs:
-            await self.db.log(user_id, \"WARNING\", \"No top pairs available\")
+            await self.db.log(user_id, "WARNING", "No top pairs available")
             return
         
         # Scan symbols for signals
@@ -93,21 +93,21 @@ class MultiUserTradingWorker:
     async def refresh_top_pairs(self, user_id: str):
         "'"'"'Refresh top 20 USDT pairs by volume"'"'"'
         try:
-            await self.db.log(user_id, \"INFO\", \"Refreshing top pairs...\")
+            await self.db.log(user_id, "INFO", "Refreshing top pairs...")
             
             # Use default MEXC client for public data
             mexc = MexcClient()
-            top_pairs = await mexc.get_top_pairs(quote=\"USDT\", limit=20)
+            top_pairs = await mexc.get_top_pairs(quote="USDT", limit=20)
             
             await self.db.update_settings(user_id, {
                 'top_pairs': top_pairs,
                 'last_pairs_refresh': datetime.now(timezone.utc)
             })
             
-            await self.db.log(user_id, \"INFO\", f\"Top pairs updated: {len(top_pairs)} symbols\", 
+            await self.db.log(user_id, "INFO", f"Top pairs updated: {len(top_pairs)} symbols", 
                             {'pairs': top_pairs[:5]})
         except Exception as e:
-            await self.db.log(user_id, \"ERROR\", f\"Failed to refresh top pairs: {str(e)}\")
+            await self.db.log(user_id, "ERROR", f"Failed to refresh top pairs: {str(e)}")
     
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
         "'"'"'Scan symbols and execute trades for user"'"'"'
@@ -131,7 +131,7 @@ class MultiUserTradingWorker:
         
         # Check daily loss limit
         if risk_mgr.check_daily_loss_limit(account, self.user_initial_equity[user_id]):
-            await self.db.log(user_id, \"ERROR\", \"Daily loss limit hit - stopping bot\")
+            await self.db.log(user_id, "ERROR", "Daily loss limit hit - stopping bot")
             await self.db.update_settings(user_id, {'bot_running': False})
             return
         
@@ -141,7 +141,7 @@ class MultiUserTradingWorker:
         
         # Check cooldown
         if self.is_in_cooldown(user_id, settings.cooldown_candles):
-            await self.db.log(user_id, \"DEBUG\", \"In cooldown period, skipping new entries\")
+            await self.db.log(user_id, "DEBUG", "In cooldown period, skipping new entries")
             return
         
         # Look for new entries
@@ -149,20 +149,20 @@ class MultiUserTradingWorker:
             for symbol in settings.top_pairs[:10]:  # Check top 10
                 try:
                     # Get 15m klines
-                    klines = await mexc.get_klines(symbol, interval=\"15m\", limit=500)
+                    klines = await mexc.get_klines(symbol, interval="15m", limit=500)
                     
                     if len(klines) < settings.ema_slow:
                         continue
                     
                     signal, context = strategy.generate_signal(klines)
                     
-                    if signal == \"LONG\":
+                    if signal == "LONG":
                         await self.open_position(user_id, symbol, klines, account, settings, strategy, risk_mgr, context, mexc)
                         self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
                         break  # One entry per cycle
                     
                 except Exception as e:
-                    await self.db.log(user_id, \"ERROR\", f\"Error scanning {symbol}: {str(e)}\")
+                    await self.db.log(user_id, "ERROR", f"Error scanning {symbol}: {str(e)}")
         
         # Save updated account
         await self.db.update_paper_account(account)
@@ -185,7 +185,7 @@ class MultiUserTradingWorker:
             if keys:
                 return MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
             else:
-                await self.db.log(user_id, \"WARNING\", \"Live mode but no API keys found\")
+                await self.db.log(user_id, "WARNING", "Live mode but no API keys found")
         
         # Return default client for paper mode or if no keys
         return MexcClient()
@@ -219,16 +219,16 @@ class MultiUserTradingWorker:
             qty, reason = risk_mgr.calculate_position_size(account, current_price, stop_loss)
             
             if qty == 0:
-                await self.db.log(user_id, \"WARNING\", f\"Cannot size position for {symbol}: {reason}\")
+                await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
                 return
             
             # Apply fees and slippage
-            entry_price = risk_mgr.apply_fees_and_slippage(current_price, \"BUY\")
+            entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
             
             # Create position
             position = Position(
                 symbol=symbol,
-                side=\"LONG\",
+                side="LONG",
                 entry_price=entry_price,
                 qty=qty,
                 stop_loss=stop_loss,
@@ -246,18 +246,18 @@ class MultiUserTradingWorker:
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
                 symbol=symbol,
-                side=\"BUY\",
+                side="BUY",
                 qty=qty,
                 entry=entry_price,
                 mode=settings.mode,
-                reason=f\"EMA crossover, RSI={context.get('rsi', 0)}\"
+                reason=f"EMA crossover, RSI={context.get('rsi', 0)}"
             )
             await self.db.add_trade(trade)
             
             await self.db.log(
                 user_id,
-                \"INFO\",
-                f\"OPEN LONG {symbol} @ {entry_price:.4f}\",
+                "INFO",
+                f"OPEN LONG {symbol} @ {entry_price:.4f}",
                 {
                     'qty': round(qty, 4),
                     'stop_loss': round(stop_loss, 4),
@@ -268,7 +268,7 @@ class MultiUserTradingWorker:
             )
             
         except Exception as e:
-            await self.db.log(user_id, \"ERROR\", f\"Failed to open position {symbol}: {str(e)}\")
+            await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
     
     async def check_position_exit(
         self,
@@ -285,23 +285,23 @@ class MultiUserTradingWorker:
             current_price = float(ticker['lastPrice'])
             
             should_exit = False
-            exit_reason = \"\"
+            exit_reason = ""
             
             # Check stop loss
             if current_price <= position.stop_loss:
                 should_exit = True
-                exit_reason = \"Stop loss hit\"
+                exit_reason = "Stop loss hit"
             
             # Check take profit
             elif current_price >= position.take_profit:
                 should_exit = True
-                exit_reason = \"Take profit hit\"
+                exit_reason = "Take profit hit"
             
             if should_exit:
                 await self.close_position(user_id, position, current_price, account, settings, exit_reason)
             
         except Exception as e:
-            await self.db.log(user_id, \"ERROR\", f\"Error checking position {position.symbol}: {str(e)}\")
+            await self.db.log(user_id, "ERROR", f"Error checking position {position.symbol}: {str(e)}")
     
     async def close_position(
         self,
@@ -317,7 +317,7 @@ class MultiUserTradingWorker:
             risk_mgr = RiskManager(settings)
             
             # Apply fees and slippage
-            exit_price = risk_mgr.apply_fees_and_slippage(exit_price, \"SELL\")
+            exit_price = risk_mgr.apply_fees_and_slippage(exit_price, "SELL")
             
             # Calculate PnL
             pnl = (exit_price - position.entry_price) * position.qty
@@ -340,7 +340,7 @@ class MultiUserTradingWorker:
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
                 symbol=position.symbol,
-                side=\"SELL\",
+                side="SELL",
                 qty=position.qty,
                 entry=position.entry_price,
                 exit=exit_price,
@@ -352,8 +352,8 @@ class MultiUserTradingWorker:
             
             await self.db.log(
                 user_id,
-                \"INFO\" if pnl > 0 else \"WARNING\",
-                f\"CLOSE {position.symbol} @ {exit_price:.4f}\",
+                "INFO" if pnl > 0 else "WARNING",
+                f"CLOSE {position.symbol} @ {exit_price:.4f}",
                 {
                     'entry': round(position.entry_price, 4),
                     'pnl': round(pnl, 2),
@@ -363,7 +363,7 @@ class MultiUserTradingWorker:
             )
             
         except Exception as e:
-            await self.db.log(user_id, \"ERROR\", f\"Failed to close position {position.symbol}: {str(e)}\")
+            await self.db.log(user_id, "ERROR", f"Failed to close position {position.symbol}: {str(e)}")
     
     async def start(self):
         "'"'"'Start worker"'"'"'
@@ -371,7 +371,7 @@ class MultiUserTradingWorker:
             return
         
         self.running = True
-        logger.info(\"Multi-user trading worker started\")
+        logger.info("Multi-user trading worker started")
         
         # Start both tasks
         await asyncio.gather(
@@ -382,4 +382,4 @@ class MultiUserTradingWorker:
     async def stop(self):
         "'"'"'Stop worker"'"'"'
         self.running = False
-        logger.info(\"Multi-user trading worker stopped\")
+        logger.info("Multi-user trading worker stopped")

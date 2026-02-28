@@ -34,7 +34,7 @@ class Database:
         await self.paper_accounts.create_index('user_id', unique=True)
         await self.logs.create_index([('user_id', 1), ('ts', -1)])
         await self.trades.create_index([('user_id', 1), ('ts', -1)])
-        logger.info(\"Database initialized with indexes\")
+        logger.info("Database initialized with indexes")
     
     # ========== USER OPERATIONS ==========
     
@@ -48,7 +48,7 @@ class Database:
         # Initialize default settings and paper account
         await self.initialize_user_data(user_id)
         
-        logger.info(f\"User created: {email} (ID: {user_id})\")
+        logger.info(f"User created: {email} (ID: {user_id})")
         return user_id
     
     async def get_user_by_email(self, email: str) -> Optional[Dict]:
@@ -76,7 +76,7 @@ class Database:
         default_account = PaperAccount(user_id=user_id).model_dump()
         await self.paper_accounts.insert_one(default_account)
         
-        logger.info(f\"Initialized data for user {user_id}\")
+        logger.info(f"Initialized data for user {user_id}")
     
     # ========== SETTINGS OPERATIONS ==========
     
@@ -123,7 +123,7 @@ class Database:
             }},
             upsert=True
         )
-        logger.info(f\"MEXC keys updated for user {user_id}\")
+        logger.info(f"MEXC keys updated for user {user_id}")
     
     async def get_mexc_keys(self, user_id: str) -> Optional[Dict[str, str]]:
         "'"'"'Get decrypted MEXC API keys (for backend use only)"'"'"'
@@ -136,7 +136,7 @@ class Database:
             api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
             return {'api_key': api_key, 'api_secret': api_secret}
         except Exception as e:
-            logger.error(f\"Failed to decrypt keys for user {user_id}: {e}\")
+            logger.error(f"Failed to decrypt keys for user {user_id}: {e}")
             return None
     
     async def has_mexc_keys(self, user_id: str) -> bool:
@@ -171,7 +171,7 @@ class Database:
         
         # Also log to console
         log_func = getattr(logger, level.lower(), logger.info)
-        log_func(f\"[User {user_id[:8]}] {msg} {context if context else ''}\")
+        log_func(f"[User {user_id[:8]}] {msg} {context if context else ''}")
     
     async def get_logs(self, user_id: str, limit: int = 100) -> List[LogEntry]:
         "'"'"'Get recent logs for user"'"'"'
