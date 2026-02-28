@@ -27,11 +27,30 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] EMA Crossover + RSI Strategie
 - [x] Rate Limiting für Login und Live-Mode Endpoints
 - [x] Audit Logging
+- [x] **NEU:** Live Balance von MEXC API (`GET /api/account/balance`)
+- [x] **NEU:** Balance Source Indicator (Paper/Live + Timestamp)
+- [x] **NEU:** Fehlerbehandlung bei MEXC API Fehlern im UI
 
 ## Bug Fixes (28. Februar 2026)
 - [x] **P0:** 500 Internal Server Error beim Live-Modus-Wechsel behoben
   - Ursache: `slowapi` Parameter-Naming-Konflikt (`req: Request` vs `request: LiveConfirmRequest`)
   - Fix: Parameter umbenannt zu `request: Request` und `body: LiveConfirmRequest`
+
+## Neue Features (28. Februar 2026)
+- [x] **Live Balance Endpoint** (`GET /api/account/balance`)
+  - Im Paper-Modus: Zeigt Paper Account aus DB
+  - Im Live-Modus: Ruft echte Balance von MEXC Spot API ab
+  - Bei Fehler: HTTP 502 mit klarer Fehlermeldung
+- [x] **Balance Source Indicator**
+  - Zeigt "Paper (DB)" oder "MEXC Live" mit entsprechendem Icon
+  - Last Updated Timestamp
+  - Refresh-Button zum manuellen Aktualisieren
+- [x] **Error State im Live-Modus**
+  - Roter Alert-Banner bei MEXC API Fehler
+  - Retry-Button
+  - Werte zeigen "---" statt Paper-Fallback
+- [x] **MEXC Spot Balances Tabelle**
+  - Zeigt alle Non-Zero Balances im Live-Modus
 
 ## Offene Aufgaben
 
@@ -62,3 +81,4 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - `POST /api/bot/live/confirm` - Live-Modus bestätigen (Rate Limited: 3/min)
 - `POST /api/keys/mexc` - MEXC API-Keys setzen
 - `GET /api/keys/mexc/status` - Key-Status prüfen
+- `GET /api/account/balance` - **NEU:** Balance abrufen (Paper oder Live)
