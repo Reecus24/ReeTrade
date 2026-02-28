@@ -332,6 +332,9 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'min_notional_usdt': settings.min_notional_usdt,
             'paper_daily_cap_usdt': settings.paper_daily_cap_usdt,
             'live_daily_cap_usdt': settings.live_daily_cap_usdt,
+            # Live specific
+            'live_max_order_usdt': settings.live_max_order_usdt,
+            'live_min_notional_usdt': settings.live_min_notional_usdt,
             # BOT STATUS TRACKING - PAPER
             'paper_last_scan': settings.paper_last_scan,
             'paper_last_decision': settings.paper_last_decision,
