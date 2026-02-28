@@ -44,25 +44,34 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - Equity/PnL wird realistisch berechnet
 - Alle Trades in `trades` Collection gespeichert
 
-### 2. Trading Budget Limits
-**Neue Settings (pro User, UI editierbar):**
-- `trading_budget_usdt`: Max Exposure für Live Mode (default: 500)
-- `paper_start_balance_usdt`: Startkapital für Paper Mode (default: 500)
-- `max_order_notional_usdt`: Max Größe pro Trade (default: 50)
+### 2. Reserve & Budget System (NEU)
+**Reserve System (Hauptschutz):**
+- `reserve_usdt`: Sicherheitsreserve - Bot tastet diesen Betrag nie an
+- `available_to_bot = max(0, usdt_free - reserve_usdt)`
 
-**Live Mode Regeln:**
-- `effective_balance = min(usdt_free, trading_budget - used_budget)`
-- Keine Position wenn `effective_balance < min_notional_usdt`
-- Hard Stop: Nie mehr als `trading_budget_usdt` gesamtes Exposure
+**Budget Limits (Zusatzschutz):**
+- `trading_budget_usdt`: Absolute Obergrenze für Gesamt-Exposure
+- `max_order_notional_usdt`: Max Größe pro einzelnem Trade
+- `paper_start_balance_usdt`: Startkapital für Paper Mode
 
-**Paper Mode Regeln:**
-- Startet bei `paper_start_balance_usdt`
-- Kein Exposure über `paper_start_balance_usdt`
+**Live Mode Logik:**
+```
+available_to_bot = max(0, USDT_free - reserve_usdt)
+remaining_budget = min(available_to_bot, trading_budget - used_budget)
+```
 
-**Dashboard Anzeige:**
-- Budget (Total)
-- Used Budget (in Positionen)
-- Available Budget (für neue Trades)
+**Dashboard zeigt (Live):**
+- USDT Free (MEXC Wallet)
+- Reserve (geschützt)
+- Available to Bot
+- Used Budget
+- Remaining Budget
+
+**Dashboard zeigt (Paper):**
+- Start Balance
+- Used Budget
+- Remaining
+- Cash
 
 ## Bug Fixes (28. Februar 2026)
 - [x] **P0:** 500 Internal Server Error beim Live-Modus-Wechsel behoben
