@@ -9,7 +9,7 @@ from crypto_utils import crypto_manager
 logger = logging.getLogger(__name__)
 
 class Database:
-    "'"'"'MongoDB operations with multi-user support"'"'"'
+    # MongoDB operations with multi-user support
     
     def __init__(self):
         mongo_url = os.environ['MONGO_URL']
