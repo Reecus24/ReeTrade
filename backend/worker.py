@@ -770,14 +770,26 @@ Reason: {reason}
             # Check if position is still viable
             min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
             if notional < min_notional:
-                await self.db.log(user_id, "WARNING", f"{symbol} position too small after budget limits: ${notional:.2f} < min ${min_notional}")
+                fail_reason = f"Position zu klein: ${notional:.2f} < Min ${min_notional}"
+                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
+                await self.db.update_settings(user_id, {
+                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                    f'{settings.mode}_last_symbol': symbol
+                })
+                # NO COOLDOWN - try next coin
                 return
             
             # Round quantity to exchange stepSize
             rounded_qty = order_sizer.round_quantity(symbol, qty)
             
             if rounded_qty == 0:
-                await self.db.log(user_id, "WARNING", f"{symbol} qty {qty:.6f} below exchange minimum after rounding")
+                fail_reason = f"Menge {qty:.4f} unter Exchange-Minimum"
+                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
+                await self.db.update_settings(user_id, {
+                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                    f'{settings.mode}_last_symbol': symbol
+                })
+                # NO COOLDOWN - try next coin
                 return
             
             # Recalculate notional with rounded qty
@@ -792,17 +804,13 @@ Reason: {reason}
             )
             
             if not valid:
-                await self.db.log(
-                    user_id, 
-                    "INFO", 
-                    f"{symbol} skipped - {notional_reason}",
-                    {
-                        'qty': round(rounded_qty, 6),
-                        'price': round(current_price, 4),
-                        'notional': round(notional, 2),
-                        'min_notional': settings.min_notional_usdt
-                    }
-                )
+                fail_reason = f"{notional_reason}"
+                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
+                await self.db.update_settings(user_id, {
+                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                    f'{settings.mode}_last_symbol': symbol
+                })
+                # NO COOLDOWN - try next coin
                 return
             
             # Calculate fees and slippage costs
