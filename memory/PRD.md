@@ -104,16 +104,30 @@ remaining_budget = min(available_to_bot, trading_budget - used_budget)
 - **Password:** testpass123
 
 ## API Endpoints
+
+### Paper Mode
+- `POST /api/paper/start` - Paper Bot starten
+- `POST /api/paper/stop` - Paper Bot stoppen
+
+### Live Mode
+- `POST /api/live/start` - Live Bot starten (nur wenn confirmed + keys)
+- `POST /api/live/stop` - Live Bot stoppen
+- `POST /api/live/request` - Live Mode anfordern
+- `POST /api/live/confirm` - Live Mode bestätigen (Rate Limited: 3/min)
+- `POST /api/live/revoke` - Live Mode widerrufen
+
+### Auth & Status
 - `POST /api/auth/register` - Benutzer registrieren
 - `POST /api/auth/login` - Einloggen (Rate Limited: 5/min)
-- `GET /api/status` - Bot-Status abrufen
-- `POST /api/bot/start` - Bot starten
-- `POST /api/bot/stop` - Bot stoppen
-- `POST /api/bot/live/request` - Live-Modus anfordern
-- `POST /api/bot/live/confirm` - Live-Modus bestätigen (Rate Limited: 3/min)
-- `POST /api/keys/mexc` - MEXC API-Keys setzen
-- `GET /api/keys/mexc/status` - Key-Status prüfen
-- `GET /api/account/balance` - Balance + Budget Info abrufen
+- `GET /api/status` - Bot-Status (paper_running, live_running, etc.)
+- `GET /api/logs?mode=paper|live` - Logs gefiltert nach Mode
+
+### Trades & Metrics
 - `GET /api/metrics/daily_pnl?days=30&mode=paper` - Daily PnL Aggregation
 - `GET /api/trades?mode=paper&limit=200&offset=0` - Trade History
 - `GET /api/trades/symbols` - Liste aller gehandelten Symbols
+
+### Account & Keys
+- `GET /api/account/balance` - Balance + Budget Info
+- `POST /api/keys/mexc` - MEXC API-Keys setzen
+- `GET /api/keys/mexc/status` - Key-Status prüfen
