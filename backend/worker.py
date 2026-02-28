@@ -816,7 +816,7 @@ Reason: {reason}
                     f'{settings.mode}_last_symbol': symbol
                 })
                 # NO COOLDOWN - try next coin
-                return
+                return False
             
             # Recalculate notional with rounded qty
             notional = rounded_qty * current_price
