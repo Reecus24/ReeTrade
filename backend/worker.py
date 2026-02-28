@@ -530,7 +530,47 @@ class MultiUserTradingWorker:
                     )
                     continue
                 
-                # SIGNAL DETECTED!
+                # SIGNAL DETECTED! Add to candidates list
+                current_price = float(klines_15m[-1][4])
+                
+                # Calculate ATR for stop loss
+                atr = strategy.calculate_atr(klines_15m, 14)
+                if atr:
+                    stop_loss = current_price - (atr * 2.5)
+                    risk_amount = current_price - stop_loss
+                    take_profit = current_price + (risk_amount * 2.5)
+                else:
+                    stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
+                    take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+                
+                # Calculate opportunity score
+                # Higher ADX = stronger trend
+                # RSI not too high = room to grow
+                # EMA spread = trend confirmation
+                ema_spread = ((ema_fast_val - ema_slow_val) / ema_slow_val * 100) if ema_slow_val > 0 else 0
+                
+                opportunity_score = (
+                    adx_value * 0.4 +  # 40% weight on trend strength
+                    (100 - rsi_val) * 0.3 +  # 30% weight on room to grow (lower RSI = more room)
+                    min(ema_spread * 10, 30) * 0.3  # 30% weight on EMA momentum (capped at 30)
+                )
+                
+                signal_candidates.append({
+                    'symbol': symbol,
+                    'score': opportunity_score,
+                    'regime': regime,
+                    'adx': adx_value,
+                    'rsi': rsi_val,
+                    'ema_fast': ema_fast_val,
+                    'ema_slow': ema_slow_val,
+                    'ema_spread': ema_spread,
+                    'current_price': current_price,
+                    'stop_loss': stop_loss,
+                    'take_profit': take_profit,
+                    'klines_15m': klines_15m,
+                    'context': context
+                })
+                
                 await self.log_symbol_check(
                     user_id, mode_prefix, symbol,
                     regime=regime, adx=adx_value,
@@ -538,56 +578,62 @@ class MultiUserTradingWorker:
                     cooldown=False, paused=False,
                     daily_used=today_exposure, daily_cap=daily_cap,
                     budget_available=available_budget,
-                    decision="SIGNAL", reason="LONG signal detected - opening position"
+                    decision="SIGNAL", reason=f"LONG signal - Score: {opportunity_score:.1f}"
                 )
-                
-                # BULLISH REGIME: Adjusted parameters
-                current_price = float(klines_15m[-1][4])
-                
-                # Calculate ATR stop (mult 2.5)
-                atr = strategy.calculate_atr(klines_15m, 14)
-                if atr:
-                    stop_loss = current_price - (atr * 2.5)
-                    # TP = 1:2.5 R:R
-                    risk_amount = current_price - stop_loss
-                    take_profit = current_price + (risk_amount * 2.5)
-                else:
-                    # Fallback
-                    stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
-                    take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
-                
-                # Reduce risk to 0.5% for bullish regime
-                original_risk = settings.risk_per_trade
-                settings.risk_per_trade = 0.005  # 0.5%
-                
-                # Open position with regime-adjusted parameters and budget limit
-                trade_success = await self.open_position_with_budget(
-                    user_id, symbol, klines_15m, account, settings,
-                    strategy, risk_mgr, context, mexc, regime,
-                    stop_loss, take_profit, available_budget
-                )
-                
-                # Restore original risk
-                settings.risk_per_trade = original_risk
-                
-                # Only set cooldown if trade was SUCCESSFUL
-                if trade_success:
-                    self.set_last_trade_time(user_id, settings.mode)
-                    await self.db.update_settings(user_id, {
-                        f'{settings.mode}_last_decision': f'TRADE: {symbol}',
-                        f'{settings.mode}_last_regime': regime,
-                        f'{settings.mode}_last_symbol': symbol
-                    })
-                    trade_opened = True
-                    break  # One entry per cycle
-                # If trade failed, continue to next symbol (no break, no cooldown)
                 
             except Exception as e:
                 await self.db.log(user_id, "ERROR", f"{mode_prefix} Error scanning {symbol}: {str(e)}")
         
+        # ═══ SELECT BEST CANDIDATE AND EXECUTE ═══
+        if signal_candidates:
+            # Sort by score (highest first)
+            signal_candidates.sort(key=lambda x: x['score'], reverse=True)
+            
+            await self.db.log(user_id, "INFO", 
+                f"{mode_prefix} 🎯 {len(signal_candidates)} Signale gefunden! Wähle besten: " +
+                ", ".join([f"{c['symbol']}({c['score']:.1f})" for c in signal_candidates[:5]])
+            )
+            
+            # Try candidates in order of score until one succeeds
+            for candidate in signal_candidates:
+                symbol = candidate['symbol']
+                
+                await self.db.log(user_id, "INFO", 
+                    f"{mode_prefix} ▶️ Versuche {symbol} (Score: {candidate['score']:.1f}, ADX: {candidate['adx']:.1f}, RSI: {candidate['rsi']:.1f})"
+                )
+                
+                # Reduce risk to 0.5% for bullish regime
+                original_risk = settings.risk_per_trade
+                settings.risk_per_trade = 0.005
+                
+                trade_success = await self.open_position_with_budget(
+                    user_id, symbol, candidate['klines_15m'], account, settings,
+                    strategy, risk_mgr, candidate['context'], mexc, candidate['regime'],
+                    candidate['stop_loss'], candidate['take_profit'], available_budget
+                )
+                
+                settings.risk_per_trade = original_risk
+                
+                if trade_success:
+                    self.set_last_trade_time(user_id, settings.mode)
+                    await self.db.update_settings(user_id, {
+                        f'{settings.mode}_last_decision': f'TRADE: {symbol} (Score: {candidate["score"]:.1f})',
+                        f'{settings.mode}_last_regime': candidate['regime'],
+                        f'{settings.mode}_last_symbol': symbol
+                    })
+                    trade_opened = True
+                    break
+                else:
+                    await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} fehlgeschlagen - versuche nächsten...")
+        else:
+            await self.db.update_settings(user_id, {
+                f'{settings.mode}_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
+                f'{settings.mode}_last_symbol': '-'
+            })
+        
         # Log scan completion
         if symbols_checked > 0:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ═══ SCAN COMPLETE ═══ Checked {symbols_checked} symbols")
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ═══ SCAN COMPLETE ═══ {symbols_checked} Coins geprüft, {len(signal_candidates)} Signale")
         
         # Save updated account
         await self.db.update_paper_account(account)
