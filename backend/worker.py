@@ -30,6 +30,60 @@ class MultiUserTradingWorker:
             used += pos.entry_price * pos.qty
         return used
     
+    def calculate_live_budget(
+        self, 
+        settings: UserSettings, 
+        used_budget: float,
+        usdt_free: float
+    ) -> dict:
+        """
+        Calculate budget info for LIVE mode with reserve system.
+        
+        Reserve System Logic:
+        1. reserve_usdt: Safety reserve - bot won't touch this
+        2. available_to_bot = max(0, usdt_free - reserve_usdt)
+        3. trading_budget_usdt: Absolute cap on total exposure
+        4. remaining_budget = min(available_to_bot, trading_budget - used_budget)
+        """
+        # Step 1: Calculate what's available after reserve
+        available_to_bot = max(0, usdt_free - settings.reserve_usdt)
+        
+        # Step 2: Apply trading budget cap
+        budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
+        
+        # Step 3: Final remaining is the minimum of both constraints
+        remaining_budget = min(available_to_bot, budget_remaining)
+        
+        return {
+            'usdt_free': usdt_free,
+            'reserve_usdt': settings.reserve_usdt,
+            'available_to_bot': available_to_bot,
+            'trading_budget': settings.trading_budget_usdt,
+            'used_budget': used_budget,
+            'remaining_budget': remaining_budget,
+            'max_order_notional': settings.max_order_notional_usdt
+        }
+    
+    def calculate_paper_budget(
+        self, 
+        settings: UserSettings, 
+        used_budget: float,
+        paper_cash: float
+    ) -> dict:
+        """Calculate budget info for PAPER mode."""
+        # Paper mode: limited by paper_start_balance
+        budget_remaining = max(0, settings.paper_start_balance_usdt - used_budget)
+        available_to_bot = min(paper_cash, budget_remaining)
+        
+        return {
+            'paper_cash': paper_cash,
+            'start_balance': settings.paper_start_balance_usdt,
+            'trading_budget': settings.paper_start_balance_usdt,
+            'used_budget': used_budget,
+            'remaining_budget': available_to_bot,
+            'max_order_notional': settings.max_order_notional_usdt
+        }
+    
     def calculate_effective_balance(
         self, 
         settings: UserSettings, 
@@ -43,15 +97,15 @@ class MultiUserTradingWorker:
         used_budget = self.calculate_used_budget(account)
         
         if settings.mode == 'live' and live_usdt_free is not None:
-            # Live mode: min(usdt_free, trading_budget - used)
-            budget_remaining = settings.trading_budget_usdt - used_budget
-            effective = min(live_usdt_free, budget_remaining)
+            # Live mode with reserve system
+            budget_info = self.calculate_live_budget(settings, used_budget, live_usdt_free)
+            effective = budget_info['remaining_budget']
         else:
-            # Paper mode: budget - used
-            effective = settings.paper_start_balance_usdt - used_budget
+            # Paper mode
+            budget_info = self.calculate_paper_budget(settings, used_budget, account.cash)
+            effective = budget_info['remaining_budget']
         
-        available = max(0, effective)
-        return available, used_budget, settings.trading_budget_usdt if settings.mode == 'live' else settings.paper_start_balance_usdt
+        return effective, used_budget, budget_info.get('trading_budget', settings.trading_budget_usdt)
     
     async def heartbeat(self):
         while self.running:
