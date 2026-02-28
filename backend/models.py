@@ -78,6 +78,26 @@ class UserSettings(BaseModel):
     last_pairs_refresh: Optional[datetime] = None
     paper_heartbeat: Optional[datetime] = None
     live_heartbeat: Optional[datetime] = None
+    
+    # ========== BOT STATUS TRACKING (Paper) ==========
+    paper_last_scan: Optional[str] = None
+    paper_last_decision: Optional[str] = None
+    paper_last_regime: Optional[str] = None
+    paper_budget_used: Optional[float] = None
+    paper_budget_available: Optional[float] = None
+    paper_daily_used: Optional[float] = None
+    paper_daily_remaining: Optional[float] = None
+    paper_positions_count: Optional[int] = None
+    
+    # ========== BOT STATUS TRACKING (Live) ==========
+    live_last_scan: Optional[str] = None
+    live_last_decision: Optional[str] = None
+    live_last_regime: Optional[str] = None
+    live_budget_used: Optional[float] = None
+    live_budget_available: Optional[float] = None
+    live_daily_used: Optional[float] = None
+    live_daily_remaining: Optional[float] = None
+    live_positions_count: Optional[int] = None
 
 class SettingsUpdate(BaseModel):
     # Strategy (shared)
