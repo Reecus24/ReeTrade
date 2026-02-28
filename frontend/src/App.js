@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import LoginPage from '@/pages/LoginPage';
+import RegisterPage from '@/pages/RegisterPage';
 import DashboardPage from '@/pages/DashboardPage';
 import '@/App.css';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user has valid token
     const token = localStorage.getItem('auth_token');
     if (token) {
       setIsAuthenticated(true);
     }
     setLoading(false);
 
-    // Force dark mode
     document.documentElement.classList.add('dark');
     document.body.classList.add('dark');
   }, []);
@@ -25,8 +25,14 @@ function App() {
     setIsAuthenticated(true);
   };
 
+  const handleRegister = () => {
+    setIsAuthenticated(true);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_email');
+    localStorage.removeItem('user_name');
     setIsAuthenticated(false);
   };
 
@@ -42,8 +48,16 @@ function App() {
     <>
       {isAuthenticated ? (
         <DashboardPage onLogout={handleLogout} />
+      ) : showRegister ? (
+        <RegisterPage 
+          onRegister={handleRegister} 
+          onSwitchToLogin={() => setShowRegister(false)} 
+        />
       ) : (
-        <LoginPage onLogin={handleLogin} />
+        <LoginPage 
+          onLogin={handleLogin} 
+          onSwitchToRegister={() => setShowRegister(true)} 
+        />
       )}
       <Toaster
         position="bottom-right"
