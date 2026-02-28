@@ -89,10 +89,14 @@ const DashboardPage = ({ onLogout }) => {
 
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-zinc-950 border border-zinc-800" data-testid="dashboard-tabs">
+          <TabsList className="grid w-full grid-cols-6 bg-zinc-950 border border-zinc-800" data-testid="dashboard-tabs">
             <TabsTrigger value="overview" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-overview">
               <Activity className="w-4 h-4 mr-2" />
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="trades" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-trades">
+              <History className="w-4 h-4 mr-2" />
+              Trades
             </TabsTrigger>
             <TabsTrigger value="strategie" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-white" data-testid="tab-strategie">
               <Settings2 className="w-4 h-4 mr-2" />
@@ -115,6 +119,10 @@ const DashboardPage = ({ onLogout }) => {
           <div className="mt-6">
             <TabsContent value="overview" className="mt-0">
               <OverviewTab status={status} onRefresh={fetchStatus} />
+            </TabsContent>
+
+            <TabsContent value="trades" className="mt-0">
+              <TradesTab currentMode={status?.settings?.mode} />
             </TabsContent>
 
             <TabsContent value="strategie" className="mt-0">
