@@ -815,7 +815,6 @@ Reason: {reason}
                 return
             
             # Calculate fees and slippage costs
-            mode_prefix = f"[{settings.mode.upper()}]"
             fee_rate = settings.fee_bps / 10000
             slippage_rate = settings.slippage_bps / 10000
             
