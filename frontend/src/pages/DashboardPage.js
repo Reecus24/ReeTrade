@@ -97,12 +97,12 @@ const DashboardPage = ({ onLogout }) => {
     return () => clearInterval(interval);
   }, [fetchStatus, fetchLogs]);
 
-  // Fetch paper balance on paper tab
+  // Fetch paper balance on paper tab (only when logged in and status loaded)
   useEffect(() => {
-    if (activeMainTab === 'paper') {
+    if (activeMainTab === 'paper' && status) {
       fetchPaperBalance();
     }
-  }, [activeMainTab, fetchPaperBalance]);
+  }, [activeMainTab, fetchPaperBalance, status]);
 
   // Fetch live balance when tab changes or live is confirmed
   useEffect(() => {
