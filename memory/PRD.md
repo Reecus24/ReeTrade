@@ -30,11 +30,15 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] Live Balance von MEXC API (`GET /api/account/balance`)
 - [x] Balance Source Indicator (Paper/Live + Timestamp)
 - [x] Fehlerbehandlung bei MEXC API Fehlern im UI
-- [x] **NEU:** Trading Budget Limits (pro User)
-- [x] **NEU:** Paper Start Balance konfigurierbar
-- [x] **NEU:** Max Order Notional Limit
-- [x] **NEU:** Fees & Slippage Simulation für Paper Trades
-- [x] **NEU:** Budget-Anzeige im Dashboard (Budget/Used/Available)
+- [x] Trading Budget Limits (pro User)
+- [x] Paper Start Balance konfigurierbar
+- [x] Max Order Notional Limit
+- [x] Fees & Slippage Simulation für Paper Trades
+- [x] Budget-Anzeige im Dashboard (Budget/Used/Available)
+- [x] Reserve-System für Wallet-Schutz
+- [x] **NEU:** Daily PnL Chart (Balkendiagramm, 7/30/90 Tage)
+- [x] **NEU:** Trade History Tab mit Pagination und Filtern
+- [x] **NEU:** Trade Detail Drawer bei Klick auf Trade
 
 ## Neue Features (28. Februar 2026)
 
