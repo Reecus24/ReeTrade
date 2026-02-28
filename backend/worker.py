@@ -128,7 +128,7 @@ class MultiUserTradingWorker:
                 active_settings = await self.db.get_all_active_users()
                 
                 if not active_settings:
-                    await asyncio.sleep(900)  # 15 min
+                    await asyncio.sleep(300)  # 5 min
                     continue
                 
                 logger.info(f"Trading cycle for {len(active_settings)} active user(s)")
