@@ -803,7 +803,7 @@ Reason: {reason}
                     f'{settings.mode}_last_symbol': symbol
                 })
                 # NO COOLDOWN - try next coin
-                return
+                return False
             
             # Round quantity to exchange stepSize
             rounded_qty = order_sizer.round_quantity(symbol, qty)
