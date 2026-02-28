@@ -162,3 +162,10 @@ class AuditLogEntry(BaseModel):
     action: str  # LOGIN, SETTINGS_UPDATE, KEYS_UPDATE, LIVE_MODE_ENABLE, TRADE_EXECUTED
     details: Optional[dict] = None
     ip_address: Optional[str] = None
+
+class SymbolTradingPause(BaseModel):
+    user_id: str
+    symbol: str
+    pause_until: datetime
+    reason: str
+    consecutive_losses: int
