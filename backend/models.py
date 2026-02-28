@@ -83,6 +83,7 @@ class UserSettings(BaseModel):
     paper_last_scan: Optional[str] = None
     paper_last_decision: Optional[str] = None
     paper_last_regime: Optional[str] = None
+    paper_last_symbol: Optional[str] = None
     paper_budget_used: Optional[float] = None
     paper_budget_available: Optional[float] = None
     paper_daily_used: Optional[float] = None
@@ -93,6 +94,7 @@ class UserSettings(BaseModel):
     live_last_scan: Optional[str] = None
     live_last_decision: Optional[str] = None
     live_last_regime: Optional[str] = None
+    live_last_symbol: Optional[str] = None
     live_budget_used: Optional[float] = None
     live_budget_available: Optional[float] = None
     live_daily_used: Optional[float] = None
