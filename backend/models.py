@@ -80,6 +80,9 @@ class SettingsUpdate(BaseModel):
     # Fees
     fee_bps: Optional[int] = None
     slippage_bps: Optional[int] = None
+    
+    # Order Sizing
+    min_notional_usdt: Optional[float] = None
 
 # ============ KEYS MODELS ============
 
