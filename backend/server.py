@@ -295,27 +295,73 @@ async def disable_live_legacy(current_user: dict = Depends(get_current_user)):
 
 # ============ STATUS ENDPOINTS ============
 
-@app.get("/api/status", response_model=StatusResponse)
+@app.get("/api/status")
 async def get_status(current_user: dict = Depends(get_current_user)):
-    """Get bot status for current user"""
+    """Get bot status for current user - separated for paper and live"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     account = await db.get_paper_account(user_id)
     keys_status = await db.get_mexc_keys_status(user_id)
     
-    return StatusResponse(
-        settings=settings,
-        paper_account=account,
-        heartbeat=settings.last_heartbeat,
-        is_alive=True,
-        mexc_keys_connected=keys_status['connected']
-    )
+    return {
+        'settings': {
+            # Separate running states
+            'paper_running': settings.paper_running,
+            'live_running': settings.live_running,
+            'live_confirmed': settings.live_confirmed,
+            'live_requested': settings.live_requested,
+            # Strategy params
+            'ema_fast': settings.ema_fast,
+            'ema_slow': settings.ema_slow,
+            'rsi_period': settings.rsi_period,
+            'rsi_min': settings.rsi_min,
+            'rsi_overbought': settings.rsi_overbought,
+            # Risk params
+            'risk_per_trade': settings.risk_per_trade,
+            'max_positions': settings.max_positions,
+            'max_daily_loss': settings.max_daily_loss,
+            'take_profit_rr': settings.take_profit_rr,
+            # Fees
+            'fee_bps': settings.fee_bps,
+            'slippage_bps': settings.slippage_bps,
+            # Budget
+            'reserve_usdt': settings.reserve_usdt,
+            'trading_budget_usdt': settings.trading_budget_usdt,
+            'paper_start_balance_usdt': settings.paper_start_balance_usdt,
+            'max_order_notional_usdt': settings.max_order_notional_usdt,
+            'min_notional_usdt': settings.min_notional_usdt,
+            # Legacy compatibility
+            'mode': 'live' if settings.live_running else 'paper',
+            'bot_running': settings.paper_running or settings.live_running,
+        },
+        'paper_account': {
+            'user_id': account.user_id,
+            'equity': account.equity,
+            'cash': account.cash,
+            'open_positions': [pos.model_dump() for pos in account.open_positions] if account.open_positions else []
+        },
+        'paper_heartbeat': settings.paper_heartbeat.isoformat() if settings.paper_heartbeat else None,
+        'live_heartbeat': settings.live_heartbeat.isoformat() if settings.live_heartbeat else None,
+        'paper_is_alive': settings.paper_running,
+        'live_is_alive': settings.live_running and settings.live_confirmed,
+        'mexc_keys_connected': keys_status['connected']
+    }
 
 @app.get("/api/logs")
-async def get_logs(limit: int = 100, current_user: dict = Depends(get_current_user)):
-    """Get recent logs for current user"""
+async def get_logs(
+    limit: int = 100, 
+    mode: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get recent logs for current user, optionally filtered by mode"""
     user_id = current_user['user_id']
     logs = await db.get_logs(user_id, limit=limit)
+    
+    # Filter by mode if specified
+    if mode:
+        mode_prefix = f"[{mode.upper()}]"
+        logs = [log for log in logs if mode_prefix in log.get('msg', '')]
+    
     return {"logs": logs}
 
 # ============ SETTINGS ENDPOINTS ============
