@@ -68,6 +68,12 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - `max_order_notional_usdt`: Max Größe pro einzelnem Trade
 - `paper_start_balance_usdt`: Startkapital für Paper Mode
 
+**Daily Trading Cap (NEU):**
+- `paper_daily_cap_usdt`: Max Handelsvolumen pro Tag im Paper Mode
+- `live_daily_cap_usdt`: Max Handelsvolumen pro Tag im Live Mode
+- Reset erfolgt täglich um 00:00 UTC
+- Bot stoppt neue Trades wenn Tageslimit erreicht
+
 **Live Mode Logik:**
 ```
 available_to_bot = max(0, USDT_free - reserve_usdt)
