@@ -1080,10 +1080,12 @@ Fee: {entry_fee:.4f} USDT
         exit_price: float,
         account: PaperAccount,
         settings: UserSettings,
-        reason: str
+        reason: str,
+        mexc: MexcClient = None
     ):
         try:
             risk_mgr = RiskManager(settings)
+            mode_prefix = f"[{settings.mode.upper()}]"
             
             # Calculate fees and slippage for exit
             notional = position.qty * exit_price
@@ -1092,8 +1094,43 @@ Fee: {entry_fee:.4f} USDT
             
             exit_fee = notional * fee_rate
             
+            # ═══ EXECUTE REAL SELL ORDER FOR LIVE MODE ═══
+            actual_exit_price = exit_price
+            actual_qty = position.qty
+            order_id = None
+            
+            if settings.mode == 'live' and settings.live_confirmed and mexc:
+                try:
+                    await self.db.log(user_id, "INFO", f"{mode_prefix} 📤 Sende SELL Order an MEXC: {position.symbol} SELL {position.qty}")
+                    
+                    # Place MARKET SELL order on MEXC
+                    order_result = await mexc.place_order(
+                        symbol=position.symbol,
+                        side="SELL",
+                        order_type="MARKET",
+                        quantity=position.qty
+                    )
+                    
+                    order_id = order_result.get('orderId')
+                    
+                    if not order_id:
+                        await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ SELL fehlgeschlagen: Keine Order ID")
+                        return  # Don't close position if sell failed
+                    
+                    # Get executed values
+                    actual_qty = float(order_result.get('executedQty') or position.qty)
+                    if order_result.get('cummulativeQuoteQty') and actual_qty > 0:
+                        actual_exit_price = float(order_result.get('cummulativeQuoteQty')) / actual_qty
+                    
+                    await self.db.log(user_id, "INFO", 
+                        f"{mode_prefix} ✅ MEXC SELL erfolgreich! ID: {order_id}, Qty: {actual_qty}, Preis: {actual_exit_price:.4f}")
+                    
+                except Exception as sell_error:
+                    await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ SELL Fehler: {str(sell_error)}")
+                    return  # Don't close position if sell failed
+            
             # Apply fees and slippage
-            exit_price_adjusted = risk_mgr.apply_fees_and_slippage(exit_price, "SELL")
+            exit_price_adjusted = risk_mgr.apply_fees_and_slippage(actual_exit_price, "SELL")
             
             # Calculate PnL (gross)
             gross_pnl = (exit_price - position.entry_price) * position.qty
