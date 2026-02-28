@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Activity, Save, Key } from 'lucide-react';
+import { Activity, Save, Key, Wallet, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -95,6 +95,120 @@ const SettingsTab = () => {
 
   return (
     <div className="space-y-6" data-testid="settings-tab">
+      {/* Budget Limits - NEW SECTION */}
+      <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <Wallet className="w-5 h-5 text-green-500" />
+          Budget Limits
+        </h3>
+        <p className="text-sm text-zinc-500 mb-4">
+          Begrenze das maximale Exposure. Der Bot kann nicht mehr als den erlaubten Betrag nutzen.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="trading_budget_usdt" className="text-zinc-400">
+              Trading Budget (USDT)
+              <span className="block text-xs text-zinc-600">Für Live Mode</span>
+            </Label>
+            <Input
+              id="trading_budget_usdt"
+              type="number"
+              step="10"
+              value={settings.trading_budget_usdt || 500}
+              onChange={(e) => setSettings({...settings, trading_budget_usdt: parseFloat(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-trading-budget"
+            />
+          </div>
+          <div>
+            <Label htmlFor="paper_start_balance_usdt" className="text-zinc-400">
+              Paper Start Balance (USDT)
+              <span className="block text-xs text-zinc-600">Für Paper Mode</span>
+            </Label>
+            <Input
+              id="paper_start_balance_usdt"
+              type="number"
+              step="10"
+              value={settings.paper_start_balance_usdt || 500}
+              onChange={(e) => setSettings({...settings, paper_start_balance_usdt: parseFloat(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-paper-balance"
+            />
+          </div>
+          <div>
+            <Label htmlFor="max_order_notional_usdt" className="text-zinc-400">
+              Max Order Size (USDT)
+              <span className="block text-xs text-zinc-600">Pro Trade</span>
+            </Label>
+            <Input
+              id="max_order_notional_usdt"
+              type="number"
+              step="5"
+              value={settings.max_order_notional_usdt || 50}
+              onChange={(e) => setSettings({...settings, max_order_notional_usdt: parseFloat(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-max-order"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Fees & Slippage */}
+      <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-yellow-500" />
+          Gebühren & Slippage
+        </h3>
+        <p className="text-sm text-zinc-500 mb-4">
+          Wird bei Paper-Trades simuliert für realistische PnL-Berechnung.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="fee_bps" className="text-zinc-400">
+              Trading Fee (bps)
+              <span className="block text-xs text-zinc-600">10 = 0.1%</span>
+            </Label>
+            <Input
+              id="fee_bps"
+              type="number"
+              value={settings.fee_bps || 10}
+              onChange={(e) => setSettings({...settings, fee_bps: parseInt(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-fee-bps"
+            />
+          </div>
+          <div>
+            <Label htmlFor="slippage_bps" className="text-zinc-400">
+              Slippage (bps)
+              <span className="block text-xs text-zinc-600">5 = 0.05%</span>
+            </Label>
+            <Input
+              id="slippage_bps"
+              type="number"
+              value={settings.slippage_bps || 5}
+              onChange={(e) => setSettings({...settings, slippage_bps: parseInt(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-slippage-bps"
+            />
+          </div>
+          <div>
+            <Label htmlFor="min_notional_usdt" className="text-zinc-400">
+              Min Notional (USDT)
+              <span className="block text-xs text-zinc-600">Mindestgröße</span>
+            </Label>
+            <Input
+              id="min_notional_usdt"
+              type="number"
+              step="1"
+              value={settings.min_notional_usdt || 10}
+              onChange={(e) => setSettings({...settings, min_notional_usdt: parseFloat(e.target.value)})}
+              className="mt-2 bg-zinc-900 border-zinc-800 text-white"
+              data-testid="setting-min-notional"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Strategy Settings */}
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
