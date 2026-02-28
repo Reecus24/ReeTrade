@@ -47,6 +47,8 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] **NEU:** Budget System separat angezeigt (Reserve, Budget, Available)
 - [x] **NEU:** Wallet-Werte READ-ONLY
 - [x] **NEU:** Verbesserte Settings mit Erklärungen und Tooltips
+- [x] **NEU:** Daily Trading Cap für Paper und Live Modi
+- [x] **NEU:** Getrennte Settings UI (Paper Settings / Live Settings / Strategie Tabs)
 
 ## Neue Features (28. Februar 2026)
 
