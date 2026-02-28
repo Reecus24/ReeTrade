@@ -569,6 +569,57 @@ const DashboardPage = ({ onLogout }) => {
                       <strong>Berechnung:</strong> Available = min(USDT_Free - Reserve, Trading Budget - Used Budget)
                     </div>
                   </div>
+
+                  {/* Live Daily Cap Progress */}
+                  {liveBalance?.daily_cap && (
+                    <div className="bg-zinc-950 border border-red-900/30 rounded-lg p-4" data-testid="live-daily-cap">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-red-500" />
+                          <span className="text-sm font-medium text-red-500">Daily Trading Cap</span>
+                          <Badge className="bg-red-500/10 text-red-400 text-xs">LIVE</Badge>
+                        </div>
+                        <div className="text-xs text-zinc-500">
+                          Reset: 00:00 UTC
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-zinc-400">
+                            Heute gehandelt: <span className="font-mono text-white">{formatCurrency(liveBalance.daily_cap.used)}</span>
+                          </span>
+                          <span className="text-zinc-400">
+                            Limit: <span className="font-mono text-white">{formatCurrency(liveBalance.daily_cap.cap)}</span>
+                          </span>
+                        </div>
+                        <div className="relative h-3 bg-zinc-800 rounded-full overflow-hidden">
+                          <div 
+                            className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${
+                              (liveBalance.daily_cap.used / liveBalance.daily_cap.cap) >= 0.9 
+                                ? 'bg-red-500' 
+                                : (liveBalance.daily_cap.used / liveBalance.daily_cap.cap) >= 0.7 
+                                  ? 'bg-yellow-500' 
+                                  : 'bg-green-500'
+                            }`}
+                            style={{ width: `${Math.min(100, (liveBalance.daily_cap.used / liveBalance.daily_cap.cap) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className={`font-medium ${
+                            liveBalance.daily_cap.remaining <= 0 ? 'text-red-400' : 'text-green-400'
+                          }`}>
+                            {liveBalance.daily_cap.remaining <= 0 
+                              ? '⚠️ Tageslimit erreicht - Keine weiteren Trades heute!' 
+                              : `${formatCurrency(liveBalance.daily_cap.remaining)} verfügbar`
+                            }
+                          </span>
+                          <span className="text-zinc-500">
+                            {Math.round((liveBalance.daily_cap.used / liveBalance.daily_cap.cap) * 100)}% genutzt
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-zinc-500">
