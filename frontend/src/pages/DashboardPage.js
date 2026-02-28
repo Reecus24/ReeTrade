@@ -306,6 +306,56 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               </div>
 
+              {/* Paper Daily Cap Progress */}
+              {paperBalance?.daily_cap && (
+                <div className="p-4 bg-zinc-950 border border-yellow-900/30 rounded-lg" data-testid="paper-daily-cap">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-yellow-500" />
+                      <span className="text-sm font-medium text-yellow-500">Daily Trading Cap</span>
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      Reset: 00:00 UTC
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-zinc-400">
+                        Heute gehandelt: <span className="font-mono text-white">{formatCurrency(paperBalance.daily_cap.used)}</span>
+                      </span>
+                      <span className="text-zinc-400">
+                        Limit: <span className="font-mono text-white">{formatCurrency(paperBalance.daily_cap.cap)}</span>
+                      </span>
+                    </div>
+                    <div className="relative h-3 bg-zinc-800 rounded-full overflow-hidden">
+                      <div 
+                        className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${
+                          (paperBalance.daily_cap.used / paperBalance.daily_cap.cap) >= 0.9 
+                            ? 'bg-red-500' 
+                            : (paperBalance.daily_cap.used / paperBalance.daily_cap.cap) >= 0.7 
+                              ? 'bg-yellow-500' 
+                              : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(100, (paperBalance.daily_cap.used / paperBalance.daily_cap.cap) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className={`font-medium ${
+                        paperBalance.daily_cap.remaining <= 0 ? 'text-red-400' : 'text-green-400'
+                      }`}>
+                        {paperBalance.daily_cap.remaining <= 0 
+                          ? 'Tageslimit erreicht!' 
+                          : `${formatCurrency(paperBalance.daily_cap.remaining)} verfügbar`
+                        }
+                      </span>
+                      <span className="text-zinc-500">
+                        {Math.round((paperBalance.daily_cap.used / paperBalance.daily_cap.cap) * 100)}% genutzt
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Paper Sub-Tabs */}
               <Tabs defaultValue="trades" className="w-full">
                 <TabsList className="bg-zinc-950 border border-zinc-800">
