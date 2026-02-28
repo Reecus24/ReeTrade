@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  TrendingUp, Wifi, WifiOff, Shield, RefreshCw, LogOut
+  TrendingUp, Wifi, WifiOff, Shield, RefreshCw, LogOut, Wallet, Lock, DollarSign
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -29,6 +29,9 @@ const DashboardPage = ({ onLogout }) => {
   const [paperLoading, setPaperLoading] = useState(false);
   const [liveLoading, setLiveLoading] = useState(false);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  const [liveBalance, setLiveBalance] = useState(null);
+  const [liveBalanceLoading, setLiveBalanceLoading] = useState(false);
+  const [liveBalanceError, setLiveBalanceError] = useState(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -50,6 +53,22 @@ const DashboardPage = ({ onLogout }) => {
     }
   }, []);
 
+  const fetchLiveBalance = useCallback(async () => {
+    if (!status?.settings?.live_confirmed) return;
+    
+    setLiveBalanceLoading(true);
+    setLiveBalanceError(null);
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/account/balance`, getAuthHeaders());
+      setLiveBalance(response.data);
+    } catch (error) {
+      setLiveBalanceError(error.response?.data?.detail || 'Fehler beim Laden');
+      setLiveBalance(null);
+    } finally {
+      setLiveBalanceLoading(false);
+    }
+  }, [status?.settings?.live_confirmed]);
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -63,6 +82,13 @@ const DashboardPage = ({ onLogout }) => {
     }, 30000);
     return () => clearInterval(interval);
   }, [fetchStatus, fetchLogs]);
+
+  // Fetch live balance when tab changes or live is confirmed
+  useEffect(() => {
+    if (activeMainTab === 'live' && status?.settings?.live_confirmed) {
+      fetchLiveBalance();
+    }
+  }, [activeMainTab, status?.settings?.live_confirmed, fetchLiveBalance]);
 
   // Paper controls
   const handlePaperStart = async () => {
