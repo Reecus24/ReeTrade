@@ -45,7 +45,7 @@ class MexcClient:
     async def _request(self, method: str, endpoint: str, params: Optional[Dict] = None, signed: bool = False) -> Dict[str, Any]:
         """Make HTTP request with retry logic"""
         url = f"{self.base_url}{endpoint}"
-        headers = {"Content-Type": "application/json"}
+        headers = {}
         
         if signed:
             if not self.api_key or not self.api_secret:
@@ -53,7 +53,11 @@ class MexcClient:
             
             params = params or {}
             params['timestamp'] = int(time.time() * 1000)
-            params['signature'] = self._generate_signature(params)
+            
+            # Calculate signature from params WITHOUT signature field
+            signature = self._generate_signature(params)
+            params['signature'] = signature
+            
             headers['X-MEXC-APIKEY'] = self.api_key
         
         try:
@@ -65,6 +69,7 @@ class MexcClient:
                     if signed:
                         response = await client.post(url, params=params, headers=headers)
                     else:
+                        headers["Content-Type"] = "application/json"
                         response = await client.post(url, json=params, headers=headers)
                 elif method == "DELETE":
                     response = await client.delete(url, params=params, headers=headers)
