@@ -502,6 +502,35 @@ class MultiUserTradingWorker:
             )
             await self.db.add_trade(trade)
             
+            # AUDIT LOG for trade close
+            await self.db.audit_log(
+                user_id=user_id,
+                action="TRADE_EXECUTED",
+                details={
+                    'symbol': position.symbol,
+                    'side': 'SELL',
+                    'qty': round(position.qty, 4),
+                    'exit_price': round(exit_price, 4),
+                    'pnl': round(pnl, 2),
+                    'pnl_pct': round(pnl_pct, 2),
+                    'reason': reason,
+                    'mode': settings.mode
+                }
+            )
+            
+            # Check for consecutive losses and pause symbol if needed
+            if pnl < 0:
+                recent_losses = await self.db.get_recent_symbol_losses(user_id, position.symbol, hours=12)
+                if recent_losses >= 3:
+                    await self.db.set_symbol_pause(
+                        user_id=user_id,
+                        symbol=position.symbol,
+                        pause_hours=24,
+                        reason="3 consecutive losses in 12h",
+                        consecutive_losses=recent_losses
+                    )
+                    await self.db.log(user_id, "WARNING", f"{position.symbol} paused for 24h due to {recent_losses} losses in 12h")
+            
             await self.db.log(
                 user_id,
                 "INFO" if pnl > 0 else "WARNING",
