@@ -681,7 +681,6 @@ class MultiUserTradingWorker:
             slippage_rate = settings.slippage_bps / 10000
             
             exit_fee = notional * fee_rate
-            exit_slippage = notional * slippage_rate
             
             # Apply fees and slippage
             exit_price_adjusted = risk_mgr.apply_fees_and_slippage(exit_price, "SELL")
