@@ -137,8 +137,12 @@ class Trade(BaseModel):
     entry: float
     exit: Optional[float] = None
     pnl: Optional[float] = None
+    pnl_pct: Optional[float] = None  # PnL percentage
+    fees_paid: Optional[float] = None  # Total fees (entry + exit)
+    slippage_cost: Optional[float] = None  # Slippage cost
     mode: Literal["paper", "live"] = "paper"
     reason: Optional[str] = None
+    notional: Optional[float] = None  # Position notional value
 
 class DailyMetrics(BaseModel):
     user_id: str
