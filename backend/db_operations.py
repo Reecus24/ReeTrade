@@ -26,7 +26,7 @@ class Database:
         self.daily_metrics = self.db.daily_metrics
     
     async def initialize(self):
-        "'"'"'Initialize database indexes"'"'"'
+        # Initialize database indexes
         # Create indexes
         await self.users.create_index('email', unique=True)
         await self.settings.create_index('user_id', unique=True)
