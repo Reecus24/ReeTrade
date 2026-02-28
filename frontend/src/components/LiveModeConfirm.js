@@ -33,7 +33,7 @@ const LiveModeConfirm = ({ open, onClose, onConfirm }) => {
   const handleRequest = async () => {
     setLoading(true);
     try {
-      await axios.post(`${BACKEND_URL}/api/bot/live/request`, {}, getAuthHeaders());
+      await axios.post(`${BACKEND_URL}/api/live/request`, {}, getAuthHeaders());
       setStep(2);
       toast.success('Live Mode angefordert');
     } catch (error) {
@@ -52,11 +52,11 @@ const LiveModeConfirm = ({ open, onClose, onConfirm }) => {
     setLoading(true);
     try {
       await axios.post(
-        `${BACKEND_URL}/api/bot/live/confirm`,
+        `${BACKEND_URL}/api/live/confirm`,
         { password },
         getAuthHeaders()
       );
-      toast.success('LIVE MODE AKTIVIERT!', {
+      toast.success('LIVE MODE AKTIVIERT! Du kannst nun den Live Bot starten.', {
         duration: 5000,
         className: 'bg-red-500 text-white'
       });
