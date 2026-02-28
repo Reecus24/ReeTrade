@@ -256,6 +256,14 @@ class MultiUserTradingWorker:
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Failed to run momentum rotation: {str(e)}")
     
+    async def scan_and_trade_mode(self, user_id: str, settings: UserSettings, mode: str):
+        """Scan and trade for a specific mode (paper or live)"""
+        # Create a modified settings object with the correct mode
+        mode_settings = settings.model_copy()
+        mode_settings.mode = mode
+        
+        await self.scan_and_trade(user_id, mode_settings)
+    
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
         account = await self.db.get_paper_account(user_id)
         
