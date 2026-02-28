@@ -294,6 +294,14 @@ const SettingsTab = ({ mode = 'paper' }) => {
                   className="bg-zinc-800 border-zinc-700 h-9"
                 />
               </Field>
+              <Field label="Min Order" tip="Minimale Größe pro Trade (kleinere Signale werden ignoriert)" unit="USDT">
+                <Input
+                  type="number" step="5"
+                  value={settings.live_min_notional_usdt || 10}
+                  onChange={(e) => setSettings({...settings, live_min_notional_usdt: parseFloat(e.target.value)})}
+                  className="bg-zinc-800 border-zinc-700 h-9"
+                />
+              </Field>
             </div>
           </div>
 
