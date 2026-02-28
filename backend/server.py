@@ -448,8 +448,12 @@ async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
 # ============ ACCOUNT BALANCE ENDPOINT ============
 
 @app.get("/api/account/balance")
-async def get_account_balance(current_user: dict = Depends(get_current_user)):
-    """Get account balance with reserve & budget info - Live from MEXC or Paper from DB"""
+async def get_account_balance(mode: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get account balance with reserve & budget info - Live from MEXC or Paper from DB
+    
+    Args:
+        mode: Optional override - 'paper' or 'live'. If not provided, uses settings.mode
+    """
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     paper_account = await db.get_paper_account(user_id)
@@ -457,7 +461,10 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
     # Calculate used budget from open positions
     used_budget = sum(pos.entry_price * pos.qty for pos in paper_account.open_positions)
     
-    if settings.mode == 'live':
+    # Use provided mode or fall back to settings
+    effective_mode = mode if mode in ['paper', 'live'] else settings.mode
+    
+    if effective_mode == 'live':
         # Get MEXC keys
         keys = await db.get_mexc_keys(user_id)
         if not keys:
