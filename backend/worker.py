@@ -591,15 +591,22 @@ Reason: {reason}
             'reason': reason
         })
     
-    def is_in_cooldown(self, user_id: str, cooldown_candles: int) -> bool:
-        if user_id not in self.user_last_trade_time:
+    def is_in_cooldown(self, user_id: str, mode: str, cooldown_candles: int) -> bool:
+        """Check if user is in cooldown - MODE SPECIFIC"""
+        cooldown_key = f"{user_id}_{mode}"
+        if cooldown_key not in self.user_last_trade_time:
             return False
         
-        last_trade = self.user_last_trade_time[user_id]
+        last_trade = self.user_last_trade_time[cooldown_key]
         cooldown_minutes = cooldown_candles * 15  # 15m candles
         cooldown_duration = timedelta(minutes=cooldown_minutes)
         
         return (datetime.now(timezone.utc) - last_trade) < cooldown_duration
+    
+    def set_last_trade_time(self, user_id: str, mode: str):
+        """Set last trade time - MODE SPECIFIC"""
+        cooldown_key = f"{user_id}_{mode}"
+        self.user_last_trade_time[cooldown_key] = datetime.now(timezone.utc)
     
     async def get_user_mexc_client(self, user_id: str, settings: UserSettings) -> MexcClient:
         if settings.mode == 'live' and settings.live_confirmed:
