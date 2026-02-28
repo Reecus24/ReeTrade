@@ -207,12 +207,17 @@ class MexcClient:
         price: Optional[float] = None,
         quote_order_qty: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Place a new order (requires API keys)"""
-        params = {
-            "symbol": symbol,
-            "side": side,
-            "type": order_type
-        }
+        """Place a new order (requires API keys)
+        
+        Order of parameters matters for MEXC signature!
+        """
+        # Use ordered dict to maintain parameter order
+        from collections import OrderedDict
+        params = OrderedDict()
+        
+        params["symbol"] = symbol
+        params["side"] = side
+        params["type"] = order_type
         
         if quantity:
             params['quantity'] = str(quantity)
@@ -221,7 +226,7 @@ class MexcClient:
         if quote_order_qty:
             params['quoteOrderQty'] = str(quote_order_qty)
         
-        return await self._request("POST", "/api/v3/order", params=params, signed=True)
+        return await self._request("POST", "/api/v3/order", params=dict(params), signed=True)
     
     async def get_order(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Query order status (requires API keys)"""
