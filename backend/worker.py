@@ -774,7 +774,7 @@ Reason: {reason}
             
             if qty == 0:
                 await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
-                return
+                return False
             
             # Calculate notional value
             notional = qty * current_price
