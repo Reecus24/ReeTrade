@@ -1068,7 +1068,7 @@ Fee: {entry_fee:.4f} USDT
                 exit_reason = "Take profit hit"
             
             if should_exit:
-                await self.close_position(user_id, position, current_price, account, settings, exit_reason)
+                await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
             
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Error checking position {position.symbol}: {str(e)}")
