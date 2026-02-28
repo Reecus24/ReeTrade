@@ -781,6 +781,7 @@ Reason: {reason}
                 return
             
             # Calculate fees and slippage costs
+            mode_prefix = f"[{settings.mode.upper()}]"
             fee_rate = settings.fee_bps / 10000
             slippage_rate = settings.slippage_bps / 10000
             
@@ -789,6 +790,20 @@ Reason: {reason}
             
             # Apply fees and slippage to entry price
             entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
+            
+            # LOG: TRADE OPENED (BEFORE execution)
+            trade_opened_log = f"""
+{mode_prefix} ══ TRADE OPENED ══
+Symbol: {symbol}
+Qty: {rounded_qty:.6f}
+Entry: {entry_price:.4f}
+Notional: {notional:.2f} USDT
+ATR Stop: {stop_loss:.4f}
+Take Profit: {take_profit:.4f}
+Risk: {settings.risk_per_trade * 100:.1f}%
+Mode: {settings.mode.upper()}
+══════════════════"""
+            await self.db.log(user_id, "INFO", trade_opened_log.strip())
             
             # Create position with rounded qty
             position = Position(
@@ -822,6 +837,17 @@ Reason: {reason}
             )
             await self.db.add_trade(trade)
             
+            # LOG: ORDER CONFIRMED
+            order_confirmed_log = f"""
+{mode_prefix} ══ ORDER CONFIRMED ══
+Exchange: {'MEXC (SIMULATED)' if settings.mode == 'paper' else 'MEXC'}
+Status: FILLED
+Executed Price: {entry_price:.4f}
+Fee: {entry_fee:.4f} USDT
+Slippage: {slippage_cost:.4f} USDT
+══════════════════"""
+            await self.db.log(user_id, "INFO", order_confirmed_log.strip())
+            
             # AUDIT LOG for trade execution
             await self.db.audit_log(
                 user_id=user_id,
@@ -840,22 +866,6 @@ Reason: {reason}
                     'fees': round(entry_fee, 4),
                     'slippage': round(slippage_cost, 4),
                     'budget_remaining': round(available_budget - notional, 2)
-                }
-            )
-            
-            await self.db.log(
-                user_id,
-                "INFO",
-                f"OPEN LONG {symbol} @ {entry_price:.4f} [Regime: {regime}]",
-                {
-                    'qty': round(rounded_qty, 6),
-                    'stop_loss': round(stop_loss, 4),
-                    'take_profit': round(take_profit, 4),
-                    'notional': round(notional, 2),
-                    'fees': round(entry_fee, 4),
-                    'regime': regime,
-                    'risk_pct': settings.risk_per_trade * 100,
-                    **context
                 }
             )
             
