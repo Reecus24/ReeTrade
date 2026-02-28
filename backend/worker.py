@@ -768,8 +768,9 @@ Reason: {reason}
                 await self.db.log(user_id, "INFO", f"{symbol} position reduced to available budget: ${notional:.2f}")
             
             # Check if position is still viable
-            if notional < settings.min_notional_usdt:
-                await self.db.log(user_id, "WARNING", f"{symbol} position too small after budget limits: ${notional:.2f}")
+            min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
+            if notional < min_notional:
+                await self.db.log(user_id, "WARNING", f"{symbol} position too small after budget limits: ${notional:.2f} < min ${min_notional}")
                 return
             
             # Round quantity to exchange stepSize
