@@ -288,6 +288,65 @@ const OverviewTab = ({ status, onRefresh }) => {
         </div>
       </div>
 
+      {/* Budget Info - NEW */}
+      {balanceData?.budget && !hasLiveError && (
+        <div className="grid grid-cols-3 gap-4" data-testid="budget-info">
+          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Budget</div>
+            <div className="text-xl font-bold font-mono text-white">
+              {formatCurrency(balanceData.budget.total_budget)}
+            </div>
+            <div className="text-xs text-zinc-600 mt-1">
+              {settings.mode === 'live' ? 'Trading Limit' : 'Start Balance'}
+            </div>
+          </div>
+          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Used Budget</div>
+            <div className="text-xl font-bold font-mono text-orange-500">
+              {formatCurrency(balanceData.budget.used_budget)}
+            </div>
+            <div className="text-xs text-zinc-600 mt-1">
+              In {balanceData.open_positions_count || 0} Position(en)
+            </div>
+          </div>
+          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Available Budget</div>
+            <div className={`text-xl font-bold font-mono ${
+              balanceData.budget.available_budget > 50 ? 'text-green-500' : 
+              balanceData.budget.available_budget > 0 ? 'text-yellow-500' : 'text-red-500'
+            }`}>
+              {formatCurrency(balanceData.budget.available_budget)}
+            </div>
+            <div className="text-xs text-zinc-600 mt-1">
+              Max Order: {formatCurrency(balanceData.budget.max_order_notional || 50)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PnL Info for Paper Mode */}
+      {balanceData?.pnl && settings.mode === 'paper' && (
+        <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="paper-pnl-info">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Paper Trading PnL</div>
+              <div className={`text-2xl font-bold font-mono ${balanceData.pnl.amount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {balanceData.pnl.amount >= 0 ? '+' : ''}{formatCurrency(balanceData.pnl.amount)}
+                <span className="text-sm ml-2">
+                  ({balanceData.pnl.percent >= 0 ? '+' : ''}{balanceData.pnl.percent.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+            {balanceData.fees && (
+              <div className="text-right">
+                <div className="text-xs text-zinc-500">Gebühren: {balanceData.fees.fee_bps} bps</div>
+                <div className="text-xs text-zinc-500">Slippage: {balanceData.fees.slippage_bps} bps</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-equity">
