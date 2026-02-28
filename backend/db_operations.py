@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 from models import UserSettings, LogEntry, PaperAccount, Trade, DailyMetrics, User
 from crypto_utils import crypto_manager
