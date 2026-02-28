@@ -90,7 +90,8 @@ class SettingsUpdate(BaseModel):
     # Order Sizing
     min_notional_usdt: Optional[float] = None
     
-    # Budget Limits (NEW)
+    # Budget & Reserve System
+    reserve_usdt: Optional[float] = None
     trading_budget_usdt: Optional[float] = None
     paper_start_balance_usdt: Optional[float] = None
     max_order_notional_usdt: Optional[float] = None
