@@ -67,6 +67,7 @@ class UserSettings(BaseModel):
     trading_budget_usdt: float = 500.0  # Max total exposure
     live_daily_cap_usdt: float = 200.0  # Daily trading limit
     live_max_order_usdt: float = 50.0  # Max order size
+    live_min_notional_usdt: float = 10.0  # Min order size for live
     
     # Legacy (for backwards compat)
     fee_bps: int = 10
