@@ -355,9 +355,12 @@ class MultiUserTradingWorker:
             })
             return
         
+        # Get min_notional based on mode
+        min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
+        
         # Check if we have budget for new positions
-        if available_budget < settings.min_notional_usdt:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Kein Budget (${available_budget:.2f} < ${settings.min_notional_usdt})")
+        if available_budget < min_notional:
+            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Kein Budget (${available_budget:.2f} < ${min_notional})")
             await self.db.update_settings(user_id, {
                 f'{settings.mode}_last_decision': f'BLOCKED: Budget zu niedrig (${available_budget:.2f})',
                 f'{settings.mode}_last_symbol': '-'
@@ -365,7 +368,7 @@ class MultiUserTradingWorker:
             return
         
         # Check DAILY CAP
-        if daily_remaining < settings.min_notional_usdt:
+        if daily_remaining < min_notional:
             await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
             await self.db.update_settings(user_id, {
                 f'{settings.mode}_last_decision': f'BLOCKED: Tageslimit (${today_exposure:.0f}/${daily_cap:.0f})',
