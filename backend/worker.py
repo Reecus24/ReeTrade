@@ -200,19 +200,39 @@ class MultiUserTradingWorker:
             await self.db.update_settings(user_id, {'live_heartbeat': datetime.now(timezone.utc)})
     
     async def refresh_top_pairs(self, user_id: str):
-        # MOMENTUM ROTATION: Select Top 10 by momentum score
+        """MOMENTUM ROTATION: Select Top coins by momentum score, filtered by budget"""
         try:
-            await self.db.log(user_id, "INFO", "Running Momentum Rotation...")
+            settings = await self.db.get_settings(user_id)
+            account = await self.db.get_paper_account(user_id)
+            
+            # Get available budget for filtering
+            min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
+            
+            await self.db.log(user_id, "INFO", f"Running Momentum Rotation... (Min Order: ${min_notional})")
             
             mexc = MexcClient()
             
-            # Get momentum-scored universe (Top 50 by volume)
-            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=50)
+            # Get ALL USDT pairs (increased limit)
+            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=200)
             
-            # Filter: Only BULLISH regime
+            await self.db.log(user_id, "INFO", f"Gefunden: {len(momentum_pairs)} USDT Coins")
+            
+            # Filter: Only BULLISH regime AND affordable
             filtered_pairs = []
-            for pair_data in momentum_pairs[:20]:  # Check top 20 momentum
+            skipped_expensive = 0
+            skipped_bearish = 0
+            
+            for pair_data in momentum_pairs[:50]:  # Check top 50 momentum
                 symbol = pair_data['symbol']
+                price = pair_data.get('price', 0)
+                
+                # Skip if price unknown
+                if price <= 0:
+                    continue
+                
+                # Check if we can afford at least min_notional worth
+                # Some exchanges have minimum qty requirements, estimate conservatively
+                estimated_min_qty = min_notional / price if price > 0 else 0
                 
                 try:
                     # Get 4H candles for regime
@@ -226,11 +246,14 @@ class MultiUserTradingWorker:
                             filtered_pairs.append({
                                 **pair_data,
                                 'regime': regime,
-                                'adx': regime_ctx.get('adx', 0)
+                                'adx': regime_ctx.get('adx', 0),
+                                'estimated_min_qty': estimated_min_qty
                             })
                             
-                            if len(filtered_pairs) >= 10:
+                            if len(filtered_pairs) >= 15:  # Get more pairs
                                 break
+                        else:
+                            skipped_bearish += 1
                 except Exception as e:
                     logger.warning(f"Error checking regime for {symbol}: {e}")
                     continue
@@ -246,9 +269,9 @@ class MultiUserTradingWorker:
             await self.db.log(
                 user_id, 
                 "INFO", 
-                f"Momentum Rotation complete: {len(tradable_symbols)} BULLISH symbols selected",
+                f"Momentum Rotation: {len(tradable_symbols)} BULLISH Coins | {skipped_bearish} übersprungen (nicht BULLISH)",
                 {
-                    'symbols': tradable_symbols[:5],
+                    'symbols': tradable_symbols[:10],
                     'scores': [f"{p['symbol']}={p['score']:.2f}" for p in filtered_pairs[:5]]
                 }
             )
