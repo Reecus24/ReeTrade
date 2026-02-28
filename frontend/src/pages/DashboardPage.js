@@ -568,7 +568,7 @@ const DashboardPage = ({ onLogout }) => {
                       <div className="p-3 bg-zinc-900 rounded-lg">
                         <div className="text-xs text-zinc-500 mb-1">Max Order</div>
                         <div className="text-xl font-bold font-mono text-white">
-                          {formatCurrency(settings.max_order_notional_usdt)}
+                          {formatCurrency(settings.live_max_order_usdt || settings.max_order_notional_usdt)}
                         </div>
                         <div className="text-xs text-zinc-600">Pro Trade</div>
                       </div>
