@@ -7,6 +7,7 @@ from mexc_client import MexcClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
 from regime_detector import RegimeDetector
+from order_sizer import order_sizer
 from models import Position, Trade, UserSettings, PaperAccount
 
 logger = logging.getLogger(__name__)
