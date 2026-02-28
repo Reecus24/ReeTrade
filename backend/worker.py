@@ -409,8 +409,12 @@ class MultiUserTradingWorker:
             return
         
         # Look for new entries with REGIME DETECTION
+        # COLLECT ALL SIGNALS first, then pick the best one
         symbols_checked = 0
         trade_opened = False
+        signal_candidates = []  # List of (symbol, score, data) tuples
+        
+        await self.db.log(user_id, "INFO", f"{mode_prefix} Scanne {len(settings.top_pairs[:15])} Coins nach Signalen...")
         
         for symbol in settings.top_pairs[:15]:  # Check top 15 coins
             symbols_checked += 1
