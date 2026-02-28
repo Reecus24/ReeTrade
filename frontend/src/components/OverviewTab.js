@@ -288,39 +288,105 @@ const OverviewTab = ({ status, onRefresh }) => {
         </div>
       </div>
 
-      {/* Budget Info - NEW */}
+      {/* Budget Info - Reserve System */}
       {balanceData?.budget && !hasLiveError && (
-        <div className="grid grid-cols-3 gap-4" data-testid="budget-info">
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
-            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Budget</div>
-            <div className="text-xl font-bold font-mono text-white">
-              {formatCurrency(balanceData.budget.total_budget)}
+        <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4" data-testid="budget-info">
+          {/* Live Mode Budget Display */}
+          {balanceData.budget.mode === 'live' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Budget Breakdown (Live)</span>
+                <span className="text-xs text-zinc-600">Max Order: {formatCurrency(balanceData.budget.max_order_notional || 50)}</span>
+              </div>
+              <div className="grid grid-cols-5 gap-3">
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">USDT Free</div>
+                  <div className="text-lg font-mono font-bold text-white">
+                    {formatCurrency(balanceData.budget.usdt_free)}
+                  </div>
+                  <div className="text-xs text-zinc-600">MEXC Wallet</div>
+                </div>
+                <div className="p-3 bg-blue-950/30 border border-blue-900/30 rounded-lg">
+                  <div className="text-xs text-blue-400 mb-1">Reserve</div>
+                  <div className="text-lg font-mono font-bold text-blue-400">
+                    -{formatCurrency(balanceData.budget.reserve_usdt)}
+                  </div>
+                  <div className="text-xs text-blue-600">Geschützt</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Available to Bot</div>
+                  <div className="text-lg font-mono font-bold text-yellow-500">
+                    {formatCurrency(balanceData.budget.available_to_bot)}
+                  </div>
+                  <div className="text-xs text-zinc-600">Nach Reserve</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Used Budget</div>
+                  <div className="text-lg font-mono font-bold text-orange-500">
+                    {formatCurrency(balanceData.budget.used_budget)}
+                  </div>
+                  <div className="text-xs text-zinc-600">{balanceData.open_positions_count || 0} Position(en)</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Remaining</div>
+                  <div className={`text-lg font-mono font-bold ${
+                    balanceData.budget.remaining_budget > 50 ? 'text-green-500' : 
+                    balanceData.budget.remaining_budget > 0 ? 'text-yellow-500' : 'text-red-500'
+                  }`}>
+                    {formatCurrency(balanceData.budget.remaining_budget)}
+                  </div>
+                  <div className="text-xs text-zinc-600">Für neue Trades</div>
+                </div>
+              </div>
+              <div className="text-xs text-zinc-600 flex justify-between">
+                <span>Trading Budget Cap: {formatCurrency(balanceData.budget.trading_budget)}</span>
+                <span>Formel: min(Available to Bot, Trading Budget - Used)</span>
+              </div>
             </div>
-            <div className="text-xs text-zinc-600 mt-1">
-              {settings.mode === 'live' ? 'Trading Limit' : 'Start Balance'}
+          )}
+          
+          {/* Paper Mode Budget Display */}
+          {balanceData.budget.mode === 'paper' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Budget Breakdown (Paper)</span>
+                <span className="text-xs text-zinc-600">Max Order: {formatCurrency(balanceData.budget.max_order_notional || 50)}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Start Balance</div>
+                  <div className="text-lg font-mono font-bold text-white">
+                    {formatCurrency(balanceData.budget.start_balance)}
+                  </div>
+                  <div className="text-xs text-zinc-600">Paper Budget</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Used Budget</div>
+                  <div className="text-lg font-mono font-bold text-orange-500">
+                    {formatCurrency(balanceData.budget.used_budget)}
+                  </div>
+                  <div className="text-xs text-zinc-600">{balanceData.open_positions_count || 0} Position(en)</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Remaining</div>
+                  <div className={`text-lg font-mono font-bold ${
+                    balanceData.budget.remaining_budget > 50 ? 'text-green-500' : 
+                    balanceData.budget.remaining_budget > 0 ? 'text-yellow-500' : 'text-red-500'
+                  }`}>
+                    {formatCurrency(balanceData.budget.remaining_budget)}
+                  </div>
+                  <div className="text-xs text-zinc-600">Für neue Trades</div>
+                </div>
+                <div className="p-3 bg-zinc-900 rounded-lg">
+                  <div className="text-xs text-zinc-500 mb-1">Cash</div>
+                  <div className="text-lg font-mono font-bold text-white">
+                    {formatCurrency(balanceData.budget.paper_cash)}
+                  </div>
+                  <div className="text-xs text-zinc-600">Verfügbar</div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
-            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Used Budget</div>
-            <div className="text-xl font-bold font-mono text-orange-500">
-              {formatCurrency(balanceData.budget.used_budget)}
-            </div>
-            <div className="text-xs text-zinc-600 mt-1">
-              In {balanceData.open_positions_count || 0} Position(en)
-            </div>
-          </div>
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
-            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Available Budget</div>
-            <div className={`text-xl font-bold font-mono ${
-              balanceData.budget.available_budget > 50 ? 'text-green-500' : 
-              balanceData.budget.available_budget > 0 ? 'text-yellow-500' : 'text-red-500'
-            }`}>
-              {formatCurrency(balanceData.budget.available_budget)}
-            </div>
-            <div className="text-xs text-zinc-600 mt-1">
-              Max Order: {formatCurrency(balanceData.budget.max_order_notional || 50)}
-            </div>
-          </div>
+          )}
         </div>
       )}
 
