@@ -43,6 +43,10 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] **NEU:** Getrennte Running-States (paper_running, live_running)
 - [x] **NEU:** Separate Endpoints (/api/paper/*, /api/live/*)
 - [x] **NEU:** Zwei-Tab UI (PAPER gelb, LIVE rot)
+- [x] **NEU:** Live Tab mit echtem MEXC Wallet (USDT Free/Locked/Total)
+- [x] **NEU:** Budget System separat angezeigt (Reserve, Budget, Available)
+- [x] **NEU:** Wallet-Werte READ-ONLY
+- [x] **NEU:** Verbesserte Settings mit Erklärungen und Tooltips
 
 ## Neue Features (28. Februar 2026)
 
