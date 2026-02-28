@@ -169,6 +169,11 @@ live_max_order_usdt: float = 50.0
 ```
 
 ## Changelog
+- **28.02.2026:** Vollständige Transparenz für Trading-Entscheidungen implementiert
+  - Detaillierte SYMBOL CHECK Logs mit Regime, ADX, EMA, RSI, Cooldown, Budget
+  - TRADE OPENED Logs mit Entry, Stop Loss, Take Profit, Notional
+  - ORDER CONFIRMED Logs mit Fee und Slippage
+  - Bot Status Panel im Dashboard mit Echtzeit-Status
 - **28.02.2026:** Daily Cap Progress Bar im Dashboard (Fortschrittsbalken, Prozentanzeige, Warnungen)
 - **28.02.2026:** Daily Trading Cap implementiert (Paper & Live)
 - **28.02.2026:** Settings UI in drei Tabs aufgeteilt (Paper/Live/Strategie)
