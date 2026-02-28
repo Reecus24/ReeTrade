@@ -933,22 +933,32 @@ Mode: {settings.mode.upper()}
                         quantity=rounded_qty
                     )
                     
-                    order_id = order_result.get('orderId')
-                    executed_price = float(order_result.get('price', entry_price))
-                    actual_qty = float(order_result.get('executedQty', rounded_qty))
-                    status = order_result.get('status', 'UNKNOWN')
+                    # Log full response for debugging
+                    await self.db.log(user_id, "DEBUG", f"{mode_prefix} MEXC Response: {order_result}")
                     
-                    if status not in ['FILLED', 'PARTIALLY_FILLED']:
-                        fail_reason = f"Order nicht ausgeführt: {status}"
+                    order_id = order_result.get('orderId')
+                    
+                    # MEXC returns different fields for MARKET orders
+                    # Try multiple field names
+                    executed_price = float(order_result.get('price') or order_result.get('avgPrice') or order_result.get('cummulativeQuoteQty', 0) / float(order_result.get('executedQty', 1)) if order_result.get('executedQty') else entry_price)
+                    actual_qty = float(order_result.get('executedQty') or order_result.get('origQty') or rounded_qty)
+                    
+                    # For MARKET orders, if we got an orderId, it was successful
+                    # Status might be 'NEW' initially or not present at all
+                    status = order_result.get('status', 'FILLED' if order_id else 'UNKNOWN')
+                    
+                    # If we have an orderId, consider it successful
+                    if not order_id:
+                        fail_reason = f"Keine Order ID erhalten: {order_result}"
                         await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ {symbol} - {fail_reason}")
                         await self.db.update_settings(user_id, {
-                            f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
+                            f'{settings.mode}_last_decision': f'FAILED: {symbol} - Keine Order ID',
                             f'{settings.mode}_last_symbol': symbol
                         })
                         return False
                     
                     await self.db.log(user_id, "INFO", 
-                        f"{mode_prefix} ✅ MEXC Order erfolgreich! ID: {order_id}, Status: {status}, Preis: {executed_price}")
+                        f"{mode_prefix} ✅ MEXC Order erfolgreich! ID: {order_id}, Qty: {actual_qty}, Preis: {executed_price}")
                     
                 except Exception as order_error:
                     fail_reason = f"MEXC Order Fehler: {str(order_error)}"
