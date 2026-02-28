@@ -38,6 +38,8 @@ class Database:
         await self.trades.create_index([('user_id', 1), ('ts', -1)])
         await self.audit_logs.create_index([('user_id', 1), ('ts', -1)])
         await self.audit_logs.create_index('action')
+        await self.symbol_pauses.create_index([('user_id', 1), ('symbol', 1)])
+        await self.symbol_pauses.create_index('pause_until')
         logger.info("Database initialized with indexes")
     
     # ========== USER OPERATIONS ==========
