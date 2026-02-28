@@ -195,6 +195,13 @@ class MultiUserTradingWorker:
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
         account = await self.db.get_paper_account(user_id)
         
+        # Initialize paper account with user's budget setting if needed
+        if account.equity == 10000.0 and settings.paper_start_balance_usdt != 10000.0:
+            account.equity = settings.paper_start_balance_usdt
+            account.cash = settings.paper_start_balance_usdt
+            await self.db.update_paper_account(account)
+            await self.db.log(user_id, "INFO", f"Paper account initialized with budget: ${settings.paper_start_balance_usdt}")
+        
         # Initialize tracking
         if user_id not in self.user_initial_equity:
             self.user_initial_equity[user_id] = account.equity
@@ -211,19 +218,44 @@ class MultiUserTradingWorker:
         # Get MEXC client with user keys if live mode
         mexc = await self.get_user_mexc_client(user_id, settings)
         
+        # Get live USDT balance if in live mode
+        live_usdt_free = None
+        if settings.mode == 'live' and settings.live_confirmed:
+            try:
+                account_info = await mexc.get_account()
+                balances = account_info.get('balances', [])
+                usdt_balance = next((b for b in balances if b.get('asset') == 'USDT'), None)
+                if usdt_balance:
+                    live_usdt_free = float(usdt_balance.get('free', 0))
+            except Exception as e:
+                await self.db.log(user_id, "ERROR", f"Failed to fetch MEXC balance: {e}")
+                return
+        
+        # Calculate budget info
+        available_budget, used_budget, total_budget = self.calculate_effective_balance(
+            settings, account, live_usdt_free
+        )
+        
+        await self.db.log(user_id, "INFO", f"Budget: ${available_budget:.2f} available / ${used_budget:.2f} used / ${total_budget:.2f} total")
+        
         # Check daily loss limit
         if risk_mgr.check_daily_loss_limit(account, self.user_initial_equity[user_id]):
             await self.db.log(user_id, "ERROR", "Daily loss limit hit - stopping bot")
             await self.db.update_settings(user_id, {'bot_running': False})
             return
         
-        # Check existing positions for exits
+        # Check existing positions for exits using LIVE market data
         for pos in account.open_positions[:]:
             await self.check_position_exit(user_id, pos, account, settings, mexc)
         
         # Check cooldown
         if self.is_in_cooldown(user_id, 5):  # Fixed 5 candles cooldown
             await self.db.log(user_id, "DEBUG", "In cooldown period (5 candles), skipping new entries")
+            return
+        
+        # Check if we have budget for new positions
+        if available_budget < settings.min_notional_usdt:
+            await self.db.log(user_id, "INFO", f"Insufficient budget (${available_budget:.2f}) for new positions (min: ${settings.min_notional_usdt})")
             return
         
         # Look for new entries with REGIME DETECTION
@@ -294,11 +326,11 @@ class MultiUserTradingWorker:
                         original_risk = settings.risk_per_trade
                         settings.risk_per_trade = 0.005  # 0.5%
                         
-                        # Open position with regime-adjusted parameters
-                        await self.open_position_with_regime(
+                        # Open position with regime-adjusted parameters and budget limit
+                        await self.open_position_with_budget(
                             user_id, symbol, klines_15m, account, settings,
                             strategy, risk_mgr, context, mexc, regime,
-                            stop_loss, take_profit
+                            stop_loss, take_profit, available_budget
                         )
                         
                         # Restore original risk
