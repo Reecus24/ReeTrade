@@ -538,8 +538,8 @@ class MultiUserTradingWorker:
                 # Restore original risk
                 settings.risk_per_trade = original_risk
                 
-                # Update last trade time and decision
-                self.user_last_trade_time[user_id] = datetime.now(timezone.utc)
+                # Update last trade time (MODE SPECIFIC) and decision
+                self.set_last_trade_time(user_id, settings.mode)
                 await self.db.update_settings(user_id, {
                     f'{settings.mode}_last_decision': f'TRADE: {symbol}',
                     f'{settings.mode}_last_regime': regime,
