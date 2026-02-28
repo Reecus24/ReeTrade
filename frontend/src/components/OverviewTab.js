@@ -286,7 +286,9 @@ const OverviewTab = ({ status, onRefresh }) => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-equity">
           <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Equity</div>
-          <div className="text-2xl font-bold font-mono">{formatCurrency(displayEquity)}</div>
+          <div className={`text-2xl font-bold font-mono ${hasLiveError ? 'text-zinc-600' : ''}`}>
+            {formatValue(displayEquity)}
+          </div>
           {balanceData?.locked > 0 && (
             <div className="text-xs text-zinc-500 mt-1">Locked: {formatCurrency(balanceData.locked)}</div>
           )}
@@ -296,7 +298,9 @@ const OverviewTab = ({ status, onRefresh }) => {
           <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
             {settings.mode === 'live' ? 'Available USDT' : 'Cash'}
           </div>
-          <div className="text-2xl font-bold font-mono">{formatCurrency(displayCash)}</div>
+          <div className={`text-2xl font-bold font-mono ${hasLiveError ? 'text-zinc-600' : ''}`}>
+            {formatValue(displayCash)}
+          </div>
         </div>
 
         <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg" data-testid="metric-pnl">
@@ -313,8 +317,8 @@ const OverviewTab = ({ status, onRefresh }) => {
               </div>
             </>
           ) : (
-            <div className="text-2xl font-bold font-mono text-white">
-              {formatCurrency(displayEquity)}
+            <div className={`text-2xl font-bold font-mono ${hasLiveError ? 'text-zinc-600' : 'text-white'}`}>
+              {formatValue(displayEquity)}
             </div>
           )}
         </div>
