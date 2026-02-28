@@ -410,7 +410,9 @@ class MultiUserTradingWorker:
         
         # Look for new entries with REGIME DETECTION
         symbols_checked = 0
-        for symbol in settings.top_pairs[:10]:  # Check top 10
+        trade_opened = False
+        
+        for symbol in settings.top_pairs[:15]:  # Check top 15 coins
             symbols_checked += 1
             try:
                 # Check if symbol is paused (3 losses in 12h)
