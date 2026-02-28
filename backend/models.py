@@ -55,6 +55,11 @@ class UserSettings(BaseModel):
     # Order Sizing
     min_notional_usdt: float = 10.0  # Minimum position size in USDT
     
+    # Budget Limits (NEW)
+    trading_budget_usdt: float = 500.0  # Max total exposure allowed
+    paper_start_balance_usdt: float = 500.0  # Paper mode starting balance
+    max_order_notional_usdt: Optional[float] = 50.0  # Max single order size
+    
     # Market data
     top_pairs: List[str] = Field(default_factory=list)
     last_pairs_refresh: Optional[datetime] = None
