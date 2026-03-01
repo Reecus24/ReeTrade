@@ -713,17 +713,24 @@ class MultiUserTradingWorker:
         self, user_id: str, symbol: str, candidate: dict,
         account: PaperAccount, settings: UserSettings,
         strategy: TradingStrategy, risk_mgr: RiskManager,
-        mexc: MexcClient, available_budget: float
+        mexc: MexcClient, available_budget: float,
+        is_ai_mode: bool = False, ai_decision = None
     ) -> bool:
-        """Open a live position on MEXC"""
+        """Open a live position on MEXC with optional AI position sizing"""
         try:
             current_price = candidate['current_price']
             stop_loss = candidate['stop_loss']
             take_profit = candidate['take_profit']
             
-            # Calculate position size
-            max_order = min(settings.live_max_order_usdt, available_budget)
-            notional = min(max_order, available_budget * 0.95)
+            # Calculate position size (AI or manual)
+            if is_ai_mode and ai_decision and ai_decision.position_size_usdt > 0:
+                # Use AI-determined position size
+                notional = min(ai_decision.position_size_usdt, available_budget * 0.95)
+                await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Position Size: ${notional:.2f}")
+            else:
+                # Manual position sizing
+                max_order = min(settings.live_max_order_usdt, available_budget)
+                notional = min(max_order, available_budget * 0.95)
             
             if notional < settings.live_min_notional_usdt:
                 await self.db.log(user_id, "WARNING", f"[LIVE] Notional ${notional:.2f} below minimum ${settings.live_min_notional_usdt}")
