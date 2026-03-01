@@ -420,15 +420,12 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
     if not keys:
         raise HTTPException(
             status_code=400,
-            detail="MEXC API keys not configured"
+            detail="MEXC API keys nicht konfiguriert oder ungültig. Bitte Keys in Settings neu eingeben."
         )
     
     try:
-        # Create client with user's keys
-        from crypto_utils import decrypt_value
-        api_key = decrypt_value(keys['api_key'])
-        api_secret = decrypt_value(keys['api_secret'])
-        mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+        # Keys are already decrypted by get_mexc_keys()
+        mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
         account_info = await mexc.get_account()
         
         # Extract balances
