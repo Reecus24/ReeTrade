@@ -131,7 +131,7 @@ RISK_PROFILES = {
         "base_take_profit_rr": 2.5,         # Höheres R:R = bessere Gewinn/Verlust Balance
         "max_positions": 5,
         "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],  # Kein BEARISH - zu riskant
-        "min_adx": 15,                      # Etwas strenger für bessere Signale
+        "min_adx": 5,                       # Niedrig - erlaubt auch schwache Trends
         "max_drawdown_pct": 20.0,
         "drawdown_reduce_at": 10.0,
         "high_volatility_reduce": 0.7,
