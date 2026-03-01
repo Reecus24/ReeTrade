@@ -42,7 +42,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
       // First call without confirm to get current price and PnL
       const response = await axios.post(
         `${BACKEND_URL}/api/positions/sell`,
-        { symbol: position.symbol, confirm: false },
+        { symbol: position.symbol, position_id: position.id, confirm: false },
         getAuthHeaders()
       );
       
@@ -62,7 +62,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
     try {
       const response = await axios.post(
         `${BACKEND_URL}/api/positions/sell`,
-        { symbol: sellDialog.position.symbol, confirm: true },
+        { symbol: sellDialog.position.symbol, position_id: sellDialog.position.id, confirm: true },
         getAuthHeaders()
       );
       
