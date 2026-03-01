@@ -488,13 +488,27 @@ class MultiUserTradingWorker:
         ai_decision = None
         effective_max_positions = settings.max_positions
         effective_position_size = settings.live_max_order_usdt
+        ai_min_position = None
+        ai_max_position = None
         
-        # Get AI profile limits (but don't make decision yet - need market data first)
+        # Get AI profile limits and calculate expected position sizes
         if is_ai_mode:
             from ai_engine import RISK_PROFILES
             profile = RISK_PROFILES.get(trading_mode, {})
             effective_max_positions = profile.get('max_positions', settings.max_positions)
-            await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Mode: {trading_mode.value} (Max Pos: {effective_max_positions})")
+            
+            # Calculate AI position size based on trading budget
+            trading_budget = settings.trading_budget_usdt or 500
+            base_pct = profile.get('base_position_pct', 3.0)
+            max_pct = profile.get('max_position_pct', 5.0)
+            
+            # AI position range
+            ai_min_position = round(trading_budget * (base_pct * 0.5) / 100, 2)
+            ai_max_position = round(trading_budget * max_pct / 100, 2)
+            effective_position_size = round(trading_budget * base_pct / 100, 2)
+            
+            await self.db.log(user_id, "INFO", 
+                f"[LIVE] 🤖 AI Mode: {trading_mode.value} | Position: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {effective_max_positions}")
         
         # Update status
         await self.db.update_settings(user_id, {
