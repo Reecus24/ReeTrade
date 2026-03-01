@@ -528,8 +528,8 @@ class MultiUserTradingWorker:
                 avg_atr = sum(atr_values) / len(atr_values) if atr_values else 1
                 volatility_percentile = min(100, (current_atr / avg_atr) * 50) if avg_atr > 0 else 50
                 
-                # AI Mode: Update market conditions and get refined decision
-                if is_ai_mode and ai_decision:
+                # AI Mode: Get AI decision with REAL market data
+                if is_ai_mode:
                     market_conditions = MarketConditions(
                         regime=MarketRegime(regime),
                         volatility_percentile=volatility_percentile,
@@ -538,13 +538,31 @@ class MultiUserTradingWorker:
                         rsi_value=regime_context.get('rsi', 50)
                     )
                     
-                    # Get refined AI decision for this symbol
+                    account_state = AccountState(
+                        total_equity=current_equity,
+                        available_budget=available_budget,
+                        current_drawdown_pct=drawdown_pct,
+                        open_positions_count=positions_count,
+                        today_pnl=today_pnl,
+                        today_trades_count=today_trades
+                    )
+                    
+                    manual_settings_dict = {
+                        'live_max_order_usdt': settings.live_max_order_usdt,
+                        'max_positions': settings.max_positions
+                    }
+                    
+                    # Get AI decision for this symbol with REAL market data
                     ai_decision = self.ai_engine.make_decision(
-                        trading_mode, market_conditions, account_state, manual_settings
+                        trading_mode, market_conditions, account_state, manual_settings_dict
                     )
                     
                     if not ai_decision.should_trade:
+                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 {symbol}: AI SKIP - {ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'}")
                         continue  # AI says skip this symbol
+                    
+                    # Update effective position size from AI
+                    effective_position_size = ai_decision.position_size_usdt
                 
                 # Only BULLISH for manual mode
                 if not is_ai_mode and regime != "BULLISH":
