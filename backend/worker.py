@@ -700,6 +700,16 @@ class MultiUserTradingWorker:
                 # Check signal
                 signal, context = strategy.generate_signal(klines_15m)
                 if signal != "LONG":
+                    # Log why no signal
+                    rsi_val = context.get('rsi', 50)
+                    ema_fast = context.get('ema_fast', 0)
+                    ema_slow = context.get('ema_slow', 0)
+                    reason = "Kein LONG Signal"
+                    if rsi_val > 70:
+                        reason = f"RSI überkauft ({rsi_val:.0f})"
+                    elif ema_fast < ema_slow:
+                        reason = f"EMA bearish (Fast < Slow)"
+                    await self.db.log(user_id, "INFO", f"[LIVE] ⏭️ {symbol}: {reason} | RSI={rsi_val:.0f}, ADX={adx_value:.1f}")
                     continue
                 
                 # SIGNAL FOUND!
