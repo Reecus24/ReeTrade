@@ -416,13 +416,20 @@ class MultiUserTradingWorker:
             
             # Detailed logging
             optimal_count = sum(1 for p in filtered_pairs[:20] if p.get('is_optimal', False))
+            bullish_count = sum(1 for p in filtered_pairs[:20] if p.get('regime') == 'BULLISH')
+            sideways_count = sum(1 for p in filtered_pairs[:20] if p.get('regime') == 'SIDEWAYS')
+            
+            regime_info = f"{bullish_count} BULLISH"
+            if sideways_count > 0:
+                regime_info += f" + {sideways_count} SIDEWAYS"
             
             await self.db.log(
                 user_id, "INFO", 
                 f"✅ Momentum Rotation abgeschlossen:\n"
-                f"   • {len(tradable_symbols)} BULLISH Coins ausgewählt ({optimal_count} optimal für Trade-Größe)\n"
-                f"   • {skipped_price_too_high} übersprungen (Preis zu hoch für ${expected_position_size:.2f} Order)\n"
-                f"   • {skipped_bearish} übersprungen (nicht BULLISH)",
+                f"   • {len(tradable_symbols)} Coins ausgewählt ({regime_info})\n"
+                f"   • {optimal_count} optimal für Trade-Größe ${expected_position_size:.2f}\n"
+                f"   • {skipped_price_too_high} übersprungen (Preis zu hoch)\n"
+                f"   • {skipped_bearish} übersprungen (BEARISH)",
                 {'symbols': tradable_symbols[:10]}
             )
             
