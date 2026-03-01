@@ -605,15 +605,26 @@ class MultiUserTradingWorker:
         # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
         symbols_checked = 0
+        symbols_already_owned = 0
+        
+        # Get list of symbols we already own (for diversification)
+        owned_symbols = set()
+        if account and account.open_positions:
+            owned_symbols = {pos.symbol for pos in account.open_positions}
         
         # Calculate effective position size for runtime filtering
         effective_scan_position = effective_position_size if is_ai_mode else settings.live_max_order_usdt
         
-        await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f}")
+        await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f} | Bereits im Portfolio: {len(owned_symbols)}")
         
         for symbol in settings.top_pairs[:20]:
             symbols_checked += 1
             try:
+                # Skip if we already own this symbol (diversification)
+                if symbol in owned_symbols:
+                    symbols_already_owned += 1
+                    continue
+                
                 # Check if symbol is paused (DB-based pause from consecutive losses)
                 is_paused = await self.db.is_symbol_paused(user_id, symbol)
                 if is_paused:
