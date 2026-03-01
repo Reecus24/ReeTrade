@@ -70,13 +70,13 @@ class MultiUserTradingWorker:
             await asyncio.sleep(60)
     
     async def trading_loop(self):
-        """Main trading loop - 5 minute intervals for new entries"""
+        """Main trading loop - 1 minute intervals for new entries"""
         while self.running:
             try:
                 active_settings = await self.db.get_all_active_users()
                 
                 if not active_settings:
-                    await asyncio.sleep(300)
+                    await asyncio.sleep(60)
                     continue
                 
                 logger.info(f"Trading cycle for {len(active_settings)} active user(s)")
@@ -93,7 +93,7 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Trading loop error: {e}")
             
-            await asyncio.sleep(300)  # 5 minutes
+            await asyncio.sleep(60)  # 1 minute
     
     async def exit_check_loop(self):
         """Fast loop to check exits every 30 seconds"""
