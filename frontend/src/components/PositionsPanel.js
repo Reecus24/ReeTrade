@@ -22,7 +22,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
   const [confirmData, setConfirmData] = useState(null);
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     return { headers: { Authorization: `Bearer ${token}` } };
   };
 
