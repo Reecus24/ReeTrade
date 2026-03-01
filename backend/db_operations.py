@@ -152,13 +152,24 @@ class Database:
         return doc is not None and 'api_key_encrypted' in doc
     
     async def get_mexc_keys_status(self, user_id: str) -> Dict:
+        # First check if keys exist
         doc = await self.user_keys.find_one({'user_id': user_id})
         if not doc:
-            return {'connected': False, 'last_updated': None}
-        return {
-            'connected': True,
-            'last_updated': doc.get('updated_at')
-        }
+            return {'connected': False, 'last_updated': None, 'error': None}
+        
+        # Try to decrypt to verify keys are valid
+        try:
+            api_key = crypto_manager.decrypt(doc['api_key_encrypted'])
+            api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
+            if not api_key or not api_secret:
+                return {'connected': False, 'last_updated': None, 'error': 'Keys sind leer'}
+            return {
+                'connected': True,
+                'last_updated': doc.get('updated_at'),
+                'error': None
+            }
+        except Exception as e:
+            return {'connected': False, 'last_updated': None, 'error': 'Keys ungültig'}
     
     # ========== LOG OPERATIONS ==========
     
