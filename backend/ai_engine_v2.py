@@ -97,7 +97,7 @@ RISK_PROFILES_V2 = {
         # Position Sizing (% of available USDT)
         "position_pct_min": 15.0,
         "position_pct_max": 35.0,
-        "max_positions": 3,
+        "max_positions": 5,
         
         # Risk per Trade
         "risk_pct_base": 5.0,  # 4-6%
