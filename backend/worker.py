@@ -917,7 +917,7 @@ class MultiUserTradingWorker:
         
         self.running = True
         logger.info("Multi-user trading worker started (LIVE only)")
-        logger.info("Exit checks: 30s | Signal scans: 5m | MEXC sync: 90s")
+        logger.info("Exit checks: 30s | Signal scans: 1m | MEXC sync: 90s")
         
         await asyncio.gather(
             self.heartbeat(),
