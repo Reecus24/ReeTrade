@@ -834,8 +834,8 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'reserve_usdt': settings.reserve_usdt,
                 'available_to_bot': round(available_to_bot, 2),
                 'trading_budget': settings.trading_budget_usdt,
-                'used_budget': round(entry_value, 2),
-                'remaining_budget': round(remaining_budget, 2),
+                'used_budget': round(invested_value, 2),  # Use actual invested value from MEXC
+                'remaining_budget': round(max(0, settings.trading_budget_usdt - invested_value), 2),
                 'max_order': settings.live_max_order_usdt
             },
             # Daily Cap
