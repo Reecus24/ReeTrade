@@ -128,16 +128,18 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
       </div>
       
       {positions.map((pos, idx) => {
-        const pnlEstimate = pos.current_price 
+        const hasCurrentPrice = pos.current_price && pos.current_price > 0;
+        const pnlAmount = hasCurrentPrice 
           ? (pos.current_price - pos.entry_price) * pos.qty 
-          : 0;
-        const pnlPctEstimate = pos.current_price 
+          : null;
+        const pnlPct = hasCurrentPrice 
           ? ((pos.current_price - pos.entry_price) / pos.entry_price) * 100 
-          : 0;
+          : null;
+        const isProfit = pnlAmount !== null && pnlAmount >= 0;
         
         return (
           <div 
-            key={idx} 
+            key={pos.id || idx} 
             className="p-3 bg-zinc-900 border border-zinc-800 rounded-lg"
             data-testid={`position-${pos.symbol}`}
           >
@@ -146,7 +148,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                 <div>
                   <div className="font-bold text-white">{pos.symbol}</div>
                   <div className="text-xs text-zinc-500">
-                    {pos.qty} @ {formatCurrency(pos.entry_price)}
+                    {pos.qty?.toLocaleString()} @ {formatCurrency(pos.entry_price)}
                   </div>
                 </div>
                 <Badge className={pos.side === 'LONG' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
@@ -155,6 +157,18 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
               </div>
               
               <div className="flex items-center gap-4">
+                {/* Live PnL Display */}
+                {pnlAmount !== null && (
+                  <div className="text-right min-w-[100px]">
+                    <div className={`text-sm font-bold ${isProfit ? 'text-green-400' : 'text-red-400'}`}>
+                      {isProfit ? '+' : ''}{pnlAmount.toFixed(4)} $
+                    </div>
+                    <div className={`text-xs ${isProfit ? 'text-green-500' : 'text-red-500'}`}>
+                      {isProfit ? '+' : ''}{pnlPct.toFixed(2)}%
+                    </div>
+                  </div>
+                )}
+                
                 <div className="text-right">
                   <div className="text-xs text-zinc-500">Stop / TP</div>
                   <div className="text-xs font-mono">
