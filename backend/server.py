@@ -517,7 +517,7 @@ async def get_mexc_keys_status(current_user: dict = Depends(get_current_user)):
         
         # Make a real authenticated API call to verify keys work
         mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-        account_info = await mexc.get_account()
+        await mexc.get_account()  # Will throw if keys invalid
         
         # If we get here, keys are valid and working
         return MexcKeysStatus(
