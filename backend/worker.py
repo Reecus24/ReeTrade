@@ -419,23 +419,28 @@ class MultiUserTradingWorker:
                     if len(klines_4h) >= 200:
                         regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
                         
-                        # AI Aggressive: Accept BULLISH and SIDEWAYS
+                        # AI Aggressive: Accept ALL regimes (BULLISH prioritized, then SIDEWAYS, then BEARISH)
                         # Other modes: Only BULLISH
                         acceptable_regimes = ["BULLISH"]
                         if trading_mode == TradingMode.AI_AGGRESSIVE:
+                            acceptable_regimes = ["BULLISH", "SIDEWAYS", "BEARISH"]
+                        elif trading_mode == TradingMode.AI_MODERATE:
                             acceptable_regimes = ["BULLISH", "SIDEWAYS"]
                         
                         if regime in acceptable_regimes:
+                            # Priority score: BULLISH=3, SIDEWAYS=2, BEARISH=1
+                            regime_priority = {"BULLISH": 3, "SIDEWAYS": 2, "BEARISH": 1}.get(regime, 0)
                             filtered_pairs.append({
                                 **pair_data,
                                 'regime': regime,
+                                'regime_priority': regime_priority,
                                 'adx': regime_ctx.get('adx', 0),
                                 'potential_qty': potential_qty,
                                 'is_optimal': is_optimal
                             })
                             
-                            # Get up to 25 coins for better selection
-                            if len(filtered_pairs) >= 25:
+                            # Get up to 100 coins for full rotation
+                            if len(filtered_pairs) >= 100:
                                 break
                         else:
                             skipped_bearish += 1
