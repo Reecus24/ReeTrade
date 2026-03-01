@@ -174,6 +174,7 @@ class LogEntry(BaseModel):
     context: Optional[dict] = None
 
 class Position(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])  # Unique ID
     symbol: str
     side: Literal["LONG", "SHORT"]
     entry_price: float
