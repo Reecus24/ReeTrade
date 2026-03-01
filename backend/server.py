@@ -679,20 +679,19 @@ async def get_daily_pnl(
 
 @app.get("/api/trades")
 async def get_trades_history(
-    mode: Optional[str] = None,
     symbol: Optional[str] = None,
     limit: int = 200,
     offset: int = 0,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get paginated trade history"""
+    """Get paginated trade history (LIVE only)"""
     user_id = current_user['user_id']
     
     trades, total = await db.get_trades_paginated(
         user_id, 
-        mode=mode, 
+        mode='live',  # Only live trades
         symbol=symbol,
-        limit=min(limit, 500),  # Cap at 500
+        limit=min(limit, 500),
         offset=offset
     )
     
