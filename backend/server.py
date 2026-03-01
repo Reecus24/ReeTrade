@@ -148,25 +148,7 @@ async def login(request: Request, data: UserLogin):
 
 # ============ BOT CONTROL ENDPOINTS (SEPARATED) ============
 
-# ----- PAPER MODE -----
-
-@app.post("/api/paper/start")
-async def start_paper_bot(current_user: dict = Depends(get_current_user)):
-    """Start the PAPER trading bot"""
-    user_id = current_user['user_id']
-    await db.update_settings(user_id, {'paper_running': True})
-    await db.log(user_id, "INFO", "[PAPER] Bot started")
-    return {"message": "Paper bot started", "mode": "paper", "running": True}
-
-@app.post("/api/paper/stop")
-async def stop_paper_bot(current_user: dict = Depends(get_current_user)):
-    """Stop the PAPER trading bot"""
-    user_id = current_user['user_id']
-    await db.update_settings(user_id, {'paper_running': False})
-    await db.log(user_id, "INFO", "[PAPER] Bot stopped")
-    return {"message": "Paper bot stopped", "mode": "paper", "running": False}
-
-# ----- LIVE MODE -----
+# ============ BOT CONTROL ENDPOINTS (LIVE only) ============
 
 @app.post("/api/live/start")
 async def start_live_bot(current_user: dict = Depends(get_current_user)):
