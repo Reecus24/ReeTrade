@@ -64,6 +64,10 @@ class AIDecision:
     take_profit_pct: float
     max_positions: int
     
+    # Position Size Range (NEW)
+    min_position_usdt: float = 0.0
+    max_position_usdt: float = 0.0
+    
     # Overrides tracking
     overrides: List[AIOverride] = field(default_factory=list)
     
