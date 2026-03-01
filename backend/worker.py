@@ -901,7 +901,7 @@ class MultiUserTradingWorker:
                 try:
                     ticker = await mexc.get_ticker_24h(symbol)
                     avg_price = float(ticker.get('lastPrice', current_price))
-                except:
+                except Exception:
                     avg_price = current_price
             
             # Recalculate SL/TP based on ACTUAL execution price
