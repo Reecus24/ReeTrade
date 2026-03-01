@@ -243,3 +243,35 @@ class MexcClient:
             "orderId": order_id
         }
         return await self._request("DELETE", "/api/v3/order", params=params, signed=True)
+    
+    async def get_my_trades(self, symbol: str, limit: int = 500, start_time: int = None, end_time: int = None) -> List[Dict[str, Any]]:
+        """Get recent trades for a symbol (requires API keys)
+        
+        Returns list of executed trades (fills) for the symbol.
+        Used for syncing positions with MEXC trade history.
+        """
+        params = {
+            "symbol": symbol,
+            "limit": min(limit, 1000)
+        }
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        
+        return await self._request("GET", "/api/v3/myTrades", params=params, signed=True)
+    
+    async def get_all_my_recent_trades(self, symbols: List[str], limit_per_symbol: int = 50) -> Dict[str, List[Dict]]:
+        """Get recent trades for multiple symbols
+        
+        Returns dict: {symbol: [trades]}
+        """
+        all_trades = {}
+        for symbol in symbols:
+            try:
+                trades = await self.get_my_trades(symbol, limit=limit_per_symbol)
+                all_trades[symbol] = trades
+            except Exception as e:
+                logger.warning(f"Could not fetch trades for {symbol}: {e}")
+                all_trades[symbol] = []
+        return all_trades
