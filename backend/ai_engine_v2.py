@@ -652,6 +652,17 @@ class AITradingEngineV2:
         position_size, position_pct = self.calculate_position_size(
             market, account, profile, confidence, trading_budget_remaining
         )
+        
+        # ============ CALCULATE ATR-BASED STOP LOSS WITH MAX CAP ============
+        sl_price, sl_pct, is_low_cap = self.calculate_atr_stop_loss(market, profile)
+        
+        # Apply low-cap position reduction
+        if is_low_cap:
+            lowcap_reduction = profile.get('lowcap_position_reduction', 0.5)
+            position_size *= lowcap_reduction
+            position_pct *= lowcap_reduction
+            decision.add_warning(f"⚠️ Low-Cap Coin erkannt (Vol: ${market.volume_24h/1000:.0f}K) → Position reduziert")
+        
         decision.position_size_usdt = round(position_size, 2)
         decision.position_size_percent = round(position_pct, 1)
         
@@ -662,11 +673,20 @@ class AITradingEngineV2:
         
         decision.add_reason(f"💰 Position: ${position_size:.2f} ({position_pct:.1f}% vom USDT)")
         
-        # ============ CALCULATE ATR-BASED STOP LOSS ============
-        sl_price, sl_pct = self.calculate_atr_stop_loss(market, profile)
+        # Stop Loss info with cap indicator
+        sl_max_pct = profile.get('sl_max_pct', 10.0)
+        sl_capped = sl_pct >= sl_max_pct * 0.99  # Check if we hit the cap
+        sl_label = f"-{sl_pct:.2f}%"
+        if sl_capped:
+            sl_label += f" (MAX CAP {sl_max_pct:.0f}%)"
+        elif is_low_cap:
+            sl_label += " (Low-Cap enger)"
+        else:
+            sl_label += f" ({profile['sl_atr_multiplier_base']:.1f}x ATR)"
+        
         decision.stop_loss_price = round(sl_price, 8)
         decision.stop_loss_pct = round(sl_pct, 2)
-        decision.add_reason(f"🛑 Stop Loss: -{sl_pct:.2f}% ({profile['sl_atr_multiplier_base']}x ATR)")
+        decision.add_reason(f"🛑 Stop Loss: {sl_label}")
         
         # ============ CALCULATE TAKE PROFIT ============
         tp_price, tp_pct, rr_ratio = self.calculate_take_profit(market, profile, sl_pct)
