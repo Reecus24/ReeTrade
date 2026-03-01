@@ -127,15 +127,15 @@ RISK_PROFILES = {
         "description": "Schnelles Trading, häufiger kaufen/verkaufen",
         "base_position_pct": 5.0,
         "max_position_pct": 8.0,
-        "base_stop_loss_pct": 3.5,
-        "base_take_profit_rr": 2.0,     # Niedrigerer R:R = schneller Profit nehmen
+        "base_stop_loss_pct": 3.0,          # Engerer Stop Loss
+        "base_take_profit_rr": 2.5,         # Höheres R:R = bessere Gewinn/Verlust Balance
         "max_positions": 5,
-        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS, MarketRegime.BEARISH],  # Tradet in allen Regimes
-        "min_adx": 10,                  # Weniger streng
+        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],  # Kein BEARISH - zu riskant
+        "min_adx": 15,                      # Etwas strenger für bessere Signale
         "max_drawdown_pct": 20.0,
         "drawdown_reduce_at": 10.0,
         "high_volatility_reduce": 0.7,
-        "low_volatility_boost": 1.5,    # Mehr Boost bei niedriger Vol
+        "low_volatility_boost": 1.5,
     }
 }
 
