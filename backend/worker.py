@@ -251,6 +251,10 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "ERROR", f"[EXIT] MEXC Client Fehler: {str(e)[:50]}")
             return
         
+        # Get AI profile for partial profit settings
+        trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
+        profile = RISK_PROFILES_V2.get(trading_mode, {}) if trading_mode != TradingMode.MANUAL else {}
+        
         for position in account.open_positions[:]:
             try:
                 ticker = await mexc.get_ticker_24h(position.symbol)
@@ -262,13 +266,39 @@ class MultiUserTradingWorker:
                 should_exit = False
                 exit_reason = ""
                 
+                # ============ PARTIAL PROFIT LOGIC (NEW) ============
+                partial_enabled = profile.get('partial_profit_enabled', False)
+                partial_trigger = profile.get('partial_profit_trigger_pct', 8.0)
+                partial_close_pct = profile.get('partial_profit_close_pct', 50.0)
+                move_sl_to_entry = profile.get('partial_profit_move_sl_to_entry', True)
+                
+                if partial_enabled and not position.partial_profit_taken and pnl_pct >= partial_trigger:
+                    # Time for partial profit!
+                    await self.db.log(user_id, "WARNING", 
+                        f"[PARTIAL] 🎯 {position.symbol} +{pnl_pct:.1f}% >= {partial_trigger}% → Teilgewinn {partial_close_pct}%!")
+                    
+                    await self.take_partial_profit(
+                        user_id, position, current_price, account, settings, mexc,
+                        partial_close_pct, move_sl_to_entry
+                    )
+                    await self.db.update_live_account(account)
+                    continue  # Skip full exit check this iteration
+                
+                # ============ STOP LOSS CHECK ============
                 if current_price <= position.stop_loss:
                     should_exit = True
-                    exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
+                    if position.sl_moved_to_entry:
+                        exit_reason = f"🔄 BREAK-EVEN EXIT @ {current_price:.4f}"
+                    else:
+                        exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
                 
+                # ============ TAKE PROFIT CHECK ============
                 elif current_price >= position.take_profit:
                     should_exit = True
-                    exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
+                    if position.partial_profit_taken:
+                        exit_reason = f"🎯 FINAL TP (nach Teilgewinn) @ {current_price:.4f}"
+                    else:
+                        exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
                 
                 if should_exit:
                     await self.db.log(user_id, "WARNING", f"[EXIT] {position.symbol} - {exit_reason} | PnL: {pnl_pct:.1f}%")
@@ -281,8 +311,10 @@ class MultiUserTradingWorker:
                     counter_key = f"{user_id}_{position.symbol}"
                     self._exit_log_counter[counter_key] = self._exit_log_counter.get(counter_key, 0) + 1
                     if self._exit_log_counter[counter_key] >= 10:
+                        sl_label = "BE" if position.sl_moved_to_entry else f"{position.stop_loss:.4f}"
+                        partial_label = " [50% verkauft]" if position.partial_profit_taken else ""
                         await self.db.log(user_id, "INFO", 
-                            f"[EXIT CHECK] {position.symbol}: Preis={current_price:.4f} | SL={position.stop_loss:.4f} | PnL={pnl_pct:.1f}%")
+                            f"[EXIT CHECK] {position.symbol}: Preis={current_price:.4f} | SL={sl_label} | PnL={pnl_pct:.1f}%{partial_label}")
                         self._exit_log_counter[counter_key] = 0
                     
             except Exception as e:
