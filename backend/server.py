@@ -409,145 +409,100 @@ async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
 # ============ ACCOUNT BALANCE ENDPOINT ============
 
 @app.get("/api/account/balance")
-async def get_account_balance(mode: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Get account balance with reserve & budget info - Live from MEXC or Paper from DB
-    
-    Args:
-        mode: Optional override - 'paper' or 'live'. If not provided, uses settings.mode
-    """
+async def get_account_balance(current_user: dict = Depends(get_current_user)):
+    """Get LIVE account balance from MEXC with reserve & budget info"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
-    paper_account = await db.get_paper_account(user_id)
+    live_account = await db.get_live_account(user_id)
     
     # Calculate used budget from open positions
-    used_budget = sum(pos.entry_price * pos.qty for pos in paper_account.open_positions)
+    used_budget = sum(pos.entry_price * pos.qty for pos in live_account.open_positions) if live_account.open_positions else 0
     
-    # Use provided mode or fall back to settings
-    effective_mode = mode if mode in ['paper', 'live'] else settings.mode
+    # Get MEXC keys
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(
+            status_code=400,
+            detail="MEXC API keys not configured"
+        )
     
-    if effective_mode == 'live':
-        # Get MEXC keys
-        keys = await db.get_mexc_keys(user_id)
-        if not keys:
-            raise HTTPException(
-                status_code=400,
-                detail="MEXC API keys not configured"
-            )
+    try:
+        # Create client with user's keys
+        from crypto_utils import decrypt_value
+        api_key = decrypt_value(keys['api_key'])
+        api_secret = decrypt_value(keys['api_secret'])
+        mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+        account_info = await mexc.get_account()
         
-        try:
-            # Create client with user's keys
-            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-            account_info = await mexc.get_account()
-            
-            # Extract balances
-            balances = account_info.get('balances', [])
-            
-            # Calculate total equity in USDT
-            usdt_balance = next(
-                (b for b in balances if b.get('asset') == 'USDT'),
-                {'free': '0', 'locked': '0'}
-            )
-            usdt_free = float(usdt_balance.get('free', 0))
-            usdt_locked = float(usdt_balance.get('locked', 0))
-            usdt_total = usdt_free + usdt_locked
-            
-            # RESERVE SYSTEM: Calculate available to bot
-            available_to_bot = max(0, usdt_free - settings.reserve_usdt)
-            
-            # Apply trading budget cap
-            budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
-            remaining_budget = min(available_to_bot, budget_remaining)
-            
-            # DAILY CAP
-            today_exposure = await db.get_today_exposure(user_id, 'live')
-            daily_cap = settings.live_daily_cap_usdt
-            daily_remaining = max(0, daily_cap - today_exposure)
-            
-            # Get non-zero balances for display
-            non_zero_balances = [
-                {
-                    'asset': b['asset'],
-                    'free': float(b.get('free', 0)),
-                    'locked': float(b.get('locked', 0))
-                }
-                for b in balances
-                if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0
-            ]
-            
-            return {
-                'source': 'live',
-                'source_label': 'MEXC Live',
-                'equity': usdt_total,
-                'cash': usdt_free,
-                'locked': usdt_locked,
-                'balances': non_zero_balances[:20],
-                'last_updated': datetime.now(timezone.utc).isoformat(),
-                'error': None,
-                # Reserve & Budget info (LIVE)
-                'budget': {
-                    'usdt_free': round(usdt_free, 2),
-                    'reserve_usdt': settings.reserve_usdt,
-                    'available_to_bot': round(available_to_bot, 2),
-                    'trading_budget': settings.trading_budget_usdt,
-                    'used_budget': round(used_budget, 2),
-                    'remaining_budget': round(remaining_budget, 2),
-                    'max_order': settings.live_max_order_usdt,
-                    'mode': 'live'
-                },
-                # Daily Cap
-                'daily_cap': {
-                    'cap': daily_cap,
-                    'used': round(today_exposure, 2),
-                    'remaining': round(daily_remaining, 2)
-                },
-                'open_positions_count': len(paper_account.open_positions)
-            }
-            
-        except Exception as e:
-            logger.error(f"MEXC balance fetch failed for user {user_id}: {e}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Failed to fetch MEXC balance: {str(e)}"
-            )
-    else:
-        # Paper mode - return paper account with budget
-        # Initialize paper account if needed
-        if paper_account.equity == 10000.0 and settings.paper_start_balance_usdt != 10000.0:
-            paper_account.equity = settings.paper_start_balance_usdt
-            paper_account.cash = settings.paper_start_balance_usdt
-            await db.update_paper_account(paper_account)
+        # Extract balances
+        balances = account_info.get('balances', [])
         
-        # Calculate budget for paper mode
-        budget_remaining = max(0, settings.paper_start_balance_usdt - used_budget)
-        available_to_bot = min(paper_account.cash, budget_remaining)
+        # Calculate total equity in USDT
+        usdt_balance = next(
+            (b for b in balances if b.get('asset') == 'USDT'),
+            {'free': '0', 'locked': '0'}
+        )
+        usdt_free = float(usdt_balance.get('free', 0))
+        usdt_locked = float(usdt_balance.get('locked', 0))
+        usdt_total = usdt_free + usdt_locked
+        
+        # RESERVE SYSTEM: Calculate available to bot
+        available_to_bot = max(0, usdt_free - settings.reserve_usdt)
+        
+        # Apply trading budget cap
+        budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
+        remaining_budget = min(available_to_bot, budget_remaining)
         
         # DAILY CAP
-        today_exposure = await db.get_today_exposure(user_id, 'paper')
-        daily_cap = settings.paper_daily_cap_usdt
+        today_exposure = await db.get_today_exposure(user_id, 'live')
+        daily_cap = settings.live_daily_cap_usdt
         daily_remaining = max(0, daily_cap - today_exposure)
         
-        # Calculate PnL from paper_start_balance
-        pnl = paper_account.equity - settings.paper_start_balance_usdt
-        pnl_pct = (pnl / settings.paper_start_balance_usdt * 100) if settings.paper_start_balance_usdt > 0 else 0
+        # Get non-zero balances for display
+        non_zero_balances = [
+            {
+                'asset': b['asset'],
+                'free': float(b.get('free', 0)),
+                'locked': float(b.get('locked', 0))
+            }
+            for b in balances
+            if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0
+        ]
         
         return {
-            'source': 'paper',
-            'source_label': 'Paper (Simulated Live)',
-            'equity': paper_account.equity,
-            'cash': paper_account.cash,
-            'locked': 0,
-            'balances': [],
-            'open_positions': [pos.model_dump() for pos in paper_account.open_positions] if paper_account.open_positions else [],
+            'source': 'live',
+            'source_label': 'MEXC Live',
+            'equity': usdt_total,
+            'cash': usdt_free,
+            'locked': usdt_locked,
+            'balances': non_zero_balances[:20],
             'last_updated': datetime.now(timezone.utc).isoformat(),
             'error': None,
-            # Budget info (PAPER)
+            # Reserve & Budget info
             'budget': {
-                'start_balance': settings.paper_start_balance_usdt,
+                'usdt_free': round(usdt_free, 2),
+                'reserve_usdt': settings.reserve_usdt,
+                'available_to_bot': round(available_to_bot, 2),
+                'trading_budget': settings.trading_budget_usdt,
                 'used_budget': round(used_budget, 2),
-                'remaining_budget': round(available_to_bot, 2),
-                'max_order': settings.paper_max_order_usdt,
-                'mode': 'paper'
+                'remaining_budget': round(remaining_budget, 2),
+                'max_order': settings.live_max_order_usdt
             },
+            # Daily Cap
+            'daily_cap': {
+                'cap': daily_cap,
+                'used': round(today_exposure, 2),
+                'remaining': round(daily_remaining, 2)
+            },
+            'open_positions_count': len(live_account.open_positions) if live_account else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"MEXC balance fetch failed for user {user_id}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch MEXC balance: {str(e)}"
+        )
             # Daily Cap
             'daily_cap': {
                 'cap': daily_cap,
