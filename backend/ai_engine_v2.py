@@ -151,10 +151,16 @@ RISK_PROFILES_V2 = {
         "risk_pct_min": 1.5,
         "risk_pct_max": 3.0,
         
-        # ATR-based Stop Loss
+        # ATR-based Stop Loss with MAX CAP
         "sl_atr_multiplier_base": 1.8,
         "sl_atr_multiplier_min": 1.5,
         "sl_atr_multiplier_max": 2.0,
+        "sl_max_pct": 6.0,  # MAX 6% Stop Loss Cap
+        
+        # Low-Cap Coin Adjustments
+        "lowcap_sl_reduction": 0.5,  # 50% of normal SL for low-cap
+        "lowcap_position_reduction": 0.4,  # 40% of normal position for low-cap
+        "lowcap_volume_threshold": 1000000,  # 24h Volume < $1M = low-cap
         
         # Take Profit
         "tp_rr_base": 2.0,
