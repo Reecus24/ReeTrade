@@ -254,7 +254,6 @@ class MultiUserTradingWorker:
                 
                 # Calculate current PnL for logging
                 pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
-                sl_distance = ((current_price - position.stop_loss) / position.stop_loss) * 100
                 
                 should_exit = False
                 exit_reason = ""
