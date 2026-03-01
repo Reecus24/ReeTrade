@@ -108,11 +108,33 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
     );
   }
 
+  // Calculate total value of all positions
+  const totalCurrentValue = positions.reduce((sum, pos) => {
+    return sum + (pos.current_price && pos.current_price > 0 ? pos.current_price * pos.qty : pos.entry_price * pos.qty);
+  }, 0);
+  
+  const totalEntryValue = positions.reduce((sum, pos) => {
+    return sum + (pos.entry_price * pos.qty);
+  }, 0);
+  
+  const totalPnl = totalCurrentValue - totalEntryValue;
+  const totalPnlPct = totalEntryValue > 0 ? (totalPnl / totalEntryValue) * 100 : 0;
+
   return (
     <div className="space-y-2" data-testid="positions-panel">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-medium text-zinc-400">
-          Offene Positionen ({positions.length})
+        <div>
+          <div className="text-sm font-medium text-zinc-400">
+            Offene Positionen ({positions.length})
+          </div>
+          {positions.length > 0 && (
+            <div className="text-xs text-zinc-500">
+              Gesamt: <span className="text-white font-bold">{totalCurrentValue.toFixed(2)} $</span>
+              <span className={`ml-2 ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ({totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} $ / {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
+              </span>
+            </div>
+          )}
         </div>
         <Button 
           variant="ghost" 
