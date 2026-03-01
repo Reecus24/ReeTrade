@@ -366,6 +366,13 @@ const DashboardPage = ({ onLogout }) => {
               {/* Paper Bot Status Panel */}
               <BotStatusPanel settings={settings} mode="paper" balance={paperBalance} />
 
+              {/* Paper Positions Panel */}
+              <PositionsPanel 
+                positions={paper_account?.open_positions || []} 
+                mode="paper"
+                onSellComplete={() => { fetchStatus(); fetchPaperBalance(); }}
+              />
+
               {/* Paper Sub-Tabs */}
               <Tabs defaultValue="trades" className="w-full">
                 <TabsList className="bg-zinc-950 border border-zinc-800">
