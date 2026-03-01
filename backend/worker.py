@@ -556,13 +556,17 @@ class MultiUserTradingWorker:
             })
             return
         
-        # Scan for signals
+        # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
         symbols_checked = 0
+        symbols_skipped_price = 0
         
-        await self.db.log(user_id, "INFO", f"[LIVE] Scanne {len(settings.top_pairs[:15])} Coins nach Signalen...")
+        # Calculate effective position size for runtime filtering
+        effective_scan_position = effective_position_size if is_ai_mode else settings.live_max_order_usdt
         
-        for symbol in settings.top_pairs[:15]:
+        await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f}")
+        
+        for symbol in settings.top_pairs[:20]:
             symbols_checked += 1
             try:
                 # Check if symbol is paused
