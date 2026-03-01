@@ -667,6 +667,24 @@ async def get_top_pairs(current_user: dict = Depends(get_current_user)):
         "last_refresh": settings.last_pairs_refresh
     }
 
+@app.post("/api/market/refresh_pairs")
+async def refresh_top_pairs(current_user: dict = Depends(get_current_user)):
+    """Manually trigger refresh of top trading pairs with intelligent filtering"""
+    user_id = current_user['user_id']
+    
+    # Use the worker's refresh logic
+    if worker:
+        await worker.refresh_top_pairs(user_id)
+        settings = await db.get_settings(user_id)
+        return {
+            "message": "Coins erfolgreich aktualisiert",
+            "pairs_count": len(settings.top_pairs),
+            "pairs": settings.top_pairs[:10],  # Show first 10
+            "last_refresh": settings.last_pairs_refresh
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Worker not available")
+
 # ============ MANUAL SELL ENDPOINT ============
 
 from pydantic import BaseModel
