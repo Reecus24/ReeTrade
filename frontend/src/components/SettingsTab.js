@@ -312,16 +312,6 @@ const SettingsTab = () => {
               className="bg-zinc-800 border-zinc-700 font-mono"
             />
           </Field>
-          
-          <Field label="Max Daily Loss" unit="%" tip="Maximaler Tagesverlust (Bot stoppt)">
-            <Input
-              type="number"
-              step="0.01"
-              value={(settings.max_daily_loss || 0.03) * 100}
-              onChange={(e) => setSettings(prev => ({ ...prev, max_daily_loss: (parseFloat(e.target.value) || 3) / 100 }))}
-              className="bg-zinc-800 border-zinc-700 font-mono"
-            />
-          </Field>
         </div>
       </div>
 
