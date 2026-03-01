@@ -36,6 +36,9 @@ class UserSettings(BaseModel):
     ai_confidence: Optional[float] = None
     ai_risk_score: Optional[float] = None
     ai_reasoning: Optional[List[str]] = None
+    ai_min_position: Optional[float] = None  # Min position size (NEW)
+    ai_max_position: Optional[float] = None  # Max position size (NEW)
+    ai_current_position: Optional[float] = None  # Current calculated position (NEW)
     
     # SEPARATE RUNNING STATES
     paper_running: bool = False
