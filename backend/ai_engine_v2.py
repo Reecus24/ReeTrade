@@ -92,7 +92,7 @@ RISK_PROFILES_V2 = {
     TradingMode.AI_AGGRESSIVE: {
         "name": "Aggressiv",
         "emoji": "🔴",
-        "description": "High Risk / High Reward - Schnelles Kapitalwachstum",
+        "description": "Optimiert für hohe Trefferquote - Mehr realisierte Gewinne",
         
         # Position Sizing (% of available USDT)
         "position_pct_min": 15.0,
@@ -104,24 +104,30 @@ RISK_PROFILES_V2 = {
         "risk_pct_min": 3.0,
         "risk_pct_max": 7.0,
         
-        # ATR-based Stop Loss with MAX CAP
-        "sl_atr_multiplier_base": 2.25,  # 2.0-2.5x ATR
-        "sl_atr_multiplier_min": 2.0,
-        "sl_atr_multiplier_max": 2.5,
-        "sl_max_pct": 10.0,  # MAX 10% Stop Loss Cap
+        # ATR-based Stop Loss with MAX CAP - TIGHTER for higher win rate
+        "sl_atr_multiplier_base": 2.0,  # 1.8-2.2x ATR (tighter)
+        "sl_atr_multiplier_min": 1.8,
+        "sl_atr_multiplier_max": 2.2,
+        "sl_max_pct": 8.0,  # MAX 8% Stop Loss Cap (was 10%)
         
-        # Low-Cap Coin Adjustments (more volatile = tighter SL, smaller position)
-        "lowcap_sl_reduction": 0.6,  # 60% of normal SL for low-cap
+        # Low-Cap Coin Adjustments - STRICTER
+        "lowcap_sl_reduction": 0.75,  # 75% of normal SL -> Max 6% for low-cap
         "lowcap_position_reduction": 0.5,  # 50% of normal position for low-cap
         "lowcap_volume_threshold": 500000,  # 24h Volume < $500k = low-cap
         
-        # Take Profit (R:R ratio)
-        "tp_rr_base": 2.5,  # Minimum 1:2.5
-        "tp_rr_max": 3.5,  # At strong momentum
+        # Take Profit (R:R ratio) - LOWER for higher win rate
+        "tp_rr_base": 1.5,  # Minimum 1:1.5 (was 1:2.5)
+        "tp_rr_max": 2.0,  # At strong momentum (was 1:3.5)
+        
+        # PARTIAL PROFIT TAKING - NEW!
+        "partial_profit_enabled": True,
+        "partial_profit_trigger_pct": 8.0,  # Trigger at +8%
+        "partial_profit_close_pct": 50.0,  # Close 50% of position
+        "partial_profit_move_sl_to_entry": True,  # Move SL to break-even after partial
         
         # Market Conditions - Accept ALL regimes for maximum opportunity scanning
         "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS, MarketRegime.BEARISH],
-        "min_adx": 5,  # Lower ADX threshold for more trades
+        "min_adx": 15,  # Higher ADX threshold for stronger trends (was 5)
         "momentum_tp_boost_adx": 30,  # ADX > 30 = extend TP
         
         # Confidence Scaling
