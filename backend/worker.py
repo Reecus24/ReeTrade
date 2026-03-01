@@ -310,7 +310,6 @@ class MultiUserTradingWorker:
         """INTELLIGENT MOMENTUM ROTATION: Select coins optimized for trade size"""
         try:
             settings = await self.db.get_settings(user_id)
-            min_notional = settings.live_min_notional_usdt
             
             # Get AI position size for intelligent filtering
             trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
@@ -559,7 +558,6 @@ class MultiUserTradingWorker:
         # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
         symbols_checked = 0
-        symbols_skipped_price = 0
         
         # Calculate effective position size for runtime filtering
         effective_scan_position = effective_position_size if is_ai_mode else settings.live_max_order_usdt
