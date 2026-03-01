@@ -529,10 +529,10 @@ async def manual_sell_position(
     request: ManualSellRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Manually sell a position at current market price"""
+    """Manually sell a live position at current market price"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
-    account = await db.get_paper_account(user_id)
+    account = await db.get_live_account(user_id)
     
     # Find the position
     position = None
@@ -544,15 +544,21 @@ async def manual_sell_position(
     if not position:
         raise HTTPException(status_code=404, detail=f"Position {request.symbol} nicht gefunden")
     
+    # Get user's MEXC client
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    from crypto_utils import decrypt_value
+    api_key = decrypt_value(keys['api_key'])
+    api_secret = decrypt_value(keys['api_secret'])
+    mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+    
     # If not confirmed, return position details for confirmation
     if not request.confirm:
-        # Get current price
-        from mexc_client import MexcClient
-        mexc = MexcClient()
         ticker = await mexc.get_ticker_24h(request.symbol)
         current_price = float(ticker['lastPrice'])
         
-        # Calculate PnL
         pnl = (current_price - position.entry_price) * position.qty
         pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
         
@@ -568,73 +574,49 @@ async def manual_sell_position(
                 'stop_loss': position.stop_loss,
                 'take_profit': position.take_profit
             },
-            'warning': '⚠️ ACHTUNG: Dies wird die Position sofort zum aktuellen Marktpreis verkaufen!'
+            'warning': '⚠️ ACHTUNG: Dies wird die Position auf MEXC zum aktuellen Marktpreis verkaufen!'
         }
     
-    # Execute the sell
-    from mexc_client import MexcClient
-    
-    # Get user's MEXC client for live mode
-    if settings.mode == 'live' and settings.live_confirmed:
-        keys = await db.get_mexc_keys(user_id)
-        if keys:
-            from crypto_utils import decrypt_value
-            api_key = decrypt_value(keys['api_key'])
-            api_secret = decrypt_value(keys['api_secret'])
-            mexc = MexcClient(api_key=api_key, api_secret=api_secret)
-        else:
-            mexc = MexcClient()
-    else:
-        mexc = MexcClient()
-    
-    # Get current price
+    # Execute real sell on MEXC
     ticker = await mexc.get_ticker_24h(request.symbol)
     current_price = float(ticker['lastPrice'])
     
-    # Calculate PnL before selling
-    pnl = (current_price - position.entry_price) * position.qty
-    pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
-    
-    order_id = None
-    executed_price = current_price
-    
-    # Execute real sell for live mode
-    if settings.mode == 'live' and settings.live_confirmed:
-        try:
-            order_result = await mexc.place_order(
-                symbol=request.symbol,
-                side="SELL",
-                order_type="MARKET",
-                quantity=position.qty
-            )
-            order_id = order_result.get('orderId')
+    try:
+        order_result = await mexc.place_order(
+            symbol=request.symbol,
+            side="SELL",
+            order_type="MARKET",
+            quantity=position.qty
+        )
+        order_id = order_result.get('orderId')
+        
+        executed_price = current_price
+        if order_result.get('executedQty') and order_result.get('cummulativeQuoteQty'):
+            actual_qty = float(order_result.get('executedQty'))
+            if actual_qty > 0:
+                executed_price = float(order_result.get('cummulativeQuoteQty')) / actual_qty
+        
+        if not order_id:
+            raise HTTPException(status_code=500, detail="MEXC Order fehlgeschlagen - keine Order ID")
             
-            if order_result.get('executedQty') and order_result.get('cummulativeQuoteQty'):
-                actual_qty = float(order_result.get('executedQty'))
-                if actual_qty > 0:
-                    executed_price = float(order_result.get('cummulativeQuoteQty')) / actual_qty
-            
-            if not order_id:
-                raise HTTPException(status_code=500, detail="MEXC Order fehlgeschlagen - keine Order ID")
-                
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"MEXC Sell Fehler: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"MEXC Sell Fehler: {str(e)}")
+    
+    # Calculate PnL
+    pnl = (executed_price - position.entry_price) * position.qty
+    pnl_pct = ((executed_price - position.entry_price) / position.entry_price) * 100
     
     # Remove position from account
     account.open_positions = [p for p in account.open_positions if p.symbol != request.symbol]
+    account.cash += position.qty * executed_price
     
-    # Update cash
-    cash_returned = position.qty * executed_price
-    account.cash += cash_returned
-    account.equity = account.cash + sum(p.qty * p.entry_price for p in account.open_positions)
-    
-    await db.update_paper_account(account)
+    await db.update_live_account(account)
     
     # Log the manual sell
     await db.log(
         user_id,
         "INFO",
-        f"[{settings.mode.upper()}] 🔴 MANUELLER VERKAUF: {request.symbol} @ {executed_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:+.1f}%)"
+        f"[LIVE] 🔴 MANUELLER VERKAUF: {request.symbol} @ {executed_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:+.1f}%)"
     )
     
     # Record the trade
@@ -646,9 +628,9 @@ async def manual_sell_position(
         qty=position.qty,
         entry=position.entry_price,
         exit=executed_price,
-        pnl_usdt=pnl,
+        pnl=pnl,
         pnl_pct=pnl_pct,
-        mode=settings.mode,
+        mode='live',
         reason="Manueller Verkauf"
     )
     await db.add_trade(trade)
