@@ -152,7 +152,7 @@ const DashboardPage = ({ onLogout }) => {
     );
   }
 
-  const { settings, live_account, mexc_keys_connected } = status;
+  const { settings, live_account, mexc_keys_connected, mexc_error } = status;
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
@@ -164,11 +164,11 @@ const DashboardPage = ({ onLogout }) => {
             <p className="text-zinc-500">Live Trading Bot</p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-lg">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-lg" title={mexc_error || ''}>
               {mexc_keys_connected ? (
                 <><Wifi className="w-4 h-4 text-green-500" /><span className="text-sm text-green-500">MEXC Connected</span></>
               ) : (
-                <><WifiOff className="w-4 h-4 text-zinc-500" /><span className="text-sm text-zinc-500">Keys nicht konfiguriert</span></>
+                <><WifiOff className="w-4 h-4 text-red-500" /><span className="text-sm text-red-500">{mexc_error ? 'Keys ungültig' : 'Keys fehlen'}</span></>
               )}
             </div>
             <Button onClick={onLogout} variant="ghost" size="sm" className="text-zinc-400">
