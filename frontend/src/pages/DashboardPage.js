@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock
+  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -15,6 +15,7 @@ import LogsTab from '@/components/LogsTab';
 import LiveModeConfirm from '@/components/LiveModeConfirm';
 import BotStatusPanel from '@/components/BotStatusPanel';
 import PositionsPanel from '@/components/PositionsPanel';
+import TradingModeSelector from '@/components/TradingModeSelector';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
