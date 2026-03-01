@@ -245,6 +245,31 @@ const DashboardPage = ({ onLogout }) => {
           )}
         </div>
 
+        {/* Trading Mode Selector (Manual / AI) */}
+        {settings.live_confirmed && (
+          <div className="bg-zinc-950 border border-purple-900/30 rounded-lg p-4 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Bot className="w-5 h-5 text-purple-500" />
+              <span className="font-semibold text-purple-400">Trading Modus</span>
+            </div>
+            <TradingModeSelector 
+              currentMode={settings.trading_mode || 'manual'}
+              onModeChange={(mode) => {
+                setStatus(prev => ({
+                  ...prev,
+                  settings: { ...prev.settings, trading_mode: mode }
+                }));
+              }}
+              aiStatus={{
+                confidence: settings.ai_confidence,
+                risk_score: settings.ai_risk_score,
+                reasoning: settings.ai_reasoning,
+                last_override: settings.ai_last_override
+              }}
+            />
+          </div>
+        )}
+
         {/* MEXC Wallet + Budget System */}
         {settings.live_confirmed ? (
           <div className="space-y-4 mb-6">
