@@ -310,12 +310,44 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'user_id': account.user_id,
             'equity': account.equity,
             'cash': account.cash,
-            'open_positions': [pos.model_dump() for pos in account.open_positions] if account.open_positions else []
+            'open_positions': await enrich_positions_with_prices(account.open_positions, user_id) if account.open_positions else []
         },
         'live_heartbeat': settings.live_heartbeat.isoformat() if settings.live_heartbeat else None,
         'live_is_alive': settings.live_running and settings.live_confirmed,
         'mexc_keys_connected': keys_status['connected']
     }
+
+async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
+    """Add current prices to positions for live PnL display"""
+    if not positions:
+        return []
+    
+    # Try to get MEXC client for user
+    keys = await db.get_mexc_keys(user_id)
+    mexc = None
+    if keys:
+        try:
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        except:
+            pass
+    
+    enriched = []
+    for pos in positions:
+        pos_dict = pos.model_dump() if hasattr(pos, 'model_dump') else dict(pos)
+        
+        # Try to get current price
+        if mexc:
+            try:
+                ticker = await mexc.get_ticker_24h(pos.symbol)
+                pos_dict['current_price'] = float(ticker.get('lastPrice', 0))
+            except:
+                pos_dict['current_price'] = 0
+        else:
+            pos_dict['current_price'] = 0
+        
+        enriched.append(pos_dict)
+    
+    return enriched
 
 # ============ AI PROFILE ENDPOINTS ============
 
