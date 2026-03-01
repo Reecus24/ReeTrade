@@ -226,13 +226,6 @@ class AITradingEngine:
             decision.confidence = 0
             return decision
         
-        # ============ DAILY LIMITS CHECK ============
-        if account.today_trades_count >= profile['max_daily_trades']:
-            decision.should_trade = False
-            decision.add_reason(f"⏸️ Tageslimit erreicht: {account.today_trades_count}/{profile['max_daily_trades']} Trades")
-            decision.confidence = 0
-            return decision
-        
         # ============ CALCULATE POSITION SIZE ============
         base_position_pct = profile['base_position_pct']
         max_position_pct = profile['max_position_pct']
