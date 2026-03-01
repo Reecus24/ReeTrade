@@ -274,15 +274,23 @@ class AITradingEngine:
             decision.add_reason(f"⚠️ Schwaches Momentum ({market.momentum_score:.0f}): Position x{momentum_factor}")
         
         # Calculate final position size
-        final_position_pct = min(base_position_pct * position_multiplier, profile['max_position_pct'])
+        final_position_pct = min(base_position_pct * position_multiplier, max_position_pct)
         position_size_usdt = account.available_budget * (final_position_pct / 100)
+        
+        # Calculate Min/Max Position Range (NEW)
+        min_position_usdt = account.available_budget * (base_position_pct * 0.5 / 100)  # Min with max reduction
+        max_position_usdt = account.available_budget * (max_position_pct / 100)
         
         # Cap to available budget
         position_size_usdt = min(position_size_usdt, account.available_budget * 0.95)
         position_size_usdt = round(position_size_usdt, 2)
+        min_position_usdt = round(min_position_usdt, 2)
+        max_position_usdt = round(min(max_position_usdt, account.available_budget * 0.95), 2)
         
         decision.position_size_usdt = position_size_usdt
-        decision.add_reason(f"💰 Position Size: ${position_size_usdt:.2f} ({final_position_pct:.1f}% vom Budget)")
+        decision.min_position_usdt = min_position_usdt
+        decision.max_position_usdt = max_position_usdt
+        decision.add_reason(f"💰 Position Size: ${position_size_usdt:.2f} (Range: ${min_position_usdt:.0f}-${max_position_usdt:.0f})")
         
         # ============ ADJUST STOP LOSS FOR VOLATILITY ============
         base_sl = profile['base_stop_loss_pct']
