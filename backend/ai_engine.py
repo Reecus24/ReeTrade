@@ -237,15 +237,9 @@ class AITradingEngine:
             decision.confidence = 0
             return decision
         
-        daily_loss_pct = abs(account.today_pnl / account.total_equity * 100) if account.today_pnl < 0 else 0
-        if daily_loss_pct >= profile['max_daily_loss_pct']:
-            decision.should_trade = False
-            decision.add_reason(f"🛑 Tagesverlust {daily_loss_pct:.1f}% >= Max {profile['max_daily_loss_pct']}%")
-            decision.confidence = 0
-            return decision
-        
         # ============ CALCULATE POSITION SIZE ============
         base_position_pct = profile['base_position_pct']
+        max_position_pct = profile['max_position_pct']
         position_multiplier = 1.0
         
         # Adjust for drawdown
