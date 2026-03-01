@@ -112,6 +112,9 @@ class UserSettings(BaseModel):
     live_positions_count: Optional[int] = None
 
 class SettingsUpdate(BaseModel):
+    # Trading Mode (NEW)
+    trading_mode: Optional[Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive"]] = None
+    
     # Strategy (shared)
     ema_fast: Optional[int] = None
     ema_slow: Optional[int] = None
