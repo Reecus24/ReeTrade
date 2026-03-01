@@ -725,6 +725,14 @@ class MultiUserTradingWorker:
                         await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol}: Unbekanntes Regime '{regime}' - überspringe")
                         continue
                     
+                    # Get 24h volume for low-cap detection
+                    volume_24h = 0
+                    try:
+                        ticker = await mexc.get_ticker_24h(symbol)
+                        volume_24h = float(ticker.get('quoteVolume', 0))  # Volume in USDT
+                    except Exception:
+                        pass
+                    
                     market_conditions = MarketConditions(
                         regime=regime_enum,
                         adx_value=adx_value,
@@ -733,7 +741,8 @@ class MultiUserTradingWorker:
                         volatility_percentile=volatility_percentile,
                         momentum_score=regime_context.get('momentum', 0),
                         rsi_value=regime_context.get('rsi', 50),
-                        current_price=current_price
+                        current_price=current_price,
+                        volume_24h=volume_24h
                     )
                     
                     # Calculate remaining trading budget
