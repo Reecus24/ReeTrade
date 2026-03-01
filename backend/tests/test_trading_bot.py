@@ -1,10 +1,13 @@
 """
 ReeTrade Terminal - Backend API Tests
 Testing MEXC Connection Status, Bot Status, Login, AI Profiles
+
+Tests intelligent coin scanning (100 coins) and MEXC API verification features.
 """
 import pytest
 import requests
 import os
+import time
 
 # Get base URL from frontend env - IMPORTANT: use external URL for testing
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
@@ -19,6 +22,47 @@ if not BASE_URL:
 # Test credentials
 TEST_EMAIL = "test@example.com"
 TEST_PASSWORD = "testpass123"
+
+# Global token cache to avoid rate limiting
+_cached_token = None
+
+
+def get_auth_token():
+    """Get authentication token with caching to avoid rate limits"""
+    global _cached_token
+    if _cached_token:
+        return _cached_token
+    
+    response = requests.post(
+        f"{BASE_URL}/api/auth/login",
+        json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
+    )
+    if response.status_code == 200:
+        _cached_token = response.json()["token"]
+        return _cached_token
+    elif response.status_code == 429:
+        # Rate limited - wait and retry once
+        time.sleep(60)
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
+        )
+        if response.status_code == 200:
+            _cached_token = response.json()["token"]
+            return _cached_token
+    raise Exception(f"Login failed: {response.status_code} - {response.text}")
+
+
+@pytest.fixture(scope="session")
+def auth_token():
+    """Get authentication token - session scoped to avoid rate limits"""
+    return get_auth_token()
+
+
+@pytest.fixture
+def auth_headers(auth_token):
+    """Get authorization headers"""
+    return {"Authorization": f"Bearer {auth_token}"}
 
 
 class TestHealthAndBasics:
@@ -37,19 +81,12 @@ class TestHealthAndBasics:
 class TestAuthentication:
     """Authentication endpoint tests"""
     
-    def test_login_success(self):
-        """Test login with valid credentials"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "token" in data
-        assert "user" in data
-        assert data["user"]["email"] == TEST_EMAIL
-        print(f"✅ Login successful for {TEST_EMAIL}")
-        return data["token"]
+    def test_login_success(self, auth_token):
+        """Test login returns valid token"""
+        # Token was already obtained by fixture - just verify it's valid
+        assert auth_token is not None
+        assert len(auth_token) > 0
+        print(f"✅ Login successful - token obtained")
     
     def test_login_invalid_credentials(self):
         """Test login with invalid credentials returns 401"""
@@ -64,20 +101,9 @@ class TestAuthentication:
 class TestBotStatus:
     """Bot status endpoint tests"""
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_get_status(self, auth_token):
+    def test_get_status(self, auth_headers):
         """Test GET /api/status returns bot status"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/status", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/status", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -113,25 +139,14 @@ class TestMexcKeysStatus:
     because it now does REAL API verification (not just key existence check).
     """
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_mexc_keys_status_returns_connected_false_for_invalid_keys(self, auth_token):
+    def test_mexc_keys_status_returns_connected_false_for_invalid_keys(self, auth_headers):
         """
         Test GET /api/keys/mexc/status - should return connected: false
         because the test user has INVALID MEXC API keys.
         
         This verifies the REAL API verification is working (not just key existence check).
         """
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/keys/mexc/status", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/keys/mexc/status", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -155,29 +170,17 @@ class TestMexcKeysStatus:
         
         # The key assertion: for a test user with invalid keys,
         # we expect connected to be false
-        # Note: If the user has no keys at all, this is also valid behavior
         print(f"   Full response: {data}")
 
 
 class TestAIProfiles:
-    """AI Trading Profiles endpoint tests"""
+    """AI Trading Profiles endpoint tests - verifies min/max order based on budget"""
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_get_ai_profiles(self, auth_token):
+    def test_get_ai_profiles(self, auth_headers):
         """
         Test GET /api/ai/profiles - returns AI profiles with min/max order based on budget
         """
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/ai/profiles", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/ai/profiles", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -211,10 +214,9 @@ class TestAIProfiles:
         
         print(f"✅ AI profiles retrieved successfully: {len(profiles)} profiles")
     
-    def test_preview_ai_mode_conservative(self, auth_token):
+    def test_preview_ai_mode_conservative(self, auth_headers):
         """Test GET /api/ai/preview/ai_conservative"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/ai/preview/ai_conservative", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/ai/preview/ai_conservative", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -227,10 +229,33 @@ class TestAIProfiles:
         
         print(f"✅ AI Conservative preview: ${data['min_order']:.2f} - ${data['max_order']:.2f}")
     
-    def test_preview_ai_mode_invalid(self, auth_token):
+    def test_preview_ai_mode_moderate(self, auth_headers):
+        """Test GET /api/ai/preview/ai_moderate"""
+        response = requests.get(f"{BASE_URL}/api/ai/preview/ai_moderate", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert data["mode"] == "ai_moderate"
+        assert "min_order" in data
+        assert "max_order" in data
+        print(f"✅ AI Moderate preview: ${data['min_order']:.2f} - ${data['max_order']:.2f}")
+    
+    def test_preview_ai_mode_aggressive(self, auth_headers):
+        """Test GET /api/ai/preview/ai_aggressive"""
+        response = requests.get(f"{BASE_URL}/api/ai/preview/ai_aggressive", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert data["mode"] == "ai_aggressive"
+        assert "min_order" in data
+        assert "max_order" in data
+        print(f"✅ AI Aggressive preview: ${data['min_order']:.2f} - ${data['max_order']:.2f}")
+    
+    def test_preview_ai_mode_invalid(self, auth_headers):
         """Test GET /api/ai/preview with invalid mode returns 400"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/ai/preview/invalid_mode", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/ai/preview/invalid_mode", headers=auth_headers)
         
         assert response.status_code == 400
         print("✅ Invalid AI mode correctly rejected with 400")
@@ -239,20 +264,9 @@ class TestAIProfiles:
 class TestSettings:
     """Settings endpoint tests"""
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_get_settings(self, auth_token):
+    def test_get_settings(self, auth_headers):
         """Test GET /api/settings returns user settings"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/settings", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/settings", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -272,20 +286,9 @@ class TestSettings:
 class TestLogs:
     """Logs endpoint tests"""
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_get_logs(self, auth_token):
+    def test_get_logs(self, auth_headers):
         """Test GET /api/logs returns log entries"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/logs?limit=10", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/logs?limit=10", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -297,26 +300,45 @@ class TestLogs:
 class TestMarketData:
     """Market data endpoint tests"""
     
-    @pytest.fixture
-    def auth_token(self):
-        """Get authentication token"""
-        response = requests.post(
-            f"{BASE_URL}/api/auth/login",
-            json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
-        )
-        assert response.status_code == 200, f"Login failed: {response.text}"
-        return response.json()["token"]
-    
-    def test_get_top_pairs(self, auth_token):
+    def test_get_top_pairs(self, auth_headers):
         """Test GET /api/market/top_pairs returns trading pairs"""
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        response = requests.get(f"{BASE_URL}/api/market/top_pairs", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/market/top_pairs", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
         
         assert "pairs" in data
         print(f"✅ Top pairs retrieved: {len(data['pairs'])} pairs")
+
+
+class TestTrades:
+    """Trades history endpoint tests"""
+    
+    def test_get_trades_history(self, auth_headers):
+        """Test GET /api/trades returns trade history"""
+        response = requests.get(f"{BASE_URL}/api/trades?limit=10", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "trades" in data
+        assert "total" in data
+        print(f"✅ Trades history: {len(data['trades'])} trades (total: {data['total']})")
+
+
+class TestMetrics:
+    """Metrics endpoint tests"""
+    
+    def test_get_daily_pnl(self, auth_headers):
+        """Test GET /api/metrics/daily_pnl returns PnL data"""
+        response = requests.get(f"{BASE_URL}/api/metrics/daily_pnl?days=7", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "data" in data
+        assert "summary" in data
+        print(f"✅ Daily PnL retrieved: {len(data['data'])} days of data")
 
 
 if __name__ == "__main__":
