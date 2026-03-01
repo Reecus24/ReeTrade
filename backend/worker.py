@@ -337,18 +337,36 @@ class MultiUserTradingWorker:
             trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
             is_ai_mode = trading_mode != TradingMode.MANUAL
             
-            # Calculate expected position size for filtering
+            # Get USDT free balance for position sizing
+            mexc = MexcClient()
+            keys = await self.db.get_mexc_keys(user_id)
+            usdt_free = 500  # Default fallback
+            if keys:
+                try:
+                    mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+                    account_info = await mexc.get_account()
+                    usdt_balance = next(
+                        (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
+                        {'free': '500'}
+                    )
+                    usdt_free = float(usdt_balance.get('free', 500))
+                except Exception:
+                    usdt_free = settings.trading_budget_usdt or 500
+            
+            # Calculate expected position size for filtering - NEW: based on available USDT
             trading_budget = settings.trading_budget_usdt or 500
             if is_ai_mode:
-                from ai_engine import RISK_PROFILES
-                profile = RISK_PROFILES.get(trading_mode, {})
-                base_pct = profile.get('base_position_pct', 3.0)
-                expected_position_size = trading_budget * base_pct / 100
+                profile = RISK_PROFILES_V2.get(trading_mode, {})
+                # Use midpoint of position % range
+                position_pct = (profile.get('position_pct_min', 10) + profile.get('position_pct_max', 25)) / 2
+                expected_position_size = usdt_free * (position_pct / 100)
+                # Apply trading budget cap
+                expected_position_size = min(expected_position_size, trading_budget)
             else:
                 expected_position_size = settings.live_max_order_usdt or 50
             
             await self.db.log(user_id, "INFO", 
-                f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | Erwartete Order: ${expected_position_size:.2f}")
+                f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | USDT Free: ${usdt_free:.2f} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
             # Fetch 100 coins as requested by user
