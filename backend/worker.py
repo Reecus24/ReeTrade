@@ -653,6 +653,7 @@ class MultiUserTradingWorker:
                 adx_value = regime_context.get('adx', 0)
                 
                 # Calculate volatility percentile (ATR based)
+                current_price = float(klines_4h[-1][4])
                 atr_values = []
                 for i in range(14, len(klines_4h)):
                     high = float(klines_4h[i][2])
@@ -664,44 +665,62 @@ class MultiUserTradingWorker:
                 current_atr = sum(atr_values[-14:]) / 14 if len(atr_values) >= 14 else 0
                 avg_atr = sum(atr_values) / len(atr_values) if atr_values else 1
                 volatility_percentile = min(100, (current_atr / avg_atr) * 50) if avg_atr > 0 else 50
+                atr_percent = (current_atr / current_price * 100) if current_price > 0 else 1
                 
-                # AI Mode: Get AI decision with REAL market data
+                # AI Mode: Get AI decision with REAL market data (V2 Engine)
                 if is_ai_mode:
+                    # Get USDT free balance for position sizing
+                    try:
+                        account_info = await mexc.get_account()
+                        usdt_balance = next(
+                            (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
+                            {'free': '0'}
+                        )
+                        usdt_free = float(usdt_balance.get('free', 0))
+                    except:
+                        usdt_free = available_budget
+                    
+                    # Calculate open positions value
+                    open_positions_value = sum(
+                        pos.entry_price * pos.qty for pos in account.open_positions
+                    ) if account and account.open_positions else 0
+                    
                     market_conditions = MarketConditions(
                         regime=MarketRegime(regime),
+                        adx_value=adx_value,
+                        atr_value=current_atr,
+                        atr_percent=atr_percent,
                         volatility_percentile=volatility_percentile,
                         momentum_score=regime_context.get('momentum', 0),
-                        adx_value=adx_value,
-                        rsi_value=regime_context.get('rsi', 50)
+                        rsi_value=regime_context.get('rsi', 50),
+                        current_price=current_price
                     )
                     
-                    # Use trading_budget for AI position sizing, not just available_budget
+                    # Calculate remaining trading budget
                     trading_budget = settings.trading_budget_usdt or 500
+                    trading_budget_remaining = max(0, trading_budget - open_positions_value)
                     
                     account_state = AccountState(
                         total_equity=current_equity,
-                        available_budget=trading_budget,  # Use full trading budget for sizing
+                        usdt_free=usdt_free,
                         current_drawdown_pct=drawdown_pct,
                         open_positions_count=positions_count,
+                        open_positions_value=open_positions_value,
                         today_pnl=today_pnl,
                         today_trades_count=today_trades
                     )
                     
-                    manual_settings_dict = {
-                        'live_max_order_usdt': settings.live_max_order_usdt,
-                        'max_positions': settings.max_positions
-                    }
-                    
-                    # Get AI decision for this symbol with REAL market data
+                    # Get AI decision from V2 engine
                     ai_decision = self.ai_engine.make_decision(
-                        trading_mode, market_conditions, account_state, manual_settings_dict
+                        user_id, trading_mode, market_conditions, account_state, trading_budget_remaining
                     )
                     
                     if not ai_decision.should_trade:
-                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 {symbol}: AI SKIP - {ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'}")
-                        continue  # AI says skip this symbol
+                        reason = ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'
+                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 {symbol}: AI SKIP - {reason}")
+                        continue
                     
-                    # Update effective position size from AI
+                    # Update effective position size from AI V2
                     effective_position_size = ai_decision.position_size_usdt
                 
                 # Only BULLISH for manual mode
