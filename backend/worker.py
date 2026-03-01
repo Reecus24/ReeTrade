@@ -320,6 +320,106 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Exit check error for {position.symbol}: {e}")
                 await self.db.log(user_id, "ERROR", f"[EXIT] {position.symbol} Check Fehler: {str(e)[:50]}")
+
+    async def take_partial_profit(
+        self, user_id: str, position, current_price: float,
+        account, settings, mexc,
+        close_pct: float, move_sl_to_entry: bool
+    ):
+        """Take partial profit by selling a percentage of the position"""
+        try:
+            # Calculate partial quantity to sell
+            partial_qty = position.qty * (close_pct / 100)
+            
+            # Apply exchange filters
+            formatted_qty = order_sizer.round_quantity(position.symbol, partial_qty)
+            if formatted_qty is None or formatted_qty <= 0:
+                await self.db.log(user_id, "WARNING", f"[PARTIAL] Ungültige Qty für {position.symbol}")
+                return False
+            
+            # Check if we actually have this token in wallet
+            try:
+                account_info = await mexc.get_account()
+                base_asset = position.symbol.replace('USDT', '')
+                asset_balance = next(
+                    (b for b in account_info.get('balances', []) if b.get('asset') == base_asset),
+                    {'free': '0'}
+                )
+                available_qty = float(asset_balance.get('free', 0))
+                
+                if available_qty < formatted_qty:
+                    formatted_qty = order_sizer.round_quantity(position.symbol, available_qty * 0.95)
+                    if formatted_qty is None or formatted_qty <= 0:
+                        await self.db.log(user_id, "WARNING", f"[PARTIAL] Nicht genug {base_asset} verfügbar")
+                        return False
+            except Exception:
+                pass
+            
+            # Place REAL partial sell order
+            await self.db.log(user_id, "WARNING", 
+                f"[PARTIAL] ⚡ SELL {formatted_qty:.4f} {position.symbol} @ MARKET ({close_pct}% Teilgewinn)")
+            
+            order_result = await mexc.place_order(
+                symbol=position.symbol,
+                side="SELL",
+                order_type="MARKET",
+                quantity=formatted_qty
+            )
+            
+            if order_result.get('status') != 'FILLED':
+                await self.db.log(user_id, "ERROR", f"[PARTIAL] Order nicht gefüllt: {order_result}")
+                return False
+            
+            # Get actual execution price
+            actual_qty_sold = float(order_result.get('executedQty', formatted_qty))
+            cumulative_quote = float(order_result.get('cummulativeQuoteQty', 0))
+            actual_exit_price = cumulative_quote / actual_qty_sold if actual_qty_sold > 0 else current_price
+            
+            # Calculate PnL for the partial sell
+            partial_pnl = (actual_exit_price - position.entry_price) * actual_qty_sold
+            partial_pnl_pct = ((actual_exit_price - position.entry_price) / position.entry_price) * 100
+            
+            # Update position
+            if position.original_qty is None:
+                position.original_qty = position.qty
+            position.qty -= actual_qty_sold
+            position.partial_profit_taken = True
+            position.partial_profit_time = datetime.now(timezone.utc)
+            
+            # Move SL to break-even (entry price)
+            if move_sl_to_entry:
+                old_sl = position.stop_loss
+                position.stop_loss = position.entry_price
+                position.sl_moved_to_entry = True
+                await self.db.log(user_id, "INFO", 
+                    f"[PARTIAL] 🔒 SL auf Break-Even verschoben: {old_sl:.6f} → {position.entry_price:.6f}")
+            
+            # Record partial trade
+            await self.db.add_trade({
+                'user_id': user_id,
+                'ts': datetime.now(timezone.utc),
+                'symbol': position.symbol,
+                'side': 'SELL',
+                'qty': actual_qty_sold,
+                'entry': position.entry_price,
+                'exit': actual_exit_price,
+                'pnl': round(partial_pnl, 4),
+                'pnl_pct': round(partial_pnl_pct, 2),
+                'mode': 'live',
+                'reason': f"PARTIAL {close_pct}% @ +{partial_pnl_pct:.1f}%",
+                'notional': round(cumulative_quote, 2)
+            })
+            
+            await self.db.log(user_id, "WARNING", 
+                f"[PARTIAL] ✅ {position.symbol} Teilgewinn: +${partial_pnl:.2f} (+{partial_pnl_pct:.1f}%) | Rest: {position.qty:.4f}")
+            
+            return True
+            
+        except Exception as e:
+            await self.db.log(user_id, "ERROR", f"[PARTIAL] Fehler: {str(e)[:80]}")
+            logger.error(f"Partial profit error: {e}")
+            return False
+
     
     async def process_user(self, user_id: str):
         """Process trading for a single user (LIVE only)"""
