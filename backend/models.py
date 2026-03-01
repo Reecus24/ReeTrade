@@ -28,6 +28,15 @@ class User(BaseModel):
 class UserSettings(BaseModel):
     user_id: str
     
+    # ========== TRADING MODE (NEW) ==========
+    trading_mode: Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive"] = "manual"
+    
+    # AI Override Tracking (for UI display)
+    ai_last_override: Optional[dict] = None  # Last AI decision details
+    ai_confidence: Optional[float] = None
+    ai_risk_score: Optional[float] = None
+    ai_reasoning: Optional[List[str]] = None
+    
     # SEPARATE RUNNING STATES
     paper_running: bool = False
     live_running: bool = False
