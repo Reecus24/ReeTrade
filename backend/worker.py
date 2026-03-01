@@ -9,8 +9,9 @@ from risk_manager import RiskManager
 from regime_detector import RegimeDetector
 from order_sizer import order_sizer
 from models import Position, Trade, UserSettings, PaperAccount
-from ai_engine import (
-    AITradingEngine, TradingMode, MarketConditions, AccountState, MarketRegime
+from ai_engine_v2 import (
+    AITradingEngineV2, TradingMode, MarketConditions, AccountState, MarketRegime,
+    RISK_PROFILES_V2, ai_engine_v2
 )
 
 logger = logging.getLogger(__name__)
