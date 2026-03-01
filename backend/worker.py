@@ -418,7 +418,7 @@ class MultiUserTradingWorker:
         
         positions_count = len(account.open_positions) if account else 0
         
-        # ============ AI DECISION ============
+        # ============ AI MODE SETUP ============
         trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
         is_ai_mode = trading_mode != TradingMode.MANUAL
         
@@ -426,66 +426,12 @@ class MultiUserTradingWorker:
         effective_max_positions = settings.max_positions
         effective_position_size = settings.live_max_order_usdt
         
+        # Get AI profile limits (but don't make decision yet - need market data first)
         if is_ai_mode:
-            await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Mode: {trading_mode.value}")
-            
-            # Build market conditions (will be updated per symbol)
-            market_conditions = MarketConditions(
-                regime=MarketRegime.SIDEWAYS,  # Will be updated
-                volatility_percentile=50.0,     # Will be calculated
-                momentum_score=0.0,             # Will be calculated
-                adx_value=0.0,                  # Will be updated
-                rsi_value=50.0                  # Will be updated
-            )
-            
-            account_state = AccountState(
-                total_equity=current_equity,
-                available_budget=available_budget,
-                current_drawdown_pct=drawdown_pct,
-                open_positions_count=positions_count,
-                today_pnl=today_pnl,
-                today_trades_count=today_trades
-            )
-            
-            manual_settings = {
-                'live_max_order_usdt': settings.live_max_order_usdt,
-                'max_positions': settings.max_positions
-            }
-            
-            # Get initial AI decision (will be refined per signal)
-            ai_decision = self.ai_engine.make_decision(
-                trading_mode, market_conditions, account_state, manual_settings
-            )
-            
-            # Check if AI blocks trading entirely
-            if not ai_decision.should_trade:
-                await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI BLOCKED: {ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'}")
-                
-                # Save AI decision to settings
-                await self.db.update_settings(user_id, {
-                    'live_last_scan': scan_time.isoformat(),
-                    'live_last_decision': f'AI BLOCKED: {ai_decision.reasoning[-1] if ai_decision.reasoning else "Unbekannt"}',
-                    'ai_confidence': ai_decision.confidence,
-                    'ai_risk_score': ai_decision.risk_score,
-                    'ai_reasoning': ai_decision.reasoning,
-                    'ai_min_position': ai_decision.min_position_usdt,
-                    'ai_max_position': ai_decision.max_position_usdt,
-                    'ai_current_position': ai_decision.position_size_usdt,
-                    'ai_last_override': {
-                        'timestamp': scan_time.isoformat(),
-                        'should_trade': False,
-                        'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in ai_decision.overrides]
-                    }
-                })
-                return
-            
-            effective_max_positions = ai_decision.max_positions
-            effective_position_size = ai_decision.position_size_usdt
-            
-            # Log AI overrides
-            for override in ai_decision.overrides:
-                await self.db.log(user_id, "INFO", 
-                    f"[LIVE] 🤖 AI Override: {override.field} {override.manual_value} → {override.ai_value} ({override.reason})")
+            from ai_engine import RISK_PROFILES
+            profile = RISK_PROFILES.get(trading_mode, {})
+            effective_max_positions = profile.get('max_positions', settings.max_positions)
+            await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Mode: {trading_mode.value} (Max Pos: {effective_max_positions})")
         
         # Update status
         await self.db.update_settings(user_id, {
