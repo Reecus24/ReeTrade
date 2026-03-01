@@ -444,7 +444,6 @@ class MultiUserTradingWorker:
             self.user_all_coins[user_id] = all_tradable_symbols
             
             # Detailed logging
-            optimal_count = sum(1 for p in filtered_pairs[:20] if p.get('is_optimal', False))
             bullish_count = sum(1 for p in filtered_pairs if p.get('regime') == 'BULLISH')
             sideways_count = sum(1 for p in filtered_pairs if p.get('regime') == 'SIDEWAYS')
             
