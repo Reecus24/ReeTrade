@@ -143,15 +143,12 @@ class MultiUserTradingWorker:
         if not account or not account.open_positions:
             return
         
-        # Get MEXC client with user's keys
+        # Get MEXC client with user's keys (already decrypted)
         keys = await self.db.get_mexc_keys(user_id)
         if not keys:
             return
         
-        from crypto_utils import decrypt_value
-        api_key = decrypt_value(keys['api_key'])
-        api_secret = decrypt_value(keys['api_secret'])
-        mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+        mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
         
         # Check each open position
         positions_to_close = []
