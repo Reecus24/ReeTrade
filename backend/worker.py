@@ -840,14 +840,56 @@ class MultiUserTradingWorker:
                         'ai_current_position': best_ai_decision.position_size_usdt,
                     })
         else:
+            # NO SIGNALS FOUND - Rotate to next batch of coins
+            await self.rotate_to_next_batch(user_id, settings)
+            
             await self.db.update_settings(user_id, {
-                'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
+                'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins → Nächster Batch',
                 'live_last_symbol': '-'
             })
             if symbols_already_owned > 0:
                 await self.db.log(user_id, "INFO", f"[LIVE] 💼 {symbols_already_owned} Coins übersprungen (bereits im Portfolio)")
         
         await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen")
+    
+    async def rotate_to_next_batch(self, user_id: str, settings: UserSettings):
+        """Rotate to next batch of coins when no signals found"""
+        # Get all coins (from memory or DB)
+        if user_id not in self.user_all_coins or not self.user_all_coins[user_id]:
+            # Load from DB
+            all_pairs = getattr(settings, 'all_pairs', None) or settings.top_pairs
+            self.user_all_coins[user_id] = all_pairs
+            self.user_coin_batch[user_id] = 0
+        
+        all_coins = self.user_all_coins[user_id]
+        if not all_coins:
+            return
+        
+        # Calculate current and next batch
+        current_batch = self.user_coin_batch.get(user_id, 0)
+        total_batches = (len(all_coins) + self.COINS_PER_BATCH - 1) // self.COINS_PER_BATCH
+        next_batch = (current_batch + 1) % total_batches
+        
+        # If we've cycled through all batches, refresh the coin pool
+        if next_batch == 0:
+            await self.db.log(user_id, "INFO", f"🔄 Alle {total_batches} Batches durchlaufen - Hole neue Coins...")
+            await self.refresh_top_pairs(user_id)
+            return
+        
+        # Get next batch of coins
+        start_idx = next_batch * self.COINS_PER_BATCH
+        end_idx = min(start_idx + self.COINS_PER_BATCH, len(all_coins))
+        next_coins = all_coins[start_idx:end_idx]
+        
+        # Update settings with new active batch
+        await self.db.update_settings(user_id, {
+            'top_pairs': next_coins
+        })
+        
+        self.user_coin_batch[user_id] = next_batch
+        
+        await self.db.log(user_id, "INFO", 
+            f"🔄 Batch {next_batch + 1}/{total_batches} → Coins {start_idx + 1}-{end_idx}: {', '.join(next_coins[:5])}...")
     
     async def open_live_position(
         self, user_id: str, symbol: str, candidate: dict,
