@@ -307,27 +307,72 @@ class MultiUserTradingWorker:
         await self.db.update_settings(user_id, {'live_heartbeat': datetime.now(timezone.utc)})
     
     async def refresh_top_pairs(self, user_id: str):
-        """MOMENTUM ROTATION: Select Top coins by momentum score"""
+        """INTELLIGENT MOMENTUM ROTATION: Select coins optimized for trade size"""
         try:
             settings = await self.db.get_settings(user_id)
             min_notional = settings.live_min_notional_usdt
             
-            await self.db.log(user_id, "INFO", f"Running Momentum Rotation... (Min Order: ${min_notional})")
+            # Get AI position size for intelligent filtering
+            trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
+            is_ai_mode = trading_mode != TradingMode.MANUAL
+            
+            # Calculate expected position size for filtering
+            trading_budget = settings.trading_budget_usdt or 500
+            if is_ai_mode:
+                from ai_engine import RISK_PROFILES
+                profile = RISK_PROFILES.get(trading_mode, {})
+                base_pct = profile.get('base_position_pct', 3.0)
+                expected_position_size = trading_budget * base_pct / 100
+            else:
+                expected_position_size = settings.live_max_order_usdt or 50
+            
+            await self.db.log(user_id, "INFO", 
+                f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
-            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=200)
+            # Fetch 100 coins as requested by user
+            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=100)
             
-            await self.db.log(user_id, "INFO", f"Gefunden: {len(momentum_pairs)} USDT Coins")
+            await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} USDT Coins gefunden - starte Filterung...")
             
             filtered_pairs = []
             skipped_bearish = 0
+            skipped_price_too_high = 0
+            skipped_price_filter_examples = []
             
-            for pair_data in momentum_pairs[:50]:
+            for pair_data in momentum_pairs:
                 symbol = pair_data['symbol']
                 price = pair_data.get('price', 0)
                 
                 if price <= 0:
                     continue
+                
+                # ============ INTELLIGENT PRICE FILTER ============
+                # Calculate what quantity we could buy
+                potential_qty = expected_position_size / price if price > 0 else 0
+                
+                # Filter 1: Position would be too small (< 0.1 units is often impractical)
+                if potential_qty < 0.1:
+                    skipped_price_too_high += 1
+                    if len(skipped_price_filter_examples) < 3:
+                        skipped_price_filter_examples.append(
+                            f"{symbol} (Preis: ${price:.2f}, Qty: {potential_qty:.4f})"
+                        )
+                    continue
+                
+                # Filter 2: Trade value would be < 1% of coin price (inefficient capital)
+                # This catches cases where we buy tiny fractions of expensive coins
+                if expected_position_size < price * 0.01:
+                    skipped_price_too_high += 1
+                    if len(skipped_price_filter_examples) < 3:
+                        skipped_price_filter_examples.append(
+                            f"{symbol} (Preis: ${price:.2f} zu hoch für ${expected_position_size:.2f} Trade)"
+                        )
+                    continue
+                
+                # Optimal: Coins where our trade represents meaningful position
+                # Prefer coins where we can buy at least 1 unit OR trade is >5% of price
+                is_optimal = potential_qty >= 1.0 or expected_position_size >= price * 0.05
                 
                 try:
                     klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
@@ -339,10 +384,13 @@ class MultiUserTradingWorker:
                             filtered_pairs.append({
                                 **pair_data,
                                 'regime': regime,
-                                'adx': regime_ctx.get('adx', 0)
+                                'adx': regime_ctx.get('adx', 0),
+                                'potential_qty': potential_qty,
+                                'is_optimal': is_optimal
                             })
                             
-                            if len(filtered_pairs) >= 15:
+                            # Get up to 25 BULLISH coins for better selection
+                            if len(filtered_pairs) >= 25:
                                 break
                         else:
                             skipped_bearish += 1
@@ -350,18 +398,34 @@ class MultiUserTradingWorker:
                     logger.warning(f"Error checking regime for {symbol}: {e}")
                     continue
             
-            tradable_symbols = [p['symbol'] for p in filtered_pairs]
+            # Sort: Prioritize optimal coins, then by ADX strength
+            filtered_pairs.sort(key=lambda x: (x.get('is_optimal', False), x.get('adx', 0)), reverse=True)
+            
+            # Take top 20 for trading
+            tradable_symbols = [p['symbol'] for p in filtered_pairs[:20]]
             
             await self.db.update_settings(user_id, {
                 'top_pairs': tradable_symbols,
                 'last_pairs_refresh': datetime.now(timezone.utc)
             })
             
+            # Detailed logging
+            optimal_count = sum(1 for p in filtered_pairs[:20] if p.get('is_optimal', False))
+            
             await self.db.log(
                 user_id, "INFO", 
-                f"Momentum Rotation: {len(tradable_symbols)} BULLISH Coins | {skipped_bearish} übersprungen (nicht BULLISH)",
+                f"✅ Momentum Rotation abgeschlossen:\n"
+                f"   • {len(tradable_symbols)} BULLISH Coins ausgewählt ({optimal_count} optimal für Trade-Größe)\n"
+                f"   • {skipped_price_too_high} übersprungen (Preis zu hoch für ${expected_position_size:.2f} Order)\n"
+                f"   • {skipped_bearish} übersprungen (nicht BULLISH)",
                 {'symbols': tradable_symbols[:10]}
             )
+            
+            if skipped_price_filter_examples:
+                await self.db.log(
+                    user_id, "INFO",
+                    f"💡 Beispiele gefilterter Coins (Preis zu hoch): {', '.join(skipped_price_filter_examples)}"
+                )
             
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Failed to run momentum rotation: {str(e)}")
