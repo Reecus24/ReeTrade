@@ -101,7 +101,7 @@ class MultiUserTradingWorker:
             await asyncio.sleep(60)  # 1 minute
     
     async def exit_check_loop(self):
-        """Fast loop to check exits every 30 seconds"""
+        """Ultra-fast loop to check exits every 1 second for immediate SL/TP reaction"""
         while self.running:
             try:
                 active_settings = await self.db.get_all_active_users()
@@ -116,7 +116,7 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Exit check loop error: {e}")
             
-            await asyncio.sleep(30)
+            await asyncio.sleep(1)  # 1 SECOND - immediate reaction to price changes
     
     async def mexc_sync_loop(self):
         """Sync with MEXC trade history every 90 seconds to detect external sells"""
