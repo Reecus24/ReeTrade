@@ -129,13 +129,31 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
       
       {positions.map((pos, idx) => {
         const hasCurrentPrice = pos.current_price && pos.current_price > 0;
-        const pnlAmount = hasCurrentPrice 
+        
+        // Gross PnL (before fees)
+        const grossPnlAmount = hasCurrentPrice 
           ? (pos.current_price - pos.entry_price) * pos.qty 
           : null;
-        const pnlPct = hasCurrentPrice 
+        const grossPnlPct = hasCurrentPrice 
           ? ((pos.current_price - pos.entry_price) / pos.entry_price) * 100 
           : null;
-        const isProfit = pnlAmount !== null && pnlAmount >= 0;
+        
+        // MEXC Fees: 0.1% per trade (buy + sell = 0.2% total)
+        const buyFee = pos.entry_price * pos.qty * 0.001;
+        const sellFee = hasCurrentPrice ? pos.current_price * pos.qty * 0.001 : 0;
+        const totalFees = buyFee + sellFee;
+        
+        // Net PnL (after fees)
+        const netPnlAmount = hasCurrentPrice ? grossPnlAmount - totalFees : null;
+        const netPnlPct = hasCurrentPrice 
+          ? ((netPnlAmount) / (pos.entry_price * pos.qty)) * 100 
+          : null;
+        
+        // Break-even price (price needed to cover fees)
+        const breakEvenPrice = pos.entry_price * 1.002; // +0.2% to cover both fees
+        const aboveBreakEven = hasCurrentPrice && pos.current_price >= breakEvenPrice;
+        
+        const isNetProfit = netPnlAmount !== null && netPnlAmount >= 0;
         
         return (
           <div 
@@ -157,15 +175,20 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
               </div>
               
               <div className="flex items-center gap-4">
-                {/* Live PnL Display */}
-                {pnlAmount !== null && (
-                  <div className="text-right min-w-[100px]">
-                    <div className={`text-sm font-bold ${isProfit ? 'text-green-400' : 'text-red-400'}`}>
-                      {isProfit ? '+' : ''}{pnlAmount.toFixed(4)} $
+                {/* Live PnL Display with Fees */}
+                {netPnlAmount !== null && (
+                  <div className="text-right min-w-[120px]">
+                    <div className={`text-sm font-bold ${isNetProfit ? 'text-green-400' : 'text-red-400'}`}>
+                      {isNetProfit ? '+' : ''}{netPnlAmount.toFixed(4)} $
+                      <span className="text-xs ml-1">netto</span>
                     </div>
-                    <div className={`text-xs ${isProfit ? 'text-green-500' : 'text-red-500'}`}>
-                      {isProfit ? '+' : ''}{pnlPct.toFixed(2)}%
+                    <div className={`text-xs ${isNetProfit ? 'text-green-500' : 'text-red-500'}`}>
+                      {isNetProfit ? '+' : ''}{netPnlPct.toFixed(2)}%
+                      <span className="text-zinc-500 ml-1">(Gebühr: {totalFees.toFixed(4)}$)</span>
                     </div>
+                    {aboveBreakEven && (
+                      <div className="text-xs text-green-400">✓ Über Break-Even</div>
+                    )}
                   </div>
                 )}
                 
