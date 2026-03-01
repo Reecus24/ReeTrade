@@ -175,7 +175,7 @@ class MultiUserTradingWorker:
                     try:
                         ticker = await mexc.get_ticker_24h(position.symbol)
                         current_price = float(ticker['lastPrice'])
-                    except:
+                    except Exception:
                         current_price = position.entry_price  # Fallback
                     
                     positions_to_close.append({
