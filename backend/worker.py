@@ -9,11 +9,14 @@ from risk_manager import RiskManager
 from regime_detector import RegimeDetector
 from order_sizer import order_sizer
 from models import Position, Trade, UserSettings, PaperAccount
+from ai_engine import (
+    AITradingEngine, TradingMode, MarketConditions, AccountState, MarketRegime
+)
 
 logger = logging.getLogger(__name__)
 
 class MultiUserTradingWorker:
-    """Background worker for multi-user LIVE automated trading (Paper mode removed)"""
+    """Background worker for multi-user LIVE automated trading with AI support"""
     
     def __init__(self, db: Database):
         self.db = db
@@ -22,6 +25,7 @@ class MultiUserTradingWorker:
         self.user_last_trade_time: Dict[str, datetime] = {}
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
+        self.ai_engine = AITradingEngine()  # AI Trading Engine
     
     def calculate_used_budget(self, account: PaperAccount) -> float:
         """Calculate total notional of all open positions"""
