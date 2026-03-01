@@ -642,6 +642,153 @@ async def get_top_pairs(current_user: dict = Depends(get_current_user)):
         "last_refresh": settings.last_pairs_refresh
     }
 
+# ============ MANUAL SELL ENDPOINT ============
+
+from pydantic import BaseModel
+
+class ManualSellRequest(BaseModel):
+    symbol: str
+    confirm: bool = False
+
+@app.post("/api/positions/sell")
+async def manual_sell_position(
+    request: ManualSellRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually sell a position at current market price"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    account = await db.get_paper_account(user_id)
+    
+    # Find the position
+    position = None
+    for pos in account.open_positions:
+        if pos.symbol == request.symbol:
+            position = pos
+            break
+    
+    if not position:
+        raise HTTPException(status_code=404, detail=f"Position {request.symbol} nicht gefunden")
+    
+    # If not confirmed, return position details for confirmation
+    if not request.confirm:
+        # Get current price
+        from mexc_client import MexcClient
+        mexc = MexcClient()
+        ticker = await mexc.get_ticker_24h(request.symbol)
+        current_price = float(ticker['lastPrice'])
+        
+        # Calculate PnL
+        pnl = (current_price - position.entry_price) * position.qty
+        pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
+        
+        return {
+            'confirm_required': True,
+            'position': {
+                'symbol': position.symbol,
+                'qty': position.qty,
+                'entry_price': position.entry_price,
+                'current_price': current_price,
+                'pnl': round(pnl, 4),
+                'pnl_pct': round(pnl_pct, 2),
+                'stop_loss': position.stop_loss,
+                'take_profit': position.take_profit
+            },
+            'warning': '⚠️ ACHTUNG: Dies wird die Position sofort zum aktuellen Marktpreis verkaufen!'
+        }
+    
+    # Execute the sell
+    from mexc_client import MexcClient
+    
+    # Get user's MEXC client for live mode
+    if settings.mode == 'live' and settings.live_confirmed:
+        keys = await db.get_mexc_keys(user_id)
+        if keys:
+            from crypto_utils import decrypt_value
+            api_key = decrypt_value(keys['api_key'])
+            api_secret = decrypt_value(keys['api_secret'])
+            mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+        else:
+            mexc = MexcClient()
+    else:
+        mexc = MexcClient()
+    
+    # Get current price
+    ticker = await mexc.get_ticker_24h(request.symbol)
+    current_price = float(ticker['lastPrice'])
+    
+    # Calculate PnL before selling
+    pnl = (current_price - position.entry_price) * position.qty
+    pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
+    
+    order_id = None
+    executed_price = current_price
+    
+    # Execute real sell for live mode
+    if settings.mode == 'live' and settings.live_confirmed:
+        try:
+            order_result = await mexc.place_order(
+                symbol=request.symbol,
+                side="SELL",
+                order_type="MARKET",
+                quantity=position.qty
+            )
+            order_id = order_result.get('orderId')
+            
+            if order_result.get('executedQty') and order_result.get('cummulativeQuoteQty'):
+                actual_qty = float(order_result.get('executedQty'))
+                if actual_qty > 0:
+                    executed_price = float(order_result.get('cummulativeQuoteQty')) / actual_qty
+            
+            if not order_id:
+                raise HTTPException(status_code=500, detail="MEXC Order fehlgeschlagen - keine Order ID")
+                
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"MEXC Sell Fehler: {str(e)}")
+    
+    # Remove position from account
+    account.open_positions = [p for p in account.open_positions if p.symbol != request.symbol]
+    
+    # Update cash
+    cash_returned = position.qty * executed_price
+    account.cash += cash_returned
+    account.equity = account.cash + sum(p.qty * p.entry_price for p in account.open_positions)
+    
+    await db.update_paper_account(account)
+    
+    # Log the manual sell
+    await db.log(
+        user_id,
+        "INFO",
+        f"[{settings.mode.upper()}] 🔴 MANUELLER VERKAUF: {request.symbol} @ {executed_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:+.1f}%)"
+    )
+    
+    # Record the trade
+    trade = Trade(
+        user_id=user_id,
+        ts=datetime.now(timezone.utc),
+        symbol=request.symbol,
+        side="SELL",
+        qty=position.qty,
+        entry=position.entry_price,
+        exit=executed_price,
+        pnl_usdt=pnl,
+        pnl_pct=pnl_pct,
+        mode=settings.mode,
+        reason="Manueller Verkauf"
+    )
+    await db.add_trade(trade)
+    
+    return {
+        'success': True,
+        'message': f'{request.symbol} erfolgreich verkauft!',
+        'order_id': order_id,
+        'executed_price': executed_price,
+        'qty': position.qty,
+        'pnl': round(pnl, 4),
+        'pnl_pct': round(pnl_pct, 2)
+    }
+
 # ============ METRICS ENDPOINTS ============
 
 @app.get("/api/metrics/daily_pnl")
