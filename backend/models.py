@@ -162,6 +162,7 @@ class MexcKeysInput(BaseModel):
 class MexcKeysStatus(BaseModel):
     connected: bool
     last_updated: Optional[datetime] = None
+    error: Optional[str] = None
 
 # ============ TRADING MODELS ============
 
