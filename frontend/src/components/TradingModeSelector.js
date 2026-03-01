@@ -180,108 +180,158 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
   );
 };
 
-const AIStatusPanel = ({ data, isAiMode, tradingBudget }) => {
-  const { confidence, risk_score, reasoning, min_order, max_order, current_order, stop_loss_pct, take_profit_pct, max_positions } = data;
+/**
+ * AI Status Panel V2 - New Position Sizing Display
+ * Shows: Position Size as % of Available USDT + Calculated Order
+ */
+const AIStatusPanelV2 = ({ data, isAiMode, tradingBudget }) => {
+  const { 
+    position_pct_range,
+    position_usd_min,
+    position_usd_max,
+    usdt_free,
+    trading_budget_remaining,
+    sl_atr_multiplier,
+    tp_rr_range,
+    max_positions,
+    risk_per_trade,
+    allowed_regimes,
+    min_adx,
+    reasoning
+  } = data;
   
-  const getConfidenceColor = (conf) => {
-    if (conf >= 70) return 'text-green-500';
-    if (conf >= 40) return 'text-yellow-500';
-    return 'text-red-500';
-  };
+  const formatCurrency = (val) => `$${(val || 0).toFixed(2)}`;
   
-  const getRiskColor = (risk) => {
-    if (risk <= 30) return 'text-green-500';
-    if (risk <= 60) return 'text-yellow-500';
-    return 'text-red-500';
-  };
-
-  const formatCurrency = (val) => `$${(val || 0).toFixed(0)}`;
+  // Calculate midpoint position size for display
+  const avgPositionUsd = ((position_usd_min || 0) + (position_usd_max || 0)) / 2;
 
   return (
-    <div className="p-4 bg-purple-950/20 border border-purple-900/30 rounded-lg" data-testid="ai-status-panel">
-      <div className="flex items-center justify-between mb-3">
+    <div className="p-4 bg-purple-950/20 border border-purple-900/30 rounded-lg" data-testid="ai-status-panel-v2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-purple-500" />
           <span className="text-sm font-medium text-purple-400">
-            {isAiMode ? 'AI Entscheidung' : 'Vorschau'}
+            {isAiMode ? 'AI V2 - Dynamische Positionsgröße' : 'Vorschau'}
           </span>
         </div>
+        <div className="flex items-center gap-2 text-xs text-zinc-500">
+          <Wallet className="w-3 h-3" />
+          Verfügbar: <span className="text-green-400 font-mono">{formatCurrency(usdt_free)}</span>
+        </div>
+      </div>
+      
+      {/* Main Position Size Display - NEW FORMAT */}
+      <div className="p-4 bg-gradient-to-r from-purple-900/30 to-zinc-900/50 rounded-lg border border-purple-800/30 mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Target className="w-4 h-4 text-purple-400" />
+          <span className="text-sm text-zinc-400">Position Size</span>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          {/* Percentage of Available USDT */}
+          <div>
+            <div className="text-xs text-zinc-500 mb-1">% vom verfügbaren USDT</div>
+            <div className="text-2xl font-bold font-mono text-purple-400">
+              {position_pct_range || '0%'}
+            </div>
+          </div>
+          
+          {/* Calculated Order Size */}
+          <div>
+            <div className="text-xs text-zinc-500 mb-1">Berechnete Order</div>
+            <div className="text-2xl font-bold font-mono text-green-400">
+              {formatCurrency(avgPositionUsd)}
+            </div>
+            <div className="text-xs text-zinc-500 mt-1">
+              Range: {formatCurrency(position_usd_min)} - {formatCurrency(position_usd_max)}
+            </div>
+          </div>
+        </div>
+        
+        {/* Budget Cap Info */}
         {tradingBudget && (
-          <span className="text-xs text-zinc-500">
-            Trading Budget: ${tradingBudget}
-          </span>
+          <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between text-xs">
+            <span className="text-zinc-500">
+              Trading Budget (Cap): <span className="text-white font-mono">${tradingBudget}</span>
+            </span>
+            <span className="text-zinc-500">
+              Verbleibend: <span className="text-yellow-400 font-mono">{formatCurrency(trading_budget_remaining)}</span>
+            </span>
+          </div>
         )}
       </div>
       
-      <div className="grid grid-cols-4 gap-3 mb-3">
-        {/* Min-Max Order */}
-        <div className="p-2 bg-zinc-900/50 rounded col-span-2">
-          <div className="text-xs text-zinc-500 mb-1">Min-Max Order</div>
-          <div className="text-xl font-bold font-mono text-purple-400">
-            {formatCurrency(min_order)} - {formatCurrency(max_order)}
+      {/* Risk Parameters Grid */}
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        {/* Stop Loss (ATR-based) */}
+        <div className="p-3 bg-zinc-900/50 rounded-lg">
+          <div className="text-xs text-zinc-500 mb-1">Stop Loss</div>
+          <div className="text-lg font-bold font-mono text-red-400">
+            {sl_atr_multiplier || 'ATR'}
           </div>
-          {current_order > 0 && (
-            <div className="text-xs text-zinc-500 mt-1">
-              Aktuell: <span className="text-green-400">{formatCurrency(current_order)}</span>
-            </div>
-          )}
+          <div className="text-xs text-zinc-600">Dynamisch</div>
         </div>
         
-        {/* Confidence */}
-        <div className="p-2 bg-zinc-900/50 rounded">
-          <div className="text-xs text-zinc-500 mb-1">Confidence</div>
-          <div className={`text-xl font-bold font-mono ${getConfidenceColor(confidence || 0)}`}>
-            {confidence?.toFixed(0) || 0}%
+        {/* Take Profit (R:R based) */}
+        <div className="p-3 bg-zinc-900/50 rounded-lg">
+          <div className="text-xs text-zinc-500 mb-1">Take Profit</div>
+          <div className="text-lg font-bold font-mono text-green-400">
+            {tp_rr_range || 'R:R'}
           </div>
+          <div className="text-xs text-zinc-600">Risk:Reward</div>
         </div>
         
-        {/* Risk Score */}
-        <div className="p-2 bg-zinc-900/50 rounded">
-          <div className="text-xs text-zinc-500 mb-1">Risiko</div>
-          <div className={`text-xl font-bold font-mono ${getRiskColor(risk_score || 0)}`}>
-            {risk_score?.toFixed(0) || 0}/100
+        {/* Max Positions */}
+        <div className="p-3 bg-zinc-900/50 rounded-lg">
+          <div className="text-xs text-zinc-500 mb-1">Max Pos.</div>
+          <div className="text-lg font-bold font-mono text-white">
+            {max_positions || 0}
           </div>
+          <div className="text-xs text-zinc-600">Gleichzeitig</div>
+        </div>
+        
+        {/* Min ADX */}
+        <div className="p-3 bg-zinc-900/50 rounded-lg">
+          <div className="text-xs text-zinc-500 mb-1">Min ADX</div>
+          <div className="text-lg font-bold font-mono text-yellow-400">
+            {min_adx || 0}
+          </div>
+          <div className="text-xs text-zinc-600">Trend-Stärke</div>
         </div>
       </div>
       
-      {/* Additional Info Row */}
-      {(stop_loss_pct || take_profit_pct || max_positions) && (
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          {stop_loss_pct && (
-            <div className="p-2 bg-zinc-900/50 rounded">
-              <div className="text-xs text-zinc-500 mb-1">Stop Loss</div>
-              <div className="text-lg font-bold font-mono text-red-400">
-                -{stop_loss_pct?.toFixed(1)}%
-              </div>
-            </div>
-          )}
-          {take_profit_pct && (
-            <div className="p-2 bg-zinc-900/50 rounded">
-              <div className="text-xs text-zinc-500 mb-1">Take Profit</div>
-              <div className="text-lg font-bold font-mono text-green-400">
-                +{take_profit_pct?.toFixed(1)}%
-              </div>
-            </div>
-          )}
-          {max_positions && (
-            <div className="p-2 bg-zinc-900/50 rounded">
-              <div className="text-xs text-zinc-500 mb-1">Max Positionen</div>
-              <div className="text-lg font-bold font-mono text-white">
-                {max_positions}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Risk Per Trade & Regimes */}
+      <div className="flex items-center justify-between text-xs mb-3">
+        {risk_per_trade && (
+          <div className="flex items-center gap-2">
+            <Activity className="w-3 h-3 text-zinc-500" />
+            <span className="text-zinc-500">Risk/Trade:</span>
+            <span className="text-orange-400 font-mono">{risk_per_trade}</span>
+          </div>
+        )}
+        {allowed_regimes && allowed_regimes.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500">Erlaubt:</span>
+            {allowed_regimes.map((regime, idx) => (
+              <Badge key={idx} className={`text-xs ${
+                regime === 'bullish' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+              } border-0`}>
+                {regime.toUpperCase()}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
       
-      {/* Reasoning */}
+      {/* AI Reasoning */}
       {reasoning && reasoning.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-xs text-zinc-500">AI Info:</div>
-          <div className="max-h-20 overflow-y-auto space-y-0.5">
-            {reasoning.slice(-4).map((reason, idx) => (
-              <div key={idx} className="text-xs text-zinc-400 flex items-start gap-1">
-                <span className="text-purple-500">•</span>
+        <div className="pt-3 border-t border-zinc-800">
+          <div className="text-xs text-zinc-500 mb-2">AI Info:</div>
+          <div className="max-h-24 overflow-y-auto space-y-1">
+            {reasoning.map((reason, idx) => (
+              <div key={idx} className="text-xs text-zinc-400 flex items-start gap-2">
+                <span className="text-purple-500 mt-0.5">•</span>
                 <span>{reason}</span>
               </div>
             ))}
@@ -292,5 +342,8 @@ const AIStatusPanel = ({ data, isAiMode, tradingBudget }) => {
   );
 };
 
-export { TradingModeSelector, AIStatusPanel };
+// Legacy AIStatusPanel for backwards compatibility
+const AIStatusPanel = AIStatusPanelV2;
+
+export { TradingModeSelector, AIStatusPanel, AIStatusPanelV2 };
 export default TradingModeSelector;
