@@ -353,14 +353,14 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
 
 @app.get("/api/ai/profiles")
 async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
-    """Get available AI trading profiles V2 with dynamic position sizing"""
+    """Get available AI trading profiles V2 with dynamic position sizing based on available USDT"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     live_account = await db.get_live_account(user_id)
     
     from ai_engine_v2 import ai_engine_v2, TradingMode, RISK_PROFILES_V2
     
-    # Get USDT free balance (for position sizing display)
+    # Get USDT free balance from MEXC (for position sizing display)
     usdt_free = 0
     keys = await db.get_mexc_keys(user_id)
     if keys:
@@ -401,12 +401,40 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
         'trading_budget_remaining': round(trading_budget_remaining, 2)
     })
     
-    # AI Profiles
+    # AI Profiles with NEW position sizing logic
     for mode in [TradingMode.AI_CONSERVATIVE, TradingMode.AI_MODERATE, TradingMode.AI_AGGRESSIVE]:
-        summary = ai_engine_v2.get_profile_summary(mode, usdt_free, trading_budget_remaining)
-        summary['usdt_free'] = round(usdt_free, 2)
-        summary['trading_budget_remaining'] = round(trading_budget_remaining, 2)
-        profiles.append(summary)
+        profile = RISK_PROFILES_V2.get(mode, {})
+        
+        # Calculate position sizes based on AVAILABLE USDT (not trading budget!)
+        position_pct_min = profile.get('position_pct_min', 5)
+        position_pct_max = profile.get('position_pct_max', 20)
+        
+        # Calculate actual USD values based on available USDT
+        position_usd_min = usdt_free * (position_pct_min / 100)
+        position_usd_max = usdt_free * (position_pct_max / 100)
+        
+        # Apply trading budget cap
+        position_usd_min = min(position_usd_min, trading_budget_remaining)
+        position_usd_max = min(position_usd_max, trading_budget_remaining)
+        
+        profiles.append({
+            'mode': mode.value,
+            'name': profile.get('name', mode.value),
+            'emoji': profile.get('emoji', '🤖'),
+            'description': profile.get('description', ''),
+            # NEW: Position sizing as % of available USDT
+            'position_pct_range': f"{position_pct_min:.0f}%-{position_pct_max:.0f}%",
+            'position_usd_min': round(position_usd_min, 2),
+            'position_usd_max': round(position_usd_max, 2),
+            'max_positions': profile.get('max_positions', 3),
+            'sl_atr_multiplier': f"{profile.get('sl_atr_multiplier_min', 1.5):.1f}x-{profile.get('sl_atr_multiplier_max', 2.5):.1f}x ATR",
+            'tp_rr_range': f"1:{profile.get('tp_rr_base', 2):.1f} - 1:{profile.get('tp_rr_max', 3):.1f}",
+            'risk_per_trade': f"{profile.get('risk_pct_min', 1):.1f}%-{profile.get('risk_pct_max', 5):.1f}%",
+            'allowed_regimes': [r.value for r in profile.get('allowed_regimes', [])],
+            'min_adx': profile.get('min_adx', 15),
+            'usdt_free': round(usdt_free, 2),
+            'trading_budget_remaining': round(trading_budget_remaining, 2)
+        })
     
     return {
         'profiles': profiles,
