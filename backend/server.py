@@ -500,10 +500,45 @@ async def set_mexc_keys(keys: MexcKeysInput, current_user: dict = Depends(get_cu
 
 @app.get("/api/keys/mexc/status", response_model=MexcKeysStatus)
 async def get_mexc_keys_status(current_user: dict = Depends(get_current_user)):
-    """Get MEXC keys connection status (no keys returned)"""
+    """Get MEXC keys connection status with REAL API verification"""
     user_id = current_user['user_id']
-    status = await db.get_mexc_keys_status(user_id)
-    return MexcKeysStatus(**status)
+    
+    # First check basic status from DB
+    basic_status = await db.get_mexc_keys_status(user_id)
+    
+    if not basic_status.get('connected'):
+        return MexcKeysStatus(**basic_status)
+    
+    # Keys exist and decrypt - now verify with real MEXC API call
+    try:
+        keys = await db.get_mexc_keys(user_id)
+        if not keys:
+            return MexcKeysStatus(connected=False, last_updated=None, error='Keys nicht verfügbar')
+        
+        # Make a real authenticated API call to verify keys work
+        mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        account_info = await mexc.get_account()
+        
+        # If we get here, keys are valid and working
+        return MexcKeysStatus(
+            connected=True, 
+            last_updated=basic_status.get('last_updated'),
+            error=None
+        )
+    except Exception as e:
+        error_msg = str(e)
+        # Parse common MEXC errors
+        if '10072' in error_msg or 'invalid' in error_msg.lower():
+            error_msg = 'API Keys ungültig oder abgelaufen'
+        elif 'signature' in error_msg.lower():
+            error_msg = 'API Secret ist falsch'
+        elif 'timeout' in error_msg.lower():
+            error_msg = 'MEXC nicht erreichbar'
+        else:
+            error_msg = f'Verbindungsfehler: {error_msg[:50]}'
+        
+        logger.warning(f"MEXC key verification failed for user {user_id}: {error_msg}")
+        return MexcKeysStatus(connected=False, last_updated=basic_status.get('last_updated'), error=error_msg)
 
 @app.delete("/api/keys/mexc")
 async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
