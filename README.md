@@ -34,7 +34,7 @@ Ein automatisierter SPOT-Trading-Bot für die MEXC Exchange mit FastAPI Backend,
 
 ### 1. Login
 ```
-URL: https://spot-trader-2.preview.emergentagent.com
+URL: https://mexc-autopilot.preview.emergentagent.com
 Passwort: Rainer_70!PK
 ```
 
@@ -162,7 +162,7 @@ MEXC_API_SECRET=""  # Optional für Live Mode
 
 **Frontend** (`/app/frontend/.env`):
 ```env
-REACT_APP_BACKEND_URL=https://spot-trader-2.preview.emergentagent.com
+REACT_APP_BACKEND_URL=https://mexc-autopilot.preview.emergentagent.com
 ```
 
 ### Strategy Parameters (anpassbar in MongoDB)
