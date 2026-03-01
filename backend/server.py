@@ -418,7 +418,7 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/ai/preview/{mode}")
 async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_user)):
-    """Preview AI V2 settings for a mode based on available USDT"""
+    """Preview AI V2 settings for a mode based on available USDT - NEW POSITION SIZING"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     live_account = await db.get_live_account(user_id)
@@ -430,7 +430,7 @@ async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_us
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid trading mode")
     
-    # Get USDT free balance
+    # Get USDT free balance from MEXC
     usdt_free = 0
     keys = await db.get_mexc_keys(user_id)
     if keys:
@@ -464,29 +464,60 @@ async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_us
             'position_usd_min': settings.live_min_notional_usdt or 5,
             'position_usd_max': settings.live_max_order_usdt or 50,
             'max_positions': settings.max_positions or 3,
-            'sl_type': 'Fixed %',
-            'tp_type': 'Fixed %',
+            'sl_atr_multiplier': 'Fixed %',
+            'tp_rr_range': 'Fixed',
+            'risk_per_trade': f"{settings.risk_per_trade * 100:.1f}%",
+            'allowed_regimes': ['bullish'],
+            'min_adx': 15,
             'reasoning': ['Manual Mode - keine AI-Anpassungen'],
             'usdt_free': round(usdt_free, 2),
+            'trading_budget': trading_budget,
             'trading_budget_remaining': round(trading_budget_remaining, 2)
         }
     
-    # Get AI V2 profile summary
-    summary = ai_engine_v2.get_profile_summary(trading_mode, usdt_free, trading_budget_remaining)
-    
+    # Get AI V2 profile
     profile = RISK_PROFILES_V2.get(trading_mode, {})
     
+    # Calculate position sizes based on AVAILABLE USDT (not trading budget!)
+    position_pct_min = profile.get('position_pct_min', 5)
+    position_pct_max = profile.get('position_pct_max', 20)
+    
+    # Calculate actual USD values based on available USDT
+    position_usd_min = usdt_free * (position_pct_min / 100)
+    position_usd_max = usdt_free * (position_pct_max / 100)
+    
+    # Apply trading budget cap
+    position_usd_min = min(position_usd_min, trading_budget_remaining)
+    position_usd_max = min(position_usd_max, trading_budget_remaining)
+    
     return {
-        **summary,
+        'mode': trading_mode.value,
+        'name': profile.get('name', mode),
+        'emoji': profile.get('emoji', '🤖'),
+        'description': profile.get('description', ''),
+        # NEW: Position sizing as % of available USDT
+        'position_pct_range': f"{position_pct_min:.0f}%-{position_pct_max:.0f}%",
+        'position_usd_min': round(position_usd_min, 2),
+        'position_usd_max': round(position_usd_max, 2),
+        # ATR-based SL/TP
+        'sl_atr_multiplier': f"{profile.get('sl_atr_multiplier_min', 1.5):.1f}x-{profile.get('sl_atr_multiplier_max', 2.5):.1f}x ATR",
+        'tp_rr_range': f"1:{profile.get('tp_rr_base', 2):.1f} - 1:{profile.get('tp_rr_max', 3):.1f}",
+        'max_positions': profile.get('max_positions', 3),
+        'risk_per_trade': f"{profile.get('risk_pct_min', 1):.1f}%-{profile.get('risk_pct_max', 5):.1f}%",
+        'allowed_regimes': [r.value for r in profile.get('allowed_regimes', [])],
+        'min_adx': profile.get('min_adx', 15),
+        # Reasoning with NEW format
         'reasoning': [
             f"{profile.get('emoji', '🤖')} Profil: {profile.get('name', mode)}",
-            f"💰 Position: {profile.get('position_pct_min', 5):.0f}%-{profile.get('position_pct_max', 20):.0f}% vom verfügbaren USDT",
-            f"📊 Berechnet: ${summary.get('position_usd_min', 0):.2f} - ${summary.get('position_usd_max', 0):.2f}",
+            f"💰 Position Size: {position_pct_min:.0f}%-{position_pct_max:.0f}% vom verfügbaren USDT",
+            f"📊 Berechnete Order: ${position_usd_min:.2f} - ${position_usd_max:.2f}",
             f"🛑 Stop Loss: {profile.get('sl_atr_multiplier_min', 1.5):.1f}x-{profile.get('sl_atr_multiplier_max', 2.5):.1f}x ATR (dynamisch)",
             f"🎯 Take Profit: R:R {profile.get('tp_rr_base', 2):.1f}:1 - {profile.get('tp_rr_max', 3):.1f}:1",
+            f"⚡ Confidence-Skalierung: Hoch >{profile.get('high_confidence_threshold', 85)}% → obere Range",
             f"📈 Erlaubte Regimes: {', '.join([r.value.upper() for r in profile.get('allowed_regimes', [])])}"
         ],
         'usdt_free': round(usdt_free, 2),
+        'trading_budget': trading_budget,
         'trading_budget_remaining': round(trading_budget_remaining, 2)
     }
 
