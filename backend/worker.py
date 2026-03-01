@@ -379,7 +379,13 @@ class MultiUserTradingWorker:
                     if len(klines_4h) >= 200:
                         regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
                         
-                        if regime == "BULLISH":
+                        # AI Aggressive: Accept BULLISH and SIDEWAYS
+                        # Other modes: Only BULLISH
+                        acceptable_regimes = ["BULLISH"]
+                        if trading_mode == TradingMode.AI_AGGRESSIVE:
+                            acceptable_regimes = ["BULLISH", "SIDEWAYS"]
+                        
+                        if regime in acceptable_regimes:
                             filtered_pairs.append({
                                 **pair_data,
                                 'regime': regime,
@@ -388,7 +394,7 @@ class MultiUserTradingWorker:
                                 'is_optimal': is_optimal
                             })
                             
-                            # Get up to 25 BULLISH coins for better selection
+                            # Get up to 25 coins for better selection
                             if len(filtered_pairs) >= 25:
                                 break
                         else:
