@@ -328,7 +328,7 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
     if keys:
         try:
             mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-        except:
+        except Exception:
             pass
     
     enriched = []
@@ -340,7 +340,7 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
             try:
                 ticker = await mexc.get_ticker_24h(pos.symbol)
                 pos_dict['current_price'] = float(ticker.get('lastPrice', 0))
-            except:
+            except Exception:
                 pos_dict['current_price'] = 0
         else:
             pos_dict['current_price'] = 0
