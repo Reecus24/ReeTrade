@@ -6,7 +6,8 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - Adaptive Trading-Strategie (Market Regime Detection, Momentum Rotation)
 - **NUR Live-Trading-Modus** (Paper Mode wurde entfernt)
 - MEXC Trade History Sync
-- **NEU: Dual Mode System (Manual + AI)**
+- **Dual Mode System (Manual + AI)**
+- **Intelligentes Coin-Scanning** (100 Coins, Preisfilterung für AI Trade-Größe)
 - Verschlüsselte API-Key-Speicherung
 - Dark-Theme Dashboard
 
@@ -25,8 +26,9 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] Per-User Daten-Isolation
 - [x] **NUR Live-Trading-Modus** (Paper Mode komplett entfernt)
 - [x] Verschlüsselte MEXC API-Key-Speicherung
+- [x] **ECHTE MEXC API-Verifizierung** für Connection Status
 
-### 🤖 NEU: Dual Mode System (Manual + AI)
+### 🤖 Dual Mode System (Manual + AI)
 - [x] **4 Trading-Modi:**
   - **Manual:** Volle Kontrolle mit eigenen Settings
   - **AI Konservativ:** Kleine Positionen, enge Stops, max 2 Positionen
@@ -51,10 +53,23 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
   - AI Reasoning (Entscheidungsgründe)
   - Override Liste (was wurde von AI geändert)
 
+### 🔍 Intelligentes Coin-Scanning (NEU - 01.03.2026)
+- [x] **100 Coins** werden gescannt (statt vorher 50)
+- [x] **Intelligente Preisfilterung:**
+  - Filtert Coins mit zu hohem Preis für die AI Trade-Größe
+  - Prüft ob `potential_qty >= 0.1` (praktikable Menge)
+  - Prüft ob Trade-Wert >= 1% des Coin-Preises (effiziente Kapitalnutzung)
+- [x] **Optimale Coin-Priorisierung:**
+  - Bevorzugt Coins wo Trade >= 1 Einheit ODER Trade >= 5% des Preises
+  - Sortiert nach Optimalität + ADX-Stärke
+- [x] **Detailliertes Logging:**
+  - Zeigt gefilterte Coins mit Beispielen
+  - Erklärt warum Coins übersprungen wurden
+
 ### Trading Engine
 - [x] ECHTE BUY und SELL Orders auf MEXC Exchange
 - [x] High-Frequency Exit Loop (30 Sekunden) für Stop Loss/Take Profit
-- [x] Signal Scan Loop (5 Minuten) für neue Entries
+- [x] Signal Scan Loop (1 Minute) für neue Entries
 - [x] MEXC History Sync (90 Sekunden) - erkennt externe Verkäufe
 - [x] "Best-of-N" Trading Strategie - nur bester Signal wird ausgeführt
 - [x] Dynamisches Coin-Universum (alle USDT-Paare von MEXC)
@@ -66,8 +81,8 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] Budget System (Reserve, Budget, Available)
 - [x] Daily Trading Cap mit Progress Bar
 - [x] Bot Status Panel (Letzter Scan, Entscheidung, Regime)
-- [x] **NEU: Trading Mode Selector (Manual/AI)**
-- [x] **NEU: AI Status Panel mit Confidence & Overrides**
+- [x] Trading Mode Selector (Manual/AI)
+- [x] AI Status Panel mit Confidence & Overrides
 - [x] Positionen-Panel mit manuellem Sell-Button
 - [x] Trades Tab mit Historie und Charts
 - [x] Logs Tab (Live-gefiltert)
@@ -78,9 +93,8 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] Daily Trading Cap
 - [x] Max Order Limit
 - [x] Min Notional Check
-- [x] **NEU: AI Drawdown Protection** (Trading stoppt bei Max Drawdown)
-- [x] **NEU: AI Daily Trade Limit** (pro Risikoprofil)
-- [x] Rate Limiting für Login und Live-Mode Endpoints
+- [x] AI Drawdown Protection (Trading stoppt bei Max Drawdown)
+- [x] AI Daily Trade Limit (pro Risikoprofil)
 
 ## AI Risk Profile Details
 
