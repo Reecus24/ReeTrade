@@ -211,6 +211,45 @@ class Database:
             upsert=True
         )
     
+    # ========== LIVE ACCOUNT OPERATIONS ==========
+    
+    async def get_live_account(self, user_id: str) -> PaperAccount:
+        """Get live account (uses live_accounts collection)"""
+        doc = await self.db.live_accounts.find_one({'user_id': user_id})
+        if not doc:
+            # Create default if not exists
+            default_account = PaperAccount(user_id=user_id, equity=0, cash=0, open_positions=[])
+            await self.db.live_accounts.insert_one(default_account.model_dump())
+            return default_account
+        
+        doc.pop('_id', None)
+        return PaperAccount(**doc)
+    
+    async def update_live_account(self, account: PaperAccount):
+        """Update live account"""
+        doc = account.model_dump()
+        # Convert datetime objects to ISO strings
+        for pos in doc.get('open_positions', []):
+            if 'entry_time' in pos and isinstance(pos['entry_time'], datetime):
+                pos['entry_time'] = pos['entry_time'].isoformat()
+        
+        await self.db.live_accounts.update_one(
+            {'user_id': account.user_id},
+            {'$set': doc},
+            upsert=True
+        )
+    
+    async def delete_paper_data(self, user_id: str = None):
+        """Delete all paper trading data (accounts and trades)"""
+        if user_id:
+            await self.paper_accounts.delete_many({'user_id': user_id})
+            await self.trades.delete_many({'user_id': user_id, 'mode': 'paper'})
+        else:
+            # Delete all paper data for all users
+            await self.paper_accounts.delete_many({})
+            await self.trades.delete_many({'mode': 'paper'})
+        logger.info("Paper trading data deleted")
+    
     # ========== TRADE OPERATIONS ==========
     
     async def add_trade(self, trade: Trade):
