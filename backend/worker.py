@@ -26,6 +26,8 @@ class MultiUserTradingWorker:
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
         self.ai_engine = AITradingEngine()  # AI Trading Engine
+        # Track coins to skip for next N scans (no signal found)
+        self.symbol_skip_counts: Dict[str, Dict[str, int]] = {}  # {user_id: {symbol: scans_remaining}}
     
     def calculate_used_budget(self, account: PaperAccount) -> float:
         """Calculate total notional of all open positions"""
