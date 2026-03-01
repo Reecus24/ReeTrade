@@ -132,7 +132,7 @@ class MultiUserTradingWorker:
             await asyncio.sleep(90)  # 1.5 minutes
     
     async def sync_mexc_trades(self, user_id: str):
-        """Sync open positions with MEXC trade history to detect external sells"""
+        """Sync open positions with MEXC - detect external sells via balance check"""
         settings = await self.db.get_settings(user_id)
         
         # Only sync if live mode is active and confirmed
@@ -150,46 +150,44 @@ class MultiUserTradingWorker:
         
         mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
         
-        # Check each open position
+        # Get current MEXC balances
+        try:
+            account_info = await mexc.get_account()
+            balances = {b['asset']: float(b['free']) + float(b['locked']) for b in account_info.get('balances', []) if float(b['free']) + float(b['locked']) > 0}
+        except Exception as e:
+            logger.warning(f"Failed to get MEXC balances for sync: {e}")
+            return
+        
+        # Check each open position against actual balance
         positions_to_close = []
         
         for position in account.open_positions:
             try:
-                # Get recent trades for this symbol
-                # Look back 2 hours for any sells
-                start_time = int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000)
-                trades = await mexc.get_my_trades(position.symbol, limit=50, start_time=start_time)
+                # Extract base asset from symbol (e.g., HUSDT -> H)
+                base_asset = position.symbol.replace('USDT', '').replace('USDC', '').replace('BTC', '')
                 
-                if not trades:
-                    continue
+                # Check if we still own this asset
+                actual_balance = balances.get(base_asset, 0)
                 
-                # Look for SELL trades after our entry
-                entry_time_ms = int(position.entry_time.timestamp() * 1000)
-                
-                for trade in trades:
-                    # Check if this is a sell trade after our entry
-                    trade_time = trade.get('time', 0)
-                    is_buyer = trade.get('isBuyerMaker', True)  # If buyer is maker, we sold
+                # If balance is less than 10% of our recorded position, assume sold externally
+                if actual_balance < position.qty * 0.1:
+                    # Get current price for PnL calculation
+                    try:
+                        ticker = await mexc.get_ticker_24h(position.symbol)
+                        current_price = float(ticker['lastPrice'])
+                    except:
+                        current_price = position.entry_price  # Fallback
                     
-                    # A trade where we're NOT the buyer is a sell
-                    if trade_time > entry_time_ms and not is_buyer:
-                        trade_qty = float(trade.get('qty', 0))
-                        trade_price = float(trade.get('price', 0))
-                        
-                        # Check if qty matches our position (allow small difference for partial fills)
-                        if abs(trade_qty - position.qty) / position.qty < 0.1:  # Within 10%
-                            positions_to_close.append({
-                                'position': position,
-                                'exit_price': trade_price,
-                                'exit_time': trade_time,
-                                'reason': 'MEXC_SYNC: External sell detected'
-                            })
-                            await self.db.log(user_id, "INFO", 
-                                f"[LIVE] MEXC SYNC: Erkenne externen Verkauf von {position.symbol} @ {trade_price:.4f}")
-                            break
+                    positions_to_close.append({
+                        'position': position,
+                        'exit_price': current_price,
+                        'reason': f'MEXC_SYNC: Extern verkauft (Balance: {actual_balance:.4f})'
+                    })
+                    await self.db.log(user_id, "WARNING", 
+                        f"[SYNC] 🔄 {position.symbol} extern verkauft erkannt! Balance: {actual_balance:.4f}, Position war: {position.qty:.4f}")
                 
             except Exception as e:
-                logger.warning(f"Error checking MEXC trades for {position.symbol}: {e}")
+                logger.warning(f"Error checking balance for {position.symbol}: {e}")
         
         # Close detected positions
         for close_info in positions_to_close:
