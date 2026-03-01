@@ -136,9 +136,15 @@ class Database:
         try:
             api_key = crypto_manager.decrypt(doc['api_key_encrypted'])
             api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
+            if not api_key or not api_secret:
+                logger.warning(f"Keys decrypted but empty for user {user_id}")
+                return None
             return {'api_key': api_key, 'api_secret': api_secret}
         except Exception as e:
             logger.error(f"Failed to decrypt keys for user {user_id}: {e}")
+            # Delete corrupted keys
+            await self.user_keys.delete_one({'user_id': user_id})
+            logger.info(f"Deleted corrupted keys for user {user_id}")
             return None
     
     async def has_mexc_keys(self, user_id: str) -> bool:
