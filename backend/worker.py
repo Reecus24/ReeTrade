@@ -26,6 +26,11 @@ class MultiUserTradingWorker:
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
         self.ai_engine = AITradingEngine()  # AI Trading Engine
+        # Coin rotation: track which batch of coins to scan next
+        self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
+        self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
+        self.COINS_PER_BATCH = 20
+        self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
     
     def calculate_used_budget(self, account: PaperAccount) -> float:
         """Calculate total notional of all open positions"""
