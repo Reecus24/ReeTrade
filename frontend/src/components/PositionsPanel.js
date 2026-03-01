@@ -13,17 +13,35 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { TrendingUp, TrendingDown, X, Loader2, AlertTriangle } from 'lucide-react';
+import { TrendingUp, TrendingDown, X, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
   const [sellDialog, setSellDialog] = useState({ open: false, position: null, loading: false });
   const [confirmData, setConfirmData] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('auth_token');
     return { headers: { Authorization: `Bearer ${token}` } };
+  };
+
+  const handleSyncWithMexc = async () => {
+    setSyncing(true);
+    try {
+      const response = await axios.post(
+        `${BACKEND_URL}/api/positions/sync`,
+        {},
+        getAuthHeaders()
+      );
+      toast.success(response.data.message + ` (${response.data.open_positions} Positionen)`);
+      if (onSellComplete) onSellComplete();
+    } catch (error) {
+      toast.error('Sync fehlgeschlagen: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const formatCurrency = (value) => {
