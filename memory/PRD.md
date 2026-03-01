@@ -152,15 +152,18 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 
 ## Offene Aufgaben
 
+### ✅ Abgeschlossen (01.03.2026)
+- [x] Intelligentes Coin-Scanning: 100 Coins scannen
+- [x] Preisfilterung: Coins nach Trade-Größe filtern
+- [x] MEXC Connection Status: Echte API-Verifizierung
+
 ### P1 - Nächste Priorität
-- [ ] MEXC API Keys neu eingeben (alte sind ungültig)
-- [ ] AI System live testen mit echten Trades
+- [ ] User Management Tab für Admin-Rolle
 
 ### P2 - Zukünftig
-- [ ] User Management Tab für Admin-Rolle
 - [ ] E-Mail-Verifizierung bei Registrierung
 - [ ] Passwort-Zurücksetzen-Funktion
-- [ ] Performance-Dashboard mit Charts (Sharpe Ratio, Win Rate)
+- [ ] Performance-Dashboard mit Charts (Sharpe Ratio, Win Rate, Equity Curve)
 
 ### P3 - Backlog
 - [ ] Telegram/E-Mail Benachrichtigungen
