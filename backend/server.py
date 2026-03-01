@@ -353,41 +353,68 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
 
 @app.get("/api/ai/profiles")
 async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
-    """Get available AI trading profiles with calculated position ranges"""
+    """Get available AI trading profiles V2 with dynamic position sizing"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
+    live_account = await db.get_live_account(user_id)
     
-    from ai_engine import ai_engine, TradingMode, RISK_PROFILES
+    from ai_engine_v2 import ai_engine_v2, TradingMode, RISK_PROFILES_V2
     
-    # Get trading budget for calculations
+    # Get USDT free balance (for position sizing display)
+    usdt_free = 0
+    keys = await db.get_mexc_keys(user_id)
+    if keys:
+        try:
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            account_info = await mexc.get_account()
+            usdt_balance = next(
+                (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
+                {'free': '0'}
+            )
+            usdt_free = float(usdt_balance.get('free', 0))
+        except Exception:
+            usdt_free = settings.trading_budget_usdt or 500
+    else:
+        usdt_free = settings.trading_budget_usdt or 500
+    
+    # Calculate open positions value
+    open_value = sum(
+        pos.entry_price * pos.qty for pos in live_account.open_positions
+    ) if live_account and live_account.open_positions else 0
+    
     trading_budget = settings.trading_budget_usdt or 500
+    trading_budget_remaining = max(0, trading_budget - open_value)
     
     profiles = []
-    for mode in TradingMode:
-        info = ai_engine.get_profile_info(mode)
-        
-        # Calculate Min-Max Order based on trading budget
-        if mode == TradingMode.MANUAL:
-            min_order = settings.live_min_notional_usdt or 10
-            max_order = settings.live_max_order_usdt or 50
-        else:
-            profile = RISK_PROFILES.get(mode, {})
-            base_pct = profile.get('base_position_pct', 3.0)
-            max_pct = profile.get('max_position_pct', 5.0)
-            min_order = round(trading_budget * (base_pct * 0.5) / 100, 2)  # Min with reductions
-            max_order = round(trading_budget * max_pct / 100, 2)
-        
-        profiles.append({
-            'mode': mode.value,
-            'name': info['name'],
-            'description': info['description'],
-            'features': info['features'],
-            'min_order': min_order,
-            'max_order': max_order,
-            'trading_budget': trading_budget
-        })
     
-    return {'profiles': profiles}
+    # Manual Mode
+    profiles.append({
+        'mode': 'manual',
+        'name': 'Manual',
+        'emoji': '⚙️',
+        'description': 'Volle manuelle Kontrolle',
+        'position_pct_range': 'Manuell',
+        'position_usd_min': settings.live_min_notional_usdt or 5,
+        'position_usd_max': settings.live_max_order_usdt or 50,
+        'max_positions': settings.max_positions or 3,
+        'usdt_free': round(usdt_free, 2),
+        'trading_budget_remaining': round(trading_budget_remaining, 2)
+    })
+    
+    # AI Profiles
+    for mode in [TradingMode.AI_CONSERVATIVE, TradingMode.AI_MODERATE, TradingMode.AI_AGGRESSIVE]:
+        summary = ai_engine_v2.get_profile_summary(mode, usdt_free, trading_budget_remaining)
+        summary['usdt_free'] = round(usdt_free, 2)
+        summary['trading_budget_remaining'] = round(trading_budget_remaining, 2)
+        profiles.append(summary)
+    
+    return {
+        'profiles': profiles,
+        'usdt_free': round(usdt_free, 2),
+        'trading_budget': trading_budget,
+        'trading_budget_remaining': round(trading_budget_remaining, 2),
+        'open_positions_value': round(open_value, 2)
+    }
 
 @app.get("/api/ai/preview/{mode}")
 async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_user)):
