@@ -110,8 +110,21 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
 
   return (
     <div className="space-y-2" data-testid="positions-panel">
-      <div className="text-sm font-medium text-zinc-400 mb-2">
-        Offene Positionen ({positions.length})
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-medium text-zinc-400">
+          Offene Positionen ({positions.length})
+        </div>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={handleSyncWithMexc}
+          disabled={syncing}
+          className="text-xs text-zinc-500 hover:text-white"
+          title="Mit MEXC synchronisieren (erkennt externe Verkäufe)"
+        >
+          <RefreshCw className={`w-3 h-3 mr-1 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Sync...' : 'MEXC Sync'}
+        </Button>
       </div>
       
       {positions.map((pos, idx) => {
