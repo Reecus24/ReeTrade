@@ -335,7 +335,7 @@ const DashboardPage = ({ onLogout }) => {
                       <div className="text-sm font-mono text-blue-400">{formatCurrency(settings.reserve_usdt)}</div>
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">Trading Budget</div>
+                      <div className="text-xs text-zinc-500">Budget (Cap)</div>
                       <div className="text-sm font-mono text-white">{formatCurrency(settings.trading_budget_usdt)}</div>
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
@@ -343,8 +343,14 @@ const DashboardPage = ({ onLogout }) => {
                       <div className="text-sm font-mono">{balance.open_positions_count || 0} / {settings.max_positions}</div>
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">Max Order</div>
-                      <div className="text-sm font-mono text-white">{formatCurrency(settings.live_max_order_usdt)}</div>
+                      <div className="text-xs text-zinc-500">AI Order Range</div>
+                      <div className="text-sm font-mono text-purple-400">
+                        {settings.trading_mode !== 'manual' && balance?.ai_position_range ? (
+                          `${formatCurrency(balance.ai_position_range.min)} - ${formatCurrency(balance.ai_position_range.max)}`
+                        ) : (
+                          formatCurrency(settings.live_max_order_usdt)
+                        )}
+                      </div>
                     </div>
                   </div>
                 </>
