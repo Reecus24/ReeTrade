@@ -603,8 +603,8 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
     settings = await db.get_settings(user_id)
     live_account = await db.get_live_account(user_id)
     
-    # Calculate used budget from open positions
-    used_budget = sum(pos.entry_price * pos.qty for pos in live_account.open_positions) if live_account.open_positions else 0
+    # Calculate used budget from open positions (entry value)
+    entry_value = sum(pos.entry_price * pos.qty for pos in live_account.open_positions) if live_account.open_positions else 0
     
     # Get MEXC keys
     keys = await db.get_mexc_keys(user_id)
@@ -631,11 +631,28 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         usdt_locked = float(usdt_balance.get('locked', 0))
         usdt_total = usdt_free + usdt_locked
         
+        # Calculate current value of positions (with live prices)
+        invested_value = 0
+        total_pnl = 0
+        if live_account and live_account.open_positions:
+            for pos in live_account.open_positions:
+                try:
+                    ticker = await mexc.get_ticker_24h(pos.symbol)
+                    current_price = float(ticker.get('lastPrice', pos.entry_price))
+                    current_value = current_price * pos.qty
+                    invested_value += current_value
+                    total_pnl += (current_price - pos.entry_price) * pos.qty
+                except Exception:
+                    # Fallback to entry value
+                    invested_value += pos.entry_price * pos.qty
+        
+        total_pnl_pct = (total_pnl / entry_value * 100) if entry_value > 0 else 0
+        
         # RESERVE SYSTEM: Calculate available to bot
         available_to_bot = max(0, usdt_free - settings.reserve_usdt)
         
         # Apply trading budget cap
-        budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
+        budget_remaining = max(0, settings.trading_budget_usdt - entry_value)
         remaining_budget = min(available_to_bot, budget_remaining)
         
         # DAILY CAP
@@ -663,13 +680,17 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'balances': non_zero_balances[:20],
             'last_updated': datetime.now(timezone.utc).isoformat(),
             'error': None,
+            # Portfolio Summary
+            'invested_value': round(invested_value, 2),
+            'total_pnl': round(total_pnl, 4),
+            'total_pnl_pct': round(total_pnl_pct, 2),
             # Reserve & Budget info
             'budget': {
                 'usdt_free': round(usdt_free, 2),
                 'reserve_usdt': settings.reserve_usdt,
                 'available_to_bot': round(available_to_bot, 2),
                 'trading_budget': settings.trading_budget_usdt,
-                'used_budget': round(used_budget, 2),
+                'used_budget': round(entry_value, 2),
                 'remaining_budget': round(remaining_budget, 2),
                 'max_order': settings.live_max_order_usdt
             },
