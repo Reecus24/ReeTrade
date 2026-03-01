@@ -844,9 +844,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'used': round(today_exposure, 2),
                 'remaining': round(daily_remaining, 2)
             },
-            'open_positions_count': len(live_account.open_positions) if live_account else 0,
+            'open_positions_count': actual_positions_count,
             # AI Position Range based on available USDT
-            'ai_position_range': calculate_ai_position_range(settings, usdt_free, entry_value)
+            'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value)
         }
         
     except Exception as e:
