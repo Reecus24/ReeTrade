@@ -251,7 +251,7 @@ async def revoke_live_mode(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/status")
 async def get_status(current_user: dict = Depends(get_current_user)):
-    """Get bot status for current user (LIVE only)"""
+    """Get bot status for current user (LIVE only) with AI info"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     account = await db.get_live_account(user_id)
@@ -259,6 +259,13 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     
     return {
         'settings': {
+            # Trading Mode (NEW)
+            'trading_mode': settings.trading_mode,
+            # AI Status (NEW)
+            'ai_confidence': settings.ai_confidence,
+            'ai_risk_score': settings.ai_risk_score,
+            'ai_reasoning': settings.ai_reasoning,
+            'ai_last_override': settings.ai_last_override,
             # Running state
             'live_running': settings.live_running,
             'live_confirmed': settings.live_confirmed,
@@ -303,6 +310,39 @@ async def get_status(current_user: dict = Depends(get_current_user)):
         'live_heartbeat': settings.live_heartbeat.isoformat() if settings.live_heartbeat else None,
         'live_is_alive': settings.live_running and settings.live_confirmed,
         'mexc_keys_connected': keys_status['connected']
+    }
+
+# ============ AI PROFILE ENDPOINTS ============
+
+@app.get("/api/ai/profiles")
+async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
+    """Get available AI trading profiles"""
+    from ai_engine import ai_engine, TradingMode
+    
+    profiles = []
+    for mode in TradingMode:
+        info = ai_engine.get_profile_info(mode)
+        profiles.append({
+            'mode': mode.value,
+            'name': info['name'],
+            'description': info['description'],
+            'features': info['features']
+        })
+    
+    return {'profiles': profiles}
+
+@app.get("/api/ai/status")
+async def get_ai_status(current_user: dict = Depends(get_current_user)):
+    """Get current AI decision status"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    return {
+        'trading_mode': settings.trading_mode,
+        'confidence': settings.ai_confidence,
+        'risk_score': settings.ai_risk_score,
+        'reasoning': settings.ai_reasoning,
+        'last_override': settings.ai_last_override
     }
 
 @app.get("/api/logs")
