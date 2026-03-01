@@ -320,7 +320,7 @@ class AITradingEngine:
                 'position_size',
                 f"${manual_position:.0f}",
                 f"${position_size_usdt:.0f}",
-                f"AI-Anpassung basierend auf Marktbedingungen"
+                "AI-Anpassung basierend auf Marktbedingungen"
             )
         
         manual_max_pos = manual_settings.get('max_positions', 3)
