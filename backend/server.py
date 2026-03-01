@@ -418,60 +418,76 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/ai/preview/{mode}")
 async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_user)):
-    """Preview AI settings for a mode based on current trading budget"""
+    """Preview AI V2 settings for a mode based on available USDT"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
+    live_account = await db.get_live_account(user_id)
     
-    from ai_engine import TradingMode, RISK_PROFILES
+    from ai_engine_v2 import TradingMode, RISK_PROFILES_V2, ai_engine_v2
     
     try:
         trading_mode = TradingMode(mode)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid trading mode")
     
+    # Get USDT free balance
+    usdt_free = 0
+    keys = await db.get_mexc_keys(user_id)
+    if keys:
+        try:
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            account_info = await mexc.get_account()
+            usdt_balance = next(
+                (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
+                {'free': '0'}
+            )
+            usdt_free = float(usdt_balance.get('free', 0))
+        except Exception:
+            usdt_free = settings.trading_budget_usdt or 500
+    else:
+        usdt_free = settings.trading_budget_usdt or 500
+    
+    # Calculate open positions value
+    open_value = sum(
+        pos.entry_price * pos.qty for pos in live_account.open_positions
+    ) if live_account and live_account.open_positions else 0
+    
     trading_budget = settings.trading_budget_usdt or 500
+    trading_budget_remaining = max(0, trading_budget - open_value)
     
     if trading_mode == TradingMode.MANUAL:
         return {
             'mode': 'manual',
             'name': 'Manual',
-            'min_order': settings.live_min_notional_usdt or 10,
-            'max_order': settings.live_max_order_usdt or 50,
-            'current_order': settings.live_max_order_usdt or 50,
+            'emoji': '⚙️',
+            'position_pct_range': 'Manuell',
+            'position_usd_min': settings.live_min_notional_usdt or 5,
+            'position_usd_max': settings.live_max_order_usdt or 50,
             'max_positions': settings.max_positions or 3,
-            'stop_loss_pct': 2.5,
-            'take_profit_pct': 5.0,
-            'confidence': 100,
-            'risk_score': 0,
-            'reasoning': ['Manual Mode - keine AI-Anpassungen']
+            'sl_type': 'Fixed %',
+            'tp_type': 'Fixed %',
+            'reasoning': ['Manual Mode - keine AI-Anpassungen'],
+            'usdt_free': round(usdt_free, 2),
+            'trading_budget_remaining': round(trading_budget_remaining, 2)
         }
     
-    profile = RISK_PROFILES.get(trading_mode, {})
-    base_pct = profile.get('base_position_pct', 3.0)
-    max_pct = profile.get('max_position_pct', 5.0)
+    # Get AI V2 profile summary
+    summary = ai_engine_v2.get_profile_summary(trading_mode, usdt_free, trading_budget_remaining)
     
-    min_order = round(trading_budget * (base_pct * 0.5) / 100, 2)
-    max_order = round(trading_budget * max_pct / 100, 2)
-    current_order = round(trading_budget * base_pct / 100, 2)
+    profile = RISK_PROFILES_V2.get(trading_mode, {})
     
     return {
-        'mode': mode,
-        'name': profile.get('name', 'Unknown'),
-        'min_order': min_order,
-        'max_order': max_order,
-        'current_order': current_order,
-        'max_positions': profile.get('max_positions', 3),
-        'stop_loss_pct': profile.get('base_stop_loss_pct', 2.5),
-        'take_profit_pct': profile.get('base_stop_loss_pct', 2.5) * profile.get('base_take_profit_rr', 2.0),
-        'confidence': 85,
-        'risk_score': 15,
+        **summary,
         'reasoning': [
-            f"AI Profil: {profile.get('name', mode)}",
-            f"Position Size: ${current_order:.2f} (Range: ${min_order:.0f}-${max_order:.0f})",
-            f"Take Profit: {profile.get('base_stop_loss_pct', 2.5) * profile.get('base_take_profit_rr', 2.0):.1f}% (R:R {profile.get('base_take_profit_rr', 2.0)}:1)",
-            f"Max Positionen: {profile.get('max_positions', 3)}"
+            f"{profile.get('emoji', '🤖')} Profil: {profile.get('name', mode)}",
+            f"💰 Position: {profile.get('position_pct_min', 5):.0f}%-{profile.get('position_pct_max', 20):.0f}% vom verfügbaren USDT",
+            f"📊 Berechnet: ${summary.get('position_usd_min', 0):.2f} - ${summary.get('position_usd_max', 0):.2f}",
+            f"🛑 Stop Loss: {profile.get('sl_atr_multiplier_min', 1.5):.1f}x-{profile.get('sl_atr_multiplier_max', 2.5):.1f}x ATR (dynamisch)",
+            f"🎯 Take Profit: R:R {profile.get('tp_rr_base', 2):.1f}:1 - {profile.get('tp_rr_max', 3):.1f}:1",
+            f"📈 Erlaubte Regimes: {', '.join([r.value.upper() for r in profile.get('allowed_regimes', [])])}"
         ],
-        'trading_budget': trading_budget
+        'usdt_free': round(usdt_free, 2),
+        'trading_budget_remaining': round(trading_budget_remaining, 2)
     }
 
 @app.get("/api/ai/status")
