@@ -619,18 +619,29 @@ class MultiUserTradingWorker:
         # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
         symbols_checked = 0
+        symbols_on_cooldown = 0
+        
+        # Decrement cooldowns from previous scans
+        self.decrement_skip_counts(user_id)
+        cooldown_count = self.get_skipped_symbols_count(user_id)
         
         # Calculate effective position size for runtime filtering
         effective_scan_position = effective_position_size if is_ai_mode else settings.live_max_order_usdt
         
-        await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f}")
+        cooldown_info = f" | {cooldown_count} auf Cooldown" if cooldown_count > 0 else ""
+        await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f}{cooldown_info}")
         
         for symbol in settings.top_pairs[:20]:
             symbols_checked += 1
             try:
-                # Check if symbol is paused
+                # Check if symbol is paused (DB-based pause from consecutive losses)
                 is_paused = await self.db.is_symbol_paused(user_id, symbol)
                 if is_paused:
+                    continue
+                
+                # Check if symbol is on scan cooldown (had signal but wasn't traded)
+                if self.should_skip_symbol(user_id, symbol):
+                    symbols_on_cooldown += 1
                     continue
                 
                 # Get 4H klines for regime
