@@ -243,9 +243,22 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div>
-                  <div className="font-bold text-white">{pos.symbol}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white">{pos.symbol}</span>
+                    {/* Trade Duration Badge */}
+                    {pos.entry_time && (
+                      <Badge className="bg-zinc-800 text-zinc-400 text-xs font-normal border-0">
+                        ⏱️ {formatTradeDuration(pos.entry_time)}
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-xs text-zinc-500">
                     {formatQty(pos.qty)} @ {formatCurrency(pos.entry_price)}
+                    {pos.entry_time && (
+                      <span className="ml-2 text-zinc-600">
+                        | Gekauft: {formatEntryDate(pos.entry_time)}
+                      </span>
+                    )}
                   </div>
                   {/* Current Price & Value */}
                   {hasCurrentPrice && (
