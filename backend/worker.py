@@ -536,24 +536,30 @@ class MultiUserTradingWorker:
         ai_min_position = None
         ai_max_position = None
         
-        # Get AI profile limits and calculate expected position sizes
+        # Get AI V2 profile limits and calculate expected position sizes based on AVAILABLE USDT
         if is_ai_mode:
-            from ai_engine import RISK_PROFILES
-            profile = RISK_PROFILES.get(trading_mode, {})
+            profile = RISK_PROFILES_V2.get(trading_mode, {})
             effective_max_positions = profile.get('max_positions', settings.max_positions)
             
-            # Calculate AI position size based on trading budget
-            trading_budget = settings.trading_budget_usdt or 500
-            base_pct = profile.get('base_position_pct', 3.0)
-            max_pct = profile.get('max_position_pct', 5.0)
+            # NEW: Calculate AI position size based on AVAILABLE USDT (not trading budget!)
+            position_pct_min = profile.get('position_pct_min', 5.0)
+            position_pct_max = profile.get('position_pct_max', 20.0)
             
-            # AI position range
-            ai_min_position = round(trading_budget * (base_pct * 0.5) / 100, 2)
-            ai_max_position = round(trading_budget * max_pct / 100, 2)
-            effective_position_size = round(trading_budget * base_pct / 100, 2)
+            # Position size = available_usdt * profile_percent
+            ai_min_position = round(live_usdt_free * (position_pct_min / 100), 2)
+            ai_max_position = round(live_usdt_free * (position_pct_max / 100), 2)
+            
+            # Apply trading budget cap
+            trading_budget = settings.trading_budget_usdt or 500
+            trading_budget_remaining = max(0, trading_budget - used_budget)
+            ai_min_position = min(ai_min_position, trading_budget_remaining)
+            ai_max_position = min(ai_max_position, trading_budget_remaining)
+            
+            # Use midpoint as effective size
+            effective_position_size = round((ai_min_position + ai_max_position) / 2, 2)
             
             await self.db.log(user_id, "INFO", 
-                f"[LIVE] 🤖 AI Mode: {trading_mode.value} | Position: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {effective_max_positions}")
+                f"[LIVE] 🤖 AI V2 Mode: {trading_mode.value} | Position: {position_pct_min:.0f}%-{position_pct_max:.0f}% USDT | Berechnet: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {effective_max_positions}")
         
         # Update status - use calculated AI values if in AI mode
         await self.db.update_settings(user_id, {
@@ -575,7 +581,7 @@ class MultiUserTradingWorker:
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
         trade_size_label = f"${ai_min_position:.0f}-${ai_max_position:.0f}" if is_ai_mode and ai_min_position else f"${effective_position_size:.0f}"
         await self.db.log(user_id, "INFO", 
-            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ Budget: ${available_budget:.2f} | Trade: {trade_size_label} | Positions: {positions_count}/{effective_max_positions}")
+            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ USDT Free: ${live_usdt_free:.2f} | Trade: {trade_size_label} | Positions: {positions_count}/{effective_max_positions}")
         
         # Budget checks
         min_notional = settings.live_min_notional_usdt
