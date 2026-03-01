@@ -102,12 +102,10 @@ class Database:
         )
     
     async def get_all_active_users(self) -> List[Dict]:
-        # Find users with either paper_running or live_running active
+        # Find users with live_running active (Paper mode removed)
         cursor = self.settings.find({
             '$or': [
-                {'paper_running': True},
-                {'live_running': True},
-                {'bot_running': True}  # Legacy support
+                {'live_running': True}
             ]
         })
         settings_list = await cursor.to_list(length=1000)
