@@ -448,8 +448,12 @@ class MultiUserTradingWorker:
                     logger.warning(f"Error checking regime for {symbol}: {e}")
                     continue
             
-            # Sort: Prioritize optimal coins, then by ADX strength
-            filtered_pairs.sort(key=lambda x: (x.get('is_optimal', False), x.get('adx', 0)), reverse=True)
+            # Sort: Prioritize by regime (BULLISH > SIDEWAYS > BEARISH), then optimal coins, then by ADX
+            filtered_pairs.sort(key=lambda x: (
+                x.get('regime_priority', 0),  # BULLISH=3, SIDEWAYS=2, BEARISH=1
+                x.get('is_optimal', False), 
+                x.get('adx', 0)
+            ), reverse=True)
             
             # Store ALL filtered coins for rotation (up to 100)
             all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:100]]
