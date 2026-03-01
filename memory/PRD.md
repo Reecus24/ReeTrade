@@ -4,7 +4,8 @@
 Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - Multi-User-System mit Registrierung/Login
 - Adaptive Trading-Strategie (Market Regime Detection, Momentum Rotation)
-- Paper- und Live-Trading-Modi
+- **NUR Live-Trading-Modus** (Paper Mode wurde entfernt)
+- MEXC Trade History Sync
 - Verschlüsselte API-Key-Speicherung
 - Dark-Theme Dashboard
 
@@ -17,94 +18,97 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - **Rate Limiting:** slowapi
 
 ## Implementierte Features (Stand: 1. März 2026)
+
+### Core Features
 - [x] Multi-User-System (Registrierung, Login, JWT-Auth)
 - [x] Per-User Daten-Isolation
-- [x] Paper-Trading-Modus mit Live-Marktdaten (Simulated Live)
-- [x] Live-Trading-Modus
+- [x] **NUR Live-Trading-Modus** (Paper Mode komplett entfernt)
 - [x] Verschlüsselte MEXC API-Key-Speicherung
+
+### Trading Engine
+- [x] ECHTE BUY und SELL Orders auf MEXC Exchange
+- [x] High-Frequency Exit Loop (30 Sekunden) für Stop Loss/Take Profit
+- [x] Signal Scan Loop (5 Minuten) für neue Entries
+- [x] **NEU:** MEXC History Sync (90 Sekunden) - erkennt externe Verkäufe
+- [x] "Best-of-N" Trading Strategie - nur bester Signal wird ausgeführt
+- [x] Dynamisches Coin-Universum (alle USDT-Paare von MEXC)
 - [x] Adaptive Market Regime Detection (Bullish/Bearish/Sideways)
 - [x] Momentum Rotation Universe-Selektion
 - [x] EMA Crossover + RSI Strategie
-- [x] Rate Limiting für Login und Live-Mode Endpoints
-- [x] Audit Logging
-- [x] Live Balance von MEXC API (`GET /api/account/balance`)
-- [x] Balance Source Indicator (Paper/Live + Timestamp)
-- [x] Fehlerbehandlung bei MEXC API Fehlern im UI
-- [x] Trading Budget Limits (pro User)
-- [x] Paper Start Balance konfigurierbar
-- [x] Max Order Notional Limit
-- [x] Fees & Slippage Simulation für Paper Trades
-- [x] Budget-Anzeige im Dashboard (Budget/Used/Available)
+
+### Dashboard
+- [x] Echtes MEXC Wallet (USDT Free/Locked/Total)
+- [x] Budget System (Reserve, Budget, Available)
+- [x] Daily Trading Cap mit Progress Bar
+- [x] Bot Status Panel (Letzter Scan, Entscheidung, Regime)
+- [x] Positionen-Panel mit manuellem Sell-Button
+- [x] Trades Tab mit Historie und Charts
+- [x] Logs Tab (Live-gefiltert)
+- [x] Settings Tab (vereinfacht für nur Live)
+
+### Safety Features
 - [x] Reserve-System für Wallet-Schutz
-- [x] Daily PnL Chart (Balkendiagramm, 7/30/90 Tage)
-- [x] Trade History Tab mit Pagination und Filtern
-- [x] Trade Detail Drawer bei Klick auf Trade
-- [x] **NEU:** Strikte Trennung Paper/Live Modi
-- [x] **NEU:** Getrennte Running-States (paper_running, live_running)
-- [x] **NEU:** Separate Endpoints (/api/paper/*, /api/live/*)
-- [x] **NEU:** Zwei-Tab UI (PAPER gelb, LIVE rot)
-- [x] **NEU:** Live Tab mit echtem MEXC Wallet (USDT Free/Locked/Total)
-- [x] **NEU:** Budget System separat angezeigt (Reserve, Budget, Available)
-- [x] **NEU:** Wallet-Werte READ-ONLY
-- [x] **NEU:** Verbesserte Settings mit Erklärungen und Tooltips
-- [x] **NEU:** Daily Trading Cap für Paper und Live Modi
-- [x] **NEU:** Getrennte Settings UI (Paper Settings / Live Settings / Strategie Tabs)
-- [x] **NEU:** Daily Cap Progress Bar im Dashboard (Paper & Live)
-- [x] **NEU:** Vollständige Transparenz - Detaillierte Entry-Decision Logs
-- [x] **NEU:** Bot Status Panel mit Echtzeit-Tracking (Letzter Scan, Entscheidung, Regime)
-- [x] **NEU:** Order Execution Logs (TRADE OPENED, ORDER CONFIRMED)
-- [x] **NEU:** Manueller Sell-Button für jede Position mit Bestätigungsdialog
-- [x] **NEU:** Real-Time PnL-Anzeige vor Verkauf (aktueller Preis, Gewinn/Verlust)
-- [x] **NEU:** ECHTE BUY und SELL Orders auf MEXC Exchange im Live-Modus
-- [x] **NEU:** High-Frequency Exit Loop (30 Sekunden) für Stop Loss/Take Profit
-- [x] **NEU:** "Best-of-N" Trading Strategie - nur bester Signal wird ausgeführt
-- [x] **NEU:** Dynamisches Coin-Universum (alle USDT-Paare von MEXC)
+- [x] Daily Trading Cap
+- [x] Max Order Limit
+- [x] Min Notional Check
+- [x] Rate Limiting für Login und Live-Mode Endpoints
 
-## Neue Features (28. Februar 2026)
+## MEXC History Sync Feature (NEU)
+Der Bot synchronisiert jetzt automatisch alle 90 Sekunden mit deiner MEXC Trade History:
+- Wenn du einen Coin direkt auf MEXC verkaufst, wird das automatisch erkannt
+- Die Position wird im Bot als "geschlossen" markiert
+- PnL wird korrekt berechnet und in der Historie gespeichert
 
-### 1. Paper "Simulated Live" (Forward Test)
-- Paper-Mode nutzt echte MEXC 15m Candles und Last Price
-- Trades werden mit Fees (bps) und Slippage (bps) simuliert
-- Equity/PnL wird realistisch berechnet
-- Alle Trades in `trades` Collection gespeichert
+## Budget System
 
-### 2. Reserve & Budget System (NEU)
 **Reserve System (Hauptschutz):**
 - `reserve_usdt`: Sicherheitsreserve - Bot tastet diesen Betrag nie an
 - `available_to_bot = max(0, usdt_free - reserve_usdt)`
 
-**Budget Limits (Zusatzschutz):**
+**Budget Limits:**
 - `trading_budget_usdt`: Absolute Obergrenze für Gesamt-Exposure
-- `max_order_notional_usdt`: Max Größe pro einzelnem Trade
-- `paper_start_balance_usdt`: Startkapital für Paper Mode
+- `live_max_order_usdt`: Max Größe pro einzelnem Trade
+- `live_min_notional_usdt`: Minimale Order-Größe
 
-**Daily Trading Cap (NEU):**
-- `paper_daily_cap_usdt`: Max Handelsvolumen pro Tag im Paper Mode
-- `live_daily_cap_usdt`: Max Handelsvolumen pro Tag im Live Mode
+**Daily Trading Cap:**
+- `live_daily_cap_usdt`: Max Handelsvolumen pro Tag
 - Reset erfolgt täglich um 00:00 UTC
 - Bot stoppt neue Trades wenn Tageslimit erreicht
 
-**Live Mode Logik:**
-```
-available_to_bot = max(0, USDT_free - reserve_usdt)
-remaining_budget = min(available_to_bot, trading_budget - used_budget)
-```
+## API Endpoints
 
-**Dashboard zeigt (Live):**
-- USDT Free (MEXC Wallet)
-- Reserve (geschützt)
-- Available to Bot
-- Used Budget
-- Remaining Budget
+### Live Mode Control
+- `POST /api/live/start` - Live Bot starten
+- `POST /api/live/stop` - Live Bot stoppen
+- `POST /api/live/request` - Live Mode anfordern
+- `POST /api/live/confirm` - Live Mode bestätigen
+- `POST /api/live/revoke` - Live Mode widerrufen
 
-**Dashboard zeigt (Paper):**
-- Start Balance
-- Used Budget
-- Remaining
-- Cash
+### Auth & Status
+- `POST /api/auth/register` - Benutzer registrieren
+- `POST /api/auth/login` - Einloggen
+- `GET /api/status` - Bot-Status
 
-## Bug Fixes (28. Februar 2026)
-- [x] **P0:** 500 Internal Server Error beim Live-Modus-Wechsel behoben
+### Trades & Metrics
+- `GET /api/metrics/daily_pnl?days=30` - Daily PnL
+- `GET /api/trades` - Trade History
+- `GET /api/trades/symbols` - Gehandelte Symbols
+
+### Account & Keys
+- `GET /api/account/balance` - Live Balance + Budget Info
+- `POST /api/keys/mexc` - MEXC API-Keys setzen
+- `GET /api/keys/mexc/status` - Key-Status
+
+### Positions
+- `POST /api/positions/sell` - Position manuell verkaufen
+
+### Settings
+- `GET /api/settings` - Einstellungen abrufen
+- `PUT /api/settings` - Einstellungen aktualisieren
+
+## Test-Credentials
+- **Email:** test@example.com
+- **Password:** testpass123
 
 ## Offene Aufgaben
 
@@ -121,72 +125,12 @@ remaining_budget = min(available_to_bot, trading_budget - used_budget)
 - [ ] Telegram/E-Mail Benachrichtigungen
 - [ ] Erweiterte Audit-Log UI
 
-## Test-Credentials
-- **Email:** test@example.com
-- **Password:** testpass123
-
-## API Endpoints
-
-### Paper Mode
-- `POST /api/paper/start` - Paper Bot starten
-- `POST /api/paper/stop` - Paper Bot stoppen
-
-### Live Mode
-- `POST /api/live/start` - Live Bot starten (nur wenn confirmed + keys)
-- `POST /api/live/stop` - Live Bot stoppen
-- `POST /api/live/request` - Live Mode anfordern
-- `POST /api/live/confirm` - Live Mode bestätigen (Rate Limited: 3/min)
-- `POST /api/live/revoke` - Live Mode widerrufen
-
-### Auth & Status
-- `POST /api/auth/register` - Benutzer registrieren
-- `POST /api/auth/login` - Einloggen (Rate Limited: 5/min)
-- `GET /api/status` - Bot-Status (paper_running, live_running, etc.)
-- `GET /api/logs?mode=paper|live` - Logs gefiltert nach Mode
-
-### Trades & Metrics
-- `GET /api/metrics/daily_pnl?days=30&mode=paper` - Daily PnL Aggregation
-- `GET /api/trades?mode=paper&limit=200&offset=0` - Trade History
-- `GET /api/trades/symbols` - Liste aller gehandelten Symbols
-
-### Account & Keys
-- `GET /api/account/balance` - Balance + Budget Info
-- `POST /api/keys/mexc` - MEXC API-Keys setzen
-- `GET /api/keys/mexc/status` - Key-Status prüfen
-
-### Settings
-- `GET /api/settings` - Alle Einstellungen abrufen
-- `PUT /api/settings` - Einstellungen aktualisieren (inkl. daily caps)
-
-### Positions
-- `POST /api/positions/sell` - Position manuell verkaufen (mit confirm=false für Preview, confirm=true für Ausführung)
-
-## Settings Model Struktur
-```python
-# Paper Mode Settings
-paper_start_balance_usdt: float = 500.0
-paper_daily_cap_usdt: float = 200.0     # Daily Trading Cap
-paper_max_order_usdt: float = 50.0
-paper_fee_bps: int = 10
-paper_slippage_bps: int = 5
-
-# Live Mode Settings
-reserve_usdt: float = 0.0               # Sicherheitsreserve
-trading_budget_usdt: float = 500.0      # Max Exposure
-live_daily_cap_usdt: float = 200.0      # Daily Trading Cap
-live_max_order_usdt: float = 50.0
-```
-
 ## Changelog
-- **01.03.2026:** Manueller Sell-Button erfolgreich getestet und Bug behoben (Token-Key Inkonsistenz in PositionsPanel.js)
-- **01.03.2026:** Produktions-URL Ladebildschirm-Problem verifiziert - App lädt korrekt
+- **01.03.2026:** MEXC History Sync implementiert (erkennt externe Verkäufe)
+- **01.03.2026:** Paper Mode komplett entfernt - nur noch Live Trading
+- **01.03.2026:** Dashboard vereinfacht auf nur Live-Modus
+- **01.03.2026:** SettingsTab vereinfacht (nur Live-Einstellungen)
+- **01.03.2026:** Paper Trades und Accounts aus DB gelöscht
+- **01.03.2026:** Manueller Sell-Button erfolgreich getestet
 - **28.02.2026:** Vollständige Transparenz für Trading-Entscheidungen implementiert
-  - Detaillierte SYMBOL CHECK Logs mit Regime, ADX, EMA, RSI, Cooldown, Budget
-  - TRADE OPENED Logs mit Entry, Stop Loss, Take Profit, Notional
-  - ORDER CONFIRMED Logs mit Fee und Slippage
-  - Bot Status Panel im Dashboard mit Echtzeit-Status
-- **28.02.2026:** Daily Cap Progress Bar im Dashboard (Fortschrittsbalken, Prozentanzeige, Warnungen)
-- **28.02.2026:** Daily Trading Cap implementiert (Paper & Live)
-- **28.02.2026:** Settings UI in drei Tabs aufgeteilt (Paper/Live/Strategie)
-- **28.02.2026:** Backend-Modelle für getrennte Paper/Live Settings erweitert
-- **28.02.2026:** API `/api/account/balance` erweitert mit optionalem `mode` Parameter
+- **28.02.2026:** ECHTE BUY und SELL Orders auf MEXC implementiert
