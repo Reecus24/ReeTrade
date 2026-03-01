@@ -108,7 +108,6 @@ RISK_PROFILES = {
         "low_volatility_boost": 1.0,    # No boost for conservative
         # Daily limits
         "max_daily_trades": 3,
-        "max_daily_loss_pct": 2.0,
     },
     TradingMode.AI_MODERATE: {
         "name": "Moderat",
@@ -125,7 +124,6 @@ RISK_PROFILES = {
         "high_volatility_reduce": 0.6,
         "low_volatility_boost": 1.2,
         "max_daily_trades": 5,
-        "max_daily_loss_pct": 4.0,
     },
     TradingMode.AI_AGGRESSIVE: {
         "name": "Aggressiv",
@@ -142,7 +140,6 @@ RISK_PROFILES = {
         "high_volatility_reduce": 0.7,
         "low_volatility_boost": 1.4,
         "max_daily_trades": 8,
-        "max_daily_loss_pct": 6.0,
     }
 }
 
