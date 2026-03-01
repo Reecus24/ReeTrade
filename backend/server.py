@@ -254,16 +254,15 @@ async def revoke_live_mode(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/status")
 async def get_status(current_user: dict = Depends(get_current_user)):
-    """Get bot status for current user - separated for paper and live"""
+    """Get bot status for current user (LIVE only)"""
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
-    account = await db.get_paper_account(user_id)
+    account = await db.get_live_account(user_id)
     keys_status = await db.get_mexc_keys_status(user_id)
     
     return {
         'settings': {
-            # Separate running states
-            'paper_running': settings.paper_running,
+            # Running state
             'live_running': settings.live_running,
             'live_confirmed': settings.live_confirmed,
             'live_requested': settings.live_requested,
@@ -278,31 +277,14 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'max_positions': settings.max_positions,
             'max_daily_loss': settings.max_daily_loss,
             'take_profit_rr': settings.take_profit_rr,
-            # Fees
-            'fee_bps': settings.fee_bps,
-            'slippage_bps': settings.slippage_bps,
             # Budget
             'reserve_usdt': settings.reserve_usdt,
             'trading_budget_usdt': settings.trading_budget_usdt,
-            'paper_start_balance_usdt': settings.paper_start_balance_usdt,
             'max_order_notional_usdt': settings.max_order_notional_usdt,
-            'min_notional_usdt': settings.min_notional_usdt,
-            'paper_daily_cap_usdt': settings.paper_daily_cap_usdt,
             'live_daily_cap_usdt': settings.live_daily_cap_usdt,
-            # Live specific
             'live_max_order_usdt': settings.live_max_order_usdt,
             'live_min_notional_usdt': settings.live_min_notional_usdt,
-            # BOT STATUS TRACKING - PAPER
-            'paper_last_scan': settings.paper_last_scan,
-            'paper_last_decision': settings.paper_last_decision,
-            'paper_last_regime': settings.paper_last_regime,
-            'paper_last_symbol': settings.paper_last_symbol,
-            'paper_budget_used': settings.paper_budget_used,
-            'paper_budget_available': settings.paper_budget_available,
-            'paper_daily_used': settings.paper_daily_used,
-            'paper_daily_remaining': settings.paper_daily_remaining,
-            'paper_positions_count': settings.paper_positions_count,
-            # BOT STATUS TRACKING - LIVE
+            # BOT STATUS TRACKING
             'live_last_scan': settings.live_last_scan,
             'live_last_decision': settings.live_last_decision,
             'live_last_regime': settings.live_last_regime,
@@ -312,19 +294,16 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'live_daily_used': settings.live_daily_used,
             'live_daily_remaining': settings.live_daily_remaining,
             'live_positions_count': settings.live_positions_count,
-            # Legacy compatibility
-            'mode': 'live' if settings.live_running else 'paper',
-            'bot_running': settings.paper_running or settings.live_running,
+            # Cooldown
+            'cooldown_candles': settings.cooldown_candles,
         },
-        'paper_account': {
+        'live_account': {
             'user_id': account.user_id,
             'equity': account.equity,
             'cash': account.cash,
             'open_positions': [pos.model_dump() for pos in account.open_positions] if account.open_positions else []
         },
-        'paper_heartbeat': settings.paper_heartbeat.isoformat() if settings.paper_heartbeat else None,
         'live_heartbeat': settings.live_heartbeat.isoformat() if settings.live_heartbeat else None,
-        'paper_is_alive': settings.paper_running,
         'live_is_alive': settings.live_running and settings.live_confirmed,
         'mexc_keys_connected': keys_status['connected']
     }
