@@ -266,6 +266,9 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'ai_risk_score': settings.ai_risk_score,
             'ai_reasoning': settings.ai_reasoning,
             'ai_last_override': settings.ai_last_override,
+            'ai_min_position': settings.ai_min_position,
+            'ai_max_position': settings.ai_max_position,
+            'ai_current_position': settings.ai_current_position,
             # Running state
             'live_running': settings.live_running,
             'live_confirmed': settings.live_confirmed,
