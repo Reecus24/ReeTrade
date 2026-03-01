@@ -693,6 +693,7 @@ from pydantic import BaseModel
 
 class ManualSellRequest(BaseModel):
     symbol: str
+    position_id: Optional[str] = None  # Optional for backward compatibility
     confirm: bool = False
 
 @app.post("/api/positions/sell")
@@ -704,11 +705,20 @@ async def manual_sell_position(
     user_id = current_user['user_id']
     account = await db.get_live_account(user_id)
     
-    # Find the position
+    # Find the position - by ID if provided, otherwise first matching symbol
     position = None
-    for pos in account.open_positions:
-        if pos.symbol == request.symbol:
+    position_index = -1
+    for idx, pos in enumerate(account.open_positions):
+        if request.position_id:
+            # Match by position ID (new way)
+            if getattr(pos, 'id', None) == request.position_id:
+                position = pos
+                position_index = idx
+                break
+        elif pos.symbol == request.symbol:
+            # Match by symbol only (old way - takes first match)
             position = pos
+            position_index = idx
             break
     
     if not position:
