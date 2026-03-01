@@ -503,23 +503,6 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             status_code=502,
             detail=f"Failed to fetch MEXC balance: {str(e)}"
         )
-            # Daily Cap
-            'daily_cap': {
-                'cap': daily_cap,
-                'used': round(today_exposure, 2),
-                'remaining': round(daily_remaining, 2)
-            },
-            'pnl': {
-                'amount': round(pnl, 2),
-                'percent': round(pnl_pct, 2)
-            },
-            'open_positions_count': len(paper_account.open_positions),
-            # Fee settings for transparency
-            'fees': {
-                'fee_bps': settings.paper_fee_bps,
-                'slippage_bps': settings.paper_slippage_bps
-            }
-        }
 
 # ============ MARKET DATA ENDPOINTS ============
 
