@@ -33,3 +33,12 @@ class CryptoManager:
 
 # Global instance
 crypto_manager = CryptoManager()
+
+# Helper functions for easier imports
+def encrypt_value(plaintext: str) -> str:
+    """Encrypt a value using the global crypto manager"""
+    return crypto_manager.encrypt(plaintext)
+
+def decrypt_value(encrypted: str) -> str:
+    """Decrypt a value using the global crypto manager"""
+    return crypto_manager.decrypt(encrypted)
