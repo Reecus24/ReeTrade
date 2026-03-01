@@ -155,6 +155,10 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
         
         const isNetProfit = netPnlAmount !== null && netPnlAmount >= 0;
         
+        // Current value in USDT
+        const currentValue = hasCurrentPrice ? pos.current_price * pos.qty : null;
+        const entryValue = pos.entry_price * pos.qty;
+        
         return (
           <div 
             key={pos.id || idx} 
@@ -168,12 +172,16 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                   <div className="text-xs text-zinc-500">
                     {pos.qty?.toLocaleString()} @ {formatCurrency(pos.entry_price)}
                   </div>
-                  {/* Current Price */}
+                  {/* Current Price & Value */}
                   {hasCurrentPrice && (
                     <div className="text-xs mt-1">
                       <span className="text-zinc-500">Aktuell: </span>
                       <span className={pos.current_price >= pos.entry_price ? 'text-green-400' : 'text-red-400'}>
                         {formatCurrency(pos.current_price)}
+                      </span>
+                      <span className="text-zinc-500 ml-2">Wert: </span>
+                      <span className={currentValue >= entryValue ? 'text-green-400' : 'text-red-400'}>
+                        {currentValue.toFixed(2)} $
                       </span>
                     </div>
                   )}
