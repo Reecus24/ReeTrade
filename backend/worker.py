@@ -722,9 +722,9 @@ class MultiUserTradingWorker:
                     ema_slow = context.get('ema_slow', 0)
                     reason = "Kein LONG Signal"
                     if rsi_val > 70:
-                        reason = f"RSI überkauft ({rsi_val:.0f})"
+                        reason = "RSI überkauft ({:.0f})".format(rsi_val)
                     elif ema_fast < ema_slow:
-                        reason = f"EMA bearish (Fast < Slow)"
+                        reason = "EMA bearish (Fast < Slow)"
                     await self.db.log(user_id, "INFO", f"[LIVE] ⏭️ {symbol}: {reason} | RSI={rsi_val:.0f}, ADX={adx_value:.1f}")
                     continue
                 
