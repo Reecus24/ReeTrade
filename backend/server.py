@@ -537,15 +537,12 @@ async def manual_sell_position(
     if not position:
         raise HTTPException(status_code=404, detail=f"Position {request.symbol} nicht gefunden")
     
-    # Get user's MEXC client
+    # Get user's MEXC client (keys are already decrypted by get_mexc_keys)
     keys = await db.get_mexc_keys(user_id)
     if not keys:
         raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
     
-    from crypto_utils import decrypt_value
-    api_key = decrypt_value(keys['api_key'])
-    api_secret = decrypt_value(keys['api_secret'])
-    mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+    mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
     
     # If not confirmed, return position details for confirmation
     if not request.confirm:
