@@ -170,8 +170,10 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [ ] Erweiterte Audit-Log UI
 
 ## Changelog
+- **01.03.2026:** ✅ MEXC Connection Status zeigt jetzt korrekt "Keys ungültig" (echte API-Verifizierung im /api/status)
+- **01.03.2026:** ✅ AI Position Logs zeigen jetzt die AI-berechneten Werte (nicht Manual-Werte)
 - **01.03.2026:** ✅ Intelligentes Coin-Scanning (100 Coins, Preisfilterung nach AI Trade-Größe)
-- **01.03.2026:** ✅ MEXC Connection Status mit echter API-Verifizierung
+- **01.03.2026:** ✅ Neuer Endpoint POST /api/market/refresh_pairs für manuellen Coin-Refresh
 - **01.03.2026:** Dual Mode System implementiert (Manual + AI)
 - **01.03.2026:** 3 AI Risikoprofile: Konservativ, Moderat, Aggressiv
 - **01.03.2026:** AI Override Tracking mit UI Anzeige
