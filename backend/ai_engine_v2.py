@@ -199,10 +199,16 @@ RISK_PROFILES_V2 = {
         "risk_pct_min": 0.5,
         "risk_pct_max": 1.0,
         
-        # ATR-based Stop Loss
+        # ATR-based Stop Loss with MAX CAP
         "sl_atr_multiplier_base": 1.5,
         "sl_atr_multiplier_min": 1.2,
         "sl_atr_multiplier_max": 1.8,
+        "sl_max_pct": 4.0,  # MAX 4% Stop Loss Cap
+        
+        # Low-Cap Coin Adjustments - very strict
+        "lowcap_sl_reduction": 0.4,  # 40% of normal SL for low-cap
+        "lowcap_position_reduction": 0.3,  # 30% of normal position for low-cap
+        "lowcap_volume_threshold": 2000000,  # 24h Volume < $2M = low-cap
         
         # Take Profit
         "tp_rr_base": 1.5,
@@ -210,7 +216,7 @@ RISK_PROFILES_V2 = {
         
         # Market Conditions
         "allowed_regimes": [MarketRegime.BULLISH],  # Only clear Bullish
-        "min_adx": 20,  # Must have clear trend
+        "min_adx": 15,  # Must have clear trend
         "momentum_tp_boost_adx": 30,
         
         # Confidence Scaling - no high confidence boost
