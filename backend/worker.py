@@ -902,12 +902,10 @@ class MultiUserTradingWorker:
     async def get_user_mexc_client(self, user_id: str, settings: UserSettings) -> MexcClient:
         """Get MEXC client with user's API keys"""
         if settings.live_confirmed:
+            # get_mexc_keys returns already decrypted keys
             keys = await self.db.get_mexc_keys(user_id)
             if keys:
-                from crypto_utils import decrypt_value
-                api_key = decrypt_value(keys['api_key'])
-                api_secret = decrypt_value(keys['api_secret'])
-                return MexcClient(api_key=api_key, api_secret=api_secret)
+                return MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
         
         return MexcClient()
     
