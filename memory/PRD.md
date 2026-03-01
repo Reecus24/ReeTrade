@@ -16,7 +16,7 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - **Verschlüsselung:** Fernet für API-Keys
 - **Rate Limiting:** slowapi
 
-## Implementierte Features (Stand: 28. Februar 2026)
+## Implementierte Features (Stand: 1. März 2026)
 - [x] Multi-User-System (Registrierung, Login, JWT-Auth)
 - [x] Per-User Daten-Isolation
 - [x] Paper-Trading-Modus mit Live-Marktdaten (Simulated Live)
@@ -53,6 +53,12 @@ Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
 - [x] **NEU:** Vollständige Transparenz - Detaillierte Entry-Decision Logs
 - [x] **NEU:** Bot Status Panel mit Echtzeit-Tracking (Letzter Scan, Entscheidung, Regime)
 - [x] **NEU:** Order Execution Logs (TRADE OPENED, ORDER CONFIRMED)
+- [x] **NEU:** Manueller Sell-Button für jede Position mit Bestätigungsdialog
+- [x] **NEU:** Real-Time PnL-Anzeige vor Verkauf (aktueller Preis, Gewinn/Verlust)
+- [x] **NEU:** ECHTE BUY und SELL Orders auf MEXC Exchange im Live-Modus
+- [x] **NEU:** High-Frequency Exit Loop (30 Sekunden) für Stop Loss/Take Profit
+- [x] **NEU:** "Best-of-N" Trading Strategie - nur bester Signal wird ausgeführt
+- [x] **NEU:** Dynamisches Coin-Universum (alle USDT-Paare von MEXC)
 
 ## Neue Features (28. Februar 2026)
 
@@ -152,6 +158,9 @@ remaining_budget = min(available_to_bot, trading_budget - used_budget)
 - `GET /api/settings` - Alle Einstellungen abrufen
 - `PUT /api/settings` - Einstellungen aktualisieren (inkl. daily caps)
 
+### Positions
+- `POST /api/positions/sell` - Position manuell verkaufen (mit confirm=false für Preview, confirm=true für Ausführung)
+
 ## Settings Model Struktur
 ```python
 # Paper Mode Settings
@@ -169,6 +178,8 @@ live_max_order_usdt: float = 50.0
 ```
 
 ## Changelog
+- **01.03.2026:** Manueller Sell-Button erfolgreich getestet und Bug behoben (Token-Key Inkonsistenz in PositionsPanel.js)
+- **01.03.2026:** Produktions-URL Ladebildschirm-Problem verifiziert - App lädt korrekt
 - **28.02.2026:** Vollständige Transparenz für Trading-Entscheidungen implementiert
   - Detaillierte SYMBOL CHECK Logs mit Regime, ADX, EMA, RSI, Cooldown, Budget
   - TRADE OPENED Logs mit Entry, Stop Loss, Take Profit, Notional
