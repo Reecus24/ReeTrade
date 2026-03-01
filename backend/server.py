@@ -314,8 +314,7 @@ async def get_status(current_user: dict = Depends(get_current_user)):
         },
         'live_heartbeat': settings.live_heartbeat.isoformat() if settings.live_heartbeat else None,
         'live_is_alive': settings.live_running and settings.live_confirmed,
-        'mexc_keys_connected': mexc_connected,
-        'mexc_error': mexc_error
+        'mexc_keys_connected': keys_status['connected']
     }
 
 # ============ AI PROFILE ENDPOINTS ============
