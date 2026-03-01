@@ -168,6 +168,15 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                   <div className="text-xs text-zinc-500">
                     {pos.qty?.toLocaleString()} @ {formatCurrency(pos.entry_price)}
                   </div>
+                  {/* Current Price */}
+                  {hasCurrentPrice && (
+                    <div className="text-xs mt-1">
+                      <span className="text-zinc-500">Aktuell: </span>
+                      <span className={pos.current_price >= pos.entry_price ? 'text-green-400' : 'text-red-400'}>
+                        {formatCurrency(pos.current_price)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <Badge className={pos.side === 'LONG' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
                   {pos.side}
