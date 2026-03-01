@@ -53,6 +53,27 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
     }).format(value || 0);
   };
 
+  const formatQty = (qty) => {
+    if (!qty) return '0';
+    // Use German number format with appropriate decimals
+    if (qty >= 1000) {
+      return new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(qty);
+    } else if (qty >= 1) {
+      return new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(qty);
+    } else {
+      return new Intl.NumberFormat('de-DE', {
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 6
+      }).format(qty);
+    }
+  };
+
   const handleSellClick = async (position) => {
     setSellDialog({ open: true, position, loading: true });
     
