@@ -839,15 +839,24 @@ class MultiUserTradingWorker:
             
             # Calculate position size (AI or manual)
             if is_ai_mode and ai_decision and ai_decision.position_size_usdt > 0:
-                # Use AI-determined position size, but ensure it meets minimum
                 ai_size = ai_decision.position_size_usdt
-                if ai_size < min_notional and available_budget >= min_notional:
-                    # AI calculated too small, use minimum instead
-                    notional = min(min_notional, available_budget * 0.95)
-                    await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Size ${ai_size:.2f} < Min ${min_notional} → verwende Minimum")
+                
+                # Check if we have enough available budget
+                if ai_size > available_budget * 0.95:
+                    # Not enough budget for AI-calculated size, use what we have
+                    notional = available_budget * 0.95
+                    await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI wollte ${ai_size:.2f}, verfügbar nur ${available_budget:.2f} → nutze ${notional:.2f}")
+                elif ai_size < min_notional:
+                    # AI calculated too small, try minimum if available
+                    if available_budget >= min_notional:
+                        notional = min_notional
+                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Size ${ai_size:.2f} < Min ${min_notional} → verwende Minimum")
+                    else:
+                        notional = available_budget * 0.95
+                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 Budget ${available_budget:.2f} zu niedrig für Min ${min_notional}")
                 else:
-                    notional = min(ai_size, available_budget * 0.95)
-                await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Position Size: ${notional:.2f}")
+                    notional = ai_size
+                    await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Position Size: ${notional:.2f}")
             else:
                 # Manual position sizing
                 max_order = min(settings.live_max_order_usdt, available_budget)
