@@ -256,18 +256,8 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     settings = await db.get_settings(user_id)
     account = await db.get_live_account(user_id)
     
-    # Check MEXC connection with REAL API call
-    mexc_connected = False
-    mexc_error = None
-    keys = await db.get_mexc_keys(user_id)
-    if keys:
-        try:
-            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-            await mexc.get_account()  # Real API call
-            mexc_connected = True
-        except Exception as e:
-            mexc_error = str(e)[:100]
-            logger.debug(f"MEXC check failed for user {user_id}: {mexc_error}")
+    # Quick check - just verify keys exist (real verification via /api/keys/mexc/status)
+    keys_status = await db.get_mexc_keys_status(user_id)
     
     return {
         'settings': {
