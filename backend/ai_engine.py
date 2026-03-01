@@ -90,56 +90,52 @@ class AIDecision:
 RISK_PROFILES = {
     TradingMode.AI_CONSERVATIVE: {
         "name": "Konservativ",
-        "description": "Kleine Positionen, enge Stops, weniger Trades",
+        "description": "Längere Haltezeit, weniger Trades, engere Stops",
         # Base values (will be adjusted by market conditions)
-        "base_position_pct": 1.5,      # % of budget per trade
-        "max_position_pct": 2.5,       # Maximum position size
-        "base_stop_loss_pct": 1.5,     # Stop loss distance
-        "base_take_profit_rr": 2.0,    # Risk:Reward ratio
+        "base_position_pct": 2.0,       # % of budget per trade
+        "max_position_pct": 3.0,        # Maximum position size
+        "base_stop_loss_pct": 1.5,      # Stop loss distance (enger = schneller raus)
+        "base_take_profit_rr": 3.0,     # Risk:Reward ratio (höher = länger halten)
         "max_positions": 2,
         # Regime restrictions
         "allowed_regimes": [MarketRegime.BULLISH],
-        "min_adx": 25,                 # Minimum trend strength
+        "min_adx": 20,                  # Minimum trend strength
         # Drawdown limits
-        "max_drawdown_pct": 5.0,       # Pause trading if exceeded
-        "drawdown_reduce_at": 3.0,     # Start reducing size at this drawdown
+        "max_drawdown_pct": 8.0,        # Pause trading if exceeded
+        "drawdown_reduce_at": 4.0,      # Start reducing size at this drawdown
         # Volatility adjustments
         "high_volatility_reduce": 0.5,  # Multiply position by this if high vol
         "low_volatility_boost": 1.0,    # No boost for conservative
-        # Daily limits
-        "max_daily_trades": 3,
     },
     TradingMode.AI_MODERATE: {
         "name": "Moderat",
-        "description": "Ausgewogener Ansatz",
-        "base_position_pct": 3.0,
-        "max_position_pct": 4.5,
+        "description": "Ausgewogener Ansatz, mittlere Haltezeit",
+        "base_position_pct": 3.5,
+        "max_position_pct": 5.0,
         "base_stop_loss_pct": 2.5,
         "base_take_profit_rr": 2.5,
         "max_positions": 3,
         "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],
-        "min_adx": 20,
-        "max_drawdown_pct": 10.0,
-        "drawdown_reduce_at": 5.0,
+        "min_adx": 15,
+        "max_drawdown_pct": 12.0,
+        "drawdown_reduce_at": 6.0,
         "high_volatility_reduce": 0.6,
         "low_volatility_boost": 1.2,
-        "max_daily_trades": 5,
     },
     TradingMode.AI_AGGRESSIVE: {
         "name": "Aggressiv",
-        "description": "Größere Positionen, weitere Stops, mehr Trades",
+        "description": "Schnelles Trading, häufiger kaufen/verkaufen",
         "base_position_pct": 5.0,
-        "max_position_pct": 7.0,
+        "max_position_pct": 8.0,
         "base_stop_loss_pct": 3.5,
-        "base_take_profit_rr": 3.0,
+        "base_take_profit_rr": 2.0,     # Niedrigerer R:R = schneller Profit nehmen
         "max_positions": 5,
-        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],
-        "min_adx": 15,
-        "max_drawdown_pct": 15.0,
-        "drawdown_reduce_at": 8.0,
+        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS, MarketRegime.BEARISH],  # Tradet in allen Regimes
+        "min_adx": 10,                  # Weniger streng
+        "max_drawdown_pct": 20.0,
+        "drawdown_reduce_at": 10.0,
         "high_volatility_reduce": 0.7,
-        "low_volatility_boost": 1.4,
-        "max_daily_trades": 8,
+        "low_volatility_boost": 1.5,    # Mehr Boost bei niedriger Vol
     }
 }
 
