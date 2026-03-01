@@ -783,8 +783,9 @@ async def manual_sell_position(
     pnl = (executed_price - position.entry_price) * position.qty
     pnl_pct = ((executed_price - position.entry_price) / position.entry_price) * 100
     
-    # Remove position from account
-    account.open_positions = [p for p in account.open_positions if p.symbol != request.symbol]
+    # Remove ONLY this specific position from account (by index, not by symbol)
+    if position_index >= 0:
+        account.open_positions.pop(position_index)
     account.cash += position.qty * executed_price
     
     await db.update_live_account(account)
