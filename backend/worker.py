@@ -753,19 +753,23 @@ class MultiUserTradingWorker:
                 ema_slow_val = context.get('ema_slow', 0)
                 rsi_val = context.get('rsi', 0)
                 
-                # Calculate stop/take profit (AI or manual)
-                atr = strategy.calculate_atr(klines_15m, 14)
+                # Calculate stop/take profit (AI V2 with ATR-based SL/TP)
                 if is_ai_mode and ai_decision:
-                    # Use AI-determined TP/SL percentages
-                    stop_loss = current_price * (1 - ai_decision.stop_loss_pct / 100)
-                    take_profit = current_price * (1 + ai_decision.take_profit_pct / 100)
-                elif atr:
-                    stop_loss = current_price - (atr * 2.5)
-                    risk_amount = current_price - stop_loss
-                    take_profit = current_price + (risk_amount * 2.5)
+                    # Use AI V2 ATR-based SL/TP prices directly
+                    stop_loss = ai_decision.stop_loss_price
+                    take_profit = ai_decision.take_profit_price
+                    await self.db.log(user_id, "INFO", 
+                        f"[LIVE] 🤖 {symbol}: SL={stop_loss:.8f} (-{ai_decision.stop_loss_pct:.2f}%), TP={take_profit:.8f} (+{ai_decision.take_profit_pct:.2f}%), R:R={ai_decision.risk_reward_ratio:.1f}:1")
                 else:
-                    stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
-                    take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+                    # Manual mode - use ATR-based calculation
+                    atr = strategy.calculate_atr(klines_15m, 14)
+                    if atr:
+                        stop_loss = current_price - (atr * 2.0)
+                        risk_amount = current_price - stop_loss
+                        take_profit = current_price + (risk_amount * 2.5)
+                    else:
+                        stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
+                        take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
                 
                 # Score calculation
                 ema_spread = ((ema_fast_val - ema_slow_val) / ema_slow_val * 100) if ema_slow_val > 0 else 0
