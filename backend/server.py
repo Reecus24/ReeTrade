@@ -319,20 +319,99 @@ async def get_status(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/ai/profiles")
 async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
-    """Get available AI trading profiles"""
-    from ai_engine import ai_engine, TradingMode
+    """Get available AI trading profiles with calculated position ranges"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    from ai_engine import ai_engine, TradingMode, RISK_PROFILES
+    
+    # Get trading budget for calculations
+    trading_budget = settings.trading_budget_usdt or 500
     
     profiles = []
     for mode in TradingMode:
         info = ai_engine.get_profile_info(mode)
+        
+        # Calculate Min-Max Order based on trading budget
+        if mode == TradingMode.MANUAL:
+            min_order = settings.live_min_notional_usdt or 10
+            max_order = settings.live_max_order_usdt or 50
+        else:
+            profile = RISK_PROFILES.get(mode, {})
+            base_pct = profile.get('base_position_pct', 3.0)
+            max_pct = profile.get('max_position_pct', 5.0)
+            min_order = round(trading_budget * (base_pct * 0.5) / 100, 2)  # Min with reductions
+            max_order = round(trading_budget * max_pct / 100, 2)
+        
         profiles.append({
             'mode': mode.value,
             'name': info['name'],
             'description': info['description'],
-            'features': info['features']
+            'features': info['features'],
+            'min_order': min_order,
+            'max_order': max_order,
+            'trading_budget': trading_budget
         })
     
     return {'profiles': profiles}
+
+@app.get("/api/ai/preview/{mode}")
+async def preview_ai_mode(mode: str, current_user: dict = Depends(get_current_user)):
+    """Preview AI settings for a mode based on current trading budget"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    from ai_engine import TradingMode, RISK_PROFILES
+    
+    try:
+        trading_mode = TradingMode(mode)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid trading mode")
+    
+    trading_budget = settings.trading_budget_usdt or 500
+    
+    if trading_mode == TradingMode.MANUAL:
+        return {
+            'mode': 'manual',
+            'name': 'Manual',
+            'min_order': settings.live_min_notional_usdt or 10,
+            'max_order': settings.live_max_order_usdt or 50,
+            'current_order': settings.live_max_order_usdt or 50,
+            'max_positions': settings.max_positions or 3,
+            'stop_loss_pct': 2.5,
+            'take_profit_pct': 5.0,
+            'confidence': 100,
+            'risk_score': 0,
+            'reasoning': ['Manual Mode - keine AI-Anpassungen']
+        }
+    
+    profile = RISK_PROFILES.get(trading_mode, {})
+    base_pct = profile.get('base_position_pct', 3.0)
+    max_pct = profile.get('max_position_pct', 5.0)
+    
+    min_order = round(trading_budget * (base_pct * 0.5) / 100, 2)
+    max_order = round(trading_budget * max_pct / 100, 2)
+    current_order = round(trading_budget * base_pct / 100, 2)
+    
+    return {
+        'mode': mode,
+        'name': profile.get('name', 'Unknown'),
+        'min_order': min_order,
+        'max_order': max_order,
+        'current_order': current_order,
+        'max_positions': profile.get('max_positions', 3),
+        'stop_loss_pct': profile.get('base_stop_loss_pct', 2.5),
+        'take_profit_pct': profile.get('base_stop_loss_pct', 2.5) * profile.get('base_take_profit_rr', 2.0),
+        'confidence': 85,
+        'risk_score': 15,
+        'reasoning': [
+            f"AI Profil: {profile.get('name', mode)}",
+            f"Position Size: ${current_order:.2f} (Range: ${min_order:.0f}-${max_order:.0f})",
+            f"Take Profit: {profile.get('base_stop_loss_pct', 2.5) * profile.get('base_take_profit_rr', 2.0):.1f}% (R:R {profile.get('base_take_profit_rr', 2.0)}:1)",
+            f"Max Positionen: {profile.get('max_positions', 3)}"
+        ],
+        'trading_budget': trading_budget
+    }
 
 @app.get("/api/ai/status")
 async def get_ai_status(current_user: dict = Depends(get_current_user)):
