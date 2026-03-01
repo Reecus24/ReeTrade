@@ -264,7 +264,10 @@ const DashboardPage = ({ onLogout }) => {
                 confidence: settings.ai_confidence,
                 risk_score: settings.ai_risk_score,
                 reasoning: settings.ai_reasoning,
-                last_override: settings.ai_last_override
+                last_override: settings.ai_last_override,
+                min_position: settings.ai_min_position,
+                max_position: settings.ai_max_position,
+                current_position: settings.ai_current_position
               }}
             />
           </div>
