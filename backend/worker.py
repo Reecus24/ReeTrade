@@ -427,31 +427,42 @@ class MultiUserTradingWorker:
             # Sort: Prioritize optimal coins, then by ADX strength
             filtered_pairs.sort(key=lambda x: (x.get('is_optimal', False), x.get('adx', 0)), reverse=True)
             
-            # Take top 20 for trading
-            tradable_symbols = [p['symbol'] for p in filtered_pairs[:20]]
+            # Store ALL filtered coins for rotation (up to 100)
+            all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:100]]
+            
+            # Save first batch (20) as active, store all for rotation
+            active_batch = all_tradable_symbols[:self.COINS_PER_BATCH]
             
             await self.db.update_settings(user_id, {
-                'top_pairs': tradable_symbols,
+                'top_pairs': active_batch,
+                'all_pairs': all_tradable_symbols,  # Store all for rotation
                 'last_pairs_refresh': datetime.now(timezone.utc)
             })
             
+            # Reset batch index
+            self.user_coin_batch[user_id] = 0
+            self.user_all_coins[user_id] = all_tradable_symbols
+            
             # Detailed logging
             optimal_count = sum(1 for p in filtered_pairs[:20] if p.get('is_optimal', False))
-            bullish_count = sum(1 for p in filtered_pairs[:20] if p.get('regime') == 'BULLISH')
-            sideways_count = sum(1 for p in filtered_pairs[:20] if p.get('regime') == 'SIDEWAYS')
+            bullish_count = sum(1 for p in filtered_pairs if p.get('regime') == 'BULLISH')
+            sideways_count = sum(1 for p in filtered_pairs if p.get('regime') == 'SIDEWAYS')
             
             regime_info = f"{bullish_count} BULLISH"
             if sideways_count > 0:
                 regime_info += f" + {sideways_count} SIDEWAYS"
             
+            total_batches = (len(all_tradable_symbols) + self.COINS_PER_BATCH - 1) // self.COINS_PER_BATCH
+            
             await self.db.log(
                 user_id, "INFO", 
-                f"✅ Momentum Rotation abgeschlossen:\n"
-                f"   • {len(tradable_symbols)} Coins ausgewählt ({regime_info})\n"
-                f"   • {optimal_count} optimal für Trade-Größe ${expected_position_size:.2f}\n"
+                f"✅ Coin-Pool aktualisiert:\n"
+                f"   • {len(all_tradable_symbols)} Coins total ({regime_info})\n"
+                f"   • {total_batches} Batches à {self.COINS_PER_BATCH} Coins\n"
+                f"   • Aktiver Batch: 1-{min(self.COINS_PER_BATCH, len(all_tradable_symbols))}\n"
                 f"   • {skipped_price_too_high} übersprungen (Preis zu hoch)\n"
                 f"   • {skipped_bearish} übersprungen (BEARISH)",
-                {'symbols': tradable_symbols[:10]}
+                {'symbols': active_batch[:10]}
             )
             
             if skipped_price_filter_examples:
