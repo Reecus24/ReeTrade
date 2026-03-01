@@ -528,7 +528,6 @@ async def manual_sell_position(
 ):
     """Manually sell a live position at current market price"""
     user_id = current_user['user_id']
-    settings = await db.get_settings(user_id)
     account = await db.get_live_account(user_id)
     
     # Find the position
