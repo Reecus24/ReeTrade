@@ -495,7 +495,10 @@ class MultiUserTradingWorker:
             'live_positions_count': positions_count,
             'ai_confidence': ai_decision.confidence if ai_decision else None,
             'ai_risk_score': ai_decision.risk_score if ai_decision else None,
-            'ai_reasoning': ai_decision.reasoning if ai_decision else None
+            'ai_reasoning': ai_decision.reasoning if ai_decision else None,
+            'ai_min_position': ai_decision.min_position_usdt if ai_decision else None,
+            'ai_max_position': ai_decision.max_position_usdt if ai_decision else None,
+            'ai_current_position': ai_decision.position_size_usdt if ai_decision else None
         })
         
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
