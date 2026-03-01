@@ -884,29 +884,50 @@ class MultiUserTradingWorker:
                 quantity=formatted_qty
             )
             
-            # Parse order result
+            # Parse order result - get ACTUAL executed price
             executed_qty = float(order_result.get('executedQty', formatted_qty))
-            avg_price = float(order_result.get('price', current_price))
             
-            if avg_price == 0:
-                fills = order_result.get('fills', [])
-                if fills:
-                    total_qty = sum(float(f.get('qty', 0)) for f in fills)
-                    total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
-                    avg_price = total_cost / total_qty if total_qty > 0 else current_price
-                else:
+            # MEXC returns price=0 for MARKET orders, need to calculate from fills
+            avg_price = 0
+            fills = order_result.get('fills', [])
+            if fills:
+                total_qty = sum(float(f.get('qty', 0)) for f in fills)
+                total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
+                if total_qty > 0:
+                    avg_price = total_cost / total_qty
+                    
+            # Fallback: if no fills data, get current ticker price
+            if avg_price == 0 or avg_price == current_price:
+                try:
+                    ticker = await mexc.get_ticker_24h(symbol)
+                    avg_price = float(ticker.get('lastPrice', current_price))
+                except:
                     avg_price = current_price
+            
+            # Recalculate SL/TP based on ACTUAL execution price
+            if is_ai_mode and ai_decision:
+                actual_stop_loss = avg_price * (1 - ai_decision.stop_loss_pct / 100)
+                actual_take_profit = avg_price * (1 + ai_decision.take_profit_pct / 100)
+            else:
+                # Fallback to original calculated values adjusted for actual price
+                sl_pct = (current_price - stop_loss) / current_price if current_price > 0 else 0.03
+                tp_pct = (take_profit - current_price) / current_price if current_price > 0 else 0.075
+                actual_stop_loss = avg_price * (1 - sl_pct)
+                actual_take_profit = avg_price * (1 + tp_pct)
             
             actual_notional = executed_qty * avg_price
             
-            # Create position record
+            await self.db.log(user_id, "INFO", 
+                f"[LIVE] 📊 EXECUTED @ ${avg_price:.8f} | SL: ${actual_stop_loss:.8f} | TP: ${actual_take_profit:.8f}")
+            
+            # Create position record with ACTUAL execution price
             position = Position(
                 symbol=symbol,
                 side="LONG",
                 entry_price=avg_price,
                 qty=executed_qty,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
+                stop_loss=actual_stop_loss,
+                take_profit=actual_take_profit,
                 entry_time=datetime.now(timezone.utc)
             )
             
