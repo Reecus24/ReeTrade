@@ -468,6 +468,9 @@ class MultiUserTradingWorker:
                     'ai_confidence': ai_decision.confidence,
                     'ai_risk_score': ai_decision.risk_score,
                     'ai_reasoning': ai_decision.reasoning,
+                    'ai_min_position': ai_decision.min_position_usdt,
+                    'ai_max_position': ai_decision.max_position_usdt,
+                    'ai_current_position': ai_decision.position_size_usdt,
                     'ai_last_override': {
                         'timestamp': scan_time.isoformat(),
                         'should_trade': False,
