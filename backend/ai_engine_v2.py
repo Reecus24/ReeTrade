@@ -41,6 +41,7 @@ class MarketConditions:
     momentum_score: float  # -100 to +100
     rsi_value: float
     current_price: float
+    volume_24h: float = 0  # 24h trading volume in USDT for low-cap detection
 
 
 @dataclass
