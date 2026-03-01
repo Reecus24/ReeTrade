@@ -514,3 +514,30 @@ class Database:
         })
         
         return count
+    
+    async def get_today_trades_count(self, user_id: str, mode: str = 'live') -> int:
+        """Get count of trades executed today"""
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        count = await self.trades.count_documents({
+            'user_id': user_id,
+            'mode': mode,
+            'ts': {'$gte': today_start.isoformat()}
+        })
+        
+        return count
+    
+    async def get_today_pnl(self, user_id: str, mode: str = 'live') -> float:
+        """Get total PnL for today"""
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        cursor = self.trades.find({
+            'user_id': user_id,
+            'mode': mode,
+            'ts': {'$gte': today_start.isoformat()},
+            'pnl': {'$exists': True}
+        })
+        trades = await cursor.to_list(length=1000)
+        
+        total_pnl = sum(t.get('pnl', 0) or 0 for t in trades)
+        return total_pnl
