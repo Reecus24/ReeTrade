@@ -57,10 +57,11 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
     if (!qty) return '0';
     // Use German number format with appropriate decimals
     if (qty >= 1000) {
+      // For large quantities, show with thousand separator and no decimals
       return new Intl.NumberFormat('de-DE', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-      }).format(qty);
+      }).format(Math.round(qty)) + ' Stk';
     } else if (qty >= 1) {
       return new Intl.NumberFormat('de-DE', {
         minimumFractionDigits: 2,
