@@ -14,6 +14,7 @@ import SettingsTab from '@/components/SettingsTab';
 import LogsTab from '@/components/LogsTab';
 import LiveModeConfirm from '@/components/LiveModeConfirm';
 import BotStatusPanel from '@/components/BotStatusPanel';
+import PositionsPanel from '@/components/PositionsPanel';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
