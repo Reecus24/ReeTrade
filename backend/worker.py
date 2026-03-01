@@ -911,7 +911,7 @@ class MultiUserTradingWorker:
             # Place REAL SELL order
             await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {position.qty}")
             
-            formatted_qty = order_sizer.get_formatted_quantity(position.symbol, position.qty)
+            formatted_qty = order_sizer.round_quantity(position.symbol, position.qty)
             if formatted_qty is None or formatted_qty <= 0:
                 formatted_qty = position.qty
             
