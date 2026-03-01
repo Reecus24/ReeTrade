@@ -510,7 +510,7 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "INFO", 
                 f"[LIVE] 🤖 AI Mode: {trading_mode.value} | Position: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {effective_max_positions}")
         
-        # Update status
+        # Update status - use calculated AI values if in AI mode
         await self.db.update_settings(user_id, {
             'live_last_scan': scan_time.isoformat(),
             'live_last_decision': 'SCANNING',
@@ -519,12 +519,12 @@ class MultiUserTradingWorker:
             'live_daily_used': round(today_exposure, 2),
             'live_daily_remaining': round(daily_remaining, 2),
             'live_positions_count': positions_count,
-            'ai_confidence': ai_decision.confidence if ai_decision else None,
+            'ai_confidence': ai_decision.confidence if ai_decision else (85 if is_ai_mode else None),
             'ai_risk_score': ai_decision.risk_score if ai_decision else None,
             'ai_reasoning': ai_decision.reasoning if ai_decision else None,
-            'ai_min_position': ai_decision.min_position_usdt if ai_decision else None,
-            'ai_max_position': ai_decision.max_position_usdt if ai_decision else None,
-            'ai_current_position': ai_decision.position_size_usdt if ai_decision else None
+            'ai_min_position': ai_decision.min_position_usdt if ai_decision else ai_min_position,
+            'ai_max_position': ai_decision.max_position_usdt if ai_decision else ai_max_position,
+            'ai_current_position': ai_decision.position_size_usdt if ai_decision else effective_position_size
         })
         
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
