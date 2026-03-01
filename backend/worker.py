@@ -437,7 +437,7 @@ class MultiUserTradingWorker:
         if daily_remaining < min_notional:
             await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
             await self.db.update_settings(user_id, {
-                'live_last_decision': f'BLOCKED: Tageslimit',
+                'live_last_decision': 'BLOCKED: Tageslimit',
                 'live_last_symbol': '-'
             })
             return
