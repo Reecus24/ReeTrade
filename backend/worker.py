@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from db_operations import Database
 from mexc_client import MexcClient
 from strategy import TradingStrategy
@@ -13,13 +13,13 @@ from models import Position, Trade, UserSettings, PaperAccount
 logger = logging.getLogger(__name__)
 
 class MultiUserTradingWorker:
-    # Background worker for multi-user automated trading
+    """Background worker for multi-user LIVE automated trading (Paper mode removed)"""
     
     def __init__(self, db: Database):
         self.db = db
         self.running = False
-        self.user_initial_equity: Dict[str, float] = {}  # Track for daily loss limit
-        self.user_last_trade_time: Dict[str, datetime] = {}  # Cooldown tracking
+        self.user_initial_equity: Dict[str, float] = {}
+        self.user_last_trade_time: Dict[str, datetime] = {}
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
     
@@ -36,22 +36,9 @@ class MultiUserTradingWorker:
         used_budget: float,
         usdt_free: float
     ) -> dict:
-        """
-        Calculate budget info for LIVE mode with reserve system.
-        
-        Reserve System Logic:
-        1. reserve_usdt: Safety reserve - bot won't touch this
-        2. available_to_bot = max(0, usdt_free - reserve_usdt)
-        3. trading_budget_usdt: Absolute cap on total exposure
-        4. remaining_budget = min(available_to_bot, trading_budget - used_budget)
-        """
-        # Step 1: Calculate what's available after reserve
+        """Calculate budget info for LIVE mode with reserve system."""
         available_to_bot = max(0, usdt_free - settings.reserve_usdt)
-        
-        # Step 2: Apply trading budget cap
         budget_remaining = max(0, settings.trading_budget_usdt - used_budget)
-        
-        # Step 3: Final remaining is the minimum of both constraints
         remaining_budget = min(available_to_bot, budget_remaining)
         
         return {
@@ -63,49 +50,6 @@ class MultiUserTradingWorker:
             'remaining_budget': remaining_budget,
             'max_order_notional': settings.max_order_notional_usdt
         }
-    
-    def calculate_paper_budget(
-        self, 
-        settings: UserSettings, 
-        used_budget: float,
-        paper_cash: float
-    ) -> dict:
-        """Calculate budget info for PAPER mode."""
-        # Paper mode: limited by paper_start_balance
-        budget_remaining = max(0, settings.paper_start_balance_usdt - used_budget)
-        available_to_bot = min(paper_cash, budget_remaining)
-        
-        return {
-            'paper_cash': paper_cash,
-            'start_balance': settings.paper_start_balance_usdt,
-            'trading_budget': settings.paper_start_balance_usdt,
-            'used_budget': used_budget,
-            'remaining_budget': available_to_bot,
-            'max_order_notional': settings.max_order_notional_usdt
-        }
-    
-    def calculate_effective_balance(
-        self, 
-        settings: UserSettings, 
-        account: PaperAccount,
-        live_usdt_free: float = None
-    ) -> tuple[float, float, float]:
-        """
-        Calculate effective balance for trading.
-        Returns: (effective_balance, used_budget, available_budget)
-        """
-        used_budget = self.calculate_used_budget(account)
-        
-        if settings.mode == 'live' and live_usdt_free is not None:
-            # Live mode with reserve system
-            budget_info = self.calculate_live_budget(settings, used_budget, live_usdt_free)
-            effective = budget_info['remaining_budget']
-        else:
-            # Paper mode
-            budget_info = self.calculate_paper_budget(settings, used_budget, account.cash)
-            effective = budget_info['remaining_budget']
-        
-        return effective, used_budget, budget_info.get('trading_budget', settings.trading_budget_usdt)
     
     async def heartbeat(self):
         while self.running:
@@ -122,33 +66,30 @@ class MultiUserTradingWorker:
             await asyncio.sleep(60)
     
     async def trading_loop(self):
+        """Main trading loop - 5 minute intervals for new entries"""
         while self.running:
             try:
-                # Get all users with bot_running=true
                 active_settings = await self.db.get_all_active_users()
                 
                 if not active_settings:
-                    await asyncio.sleep(300)  # 5 min
+                    await asyncio.sleep(300)
                     continue
                 
                 logger.info(f"Trading cycle for {len(active_settings)} active user(s)")
                 
-                # Process each user
                 for settings_doc in active_settings:
                     user_id = settings_doc.get('user_id')
                     try:
                         await self.process_user(user_id)
-                        # Small delay between users to avoid rate limits
                         await asyncio.sleep(2)
                     except Exception as e:
-                        await self.db.log(user_id, "ERROR", f"User trading cycle error: {str(e)}")
+                        await self.db.log(user_id, "ERROR", f"Trading cycle error: {str(e)}")
                         logger.exception(f"Error processing user {user_id}: {e}")
             
             except Exception as e:
                 logger.error(f"Trading loop error: {e}")
             
-            # Wait 5 minutes
-            await asyncio.sleep(300)
+            await asyncio.sleep(300)  # 5 minutes
     
     async def exit_check_loop(self):
         """Fast loop to check exits every 30 seconds"""
@@ -166,30 +107,141 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Exit check loop error: {e}")
             
-            # Check exits every 30 seconds
             await asyncio.sleep(30)
+    
+    async def mexc_sync_loop(self):
+        """Sync with MEXC trade history every 90 seconds to detect external sells"""
+        while self.running:
+            try:
+                active_settings = await self.db.get_all_active_users()
+                
+                for settings_doc in active_settings:
+                    user_id = settings_doc.get('user_id')
+                    try:
+                        await self.sync_mexc_trades(user_id)
+                    except Exception as e:
+                        logger.error(f"MEXC sync error for {user_id}: {e}")
+            
+            except Exception as e:
+                logger.error(f"MEXC sync loop error: {e}")
+            
+            await asyncio.sleep(90)  # 1.5 minutes
+    
+    async def sync_mexc_trades(self, user_id: str):
+        """Sync open positions with MEXC trade history to detect external sells"""
+        settings = await self.db.get_settings(user_id)
+        
+        # Only sync if live mode is active and confirmed
+        if not (settings.live_running and settings.live_confirmed):
+            return
+        
+        account = await self.db.get_live_account(user_id)
+        if not account or not account.open_positions:
+            return
+        
+        # Get MEXC client with user's keys
+        keys = await self.db.get_mexc_keys(user_id)
+        if not keys:
+            return
+        
+        from crypto_utils import decrypt_value
+        api_key = decrypt_value(keys['api_key'])
+        api_secret = decrypt_value(keys['api_secret'])
+        mexc = MexcClient(api_key=api_key, api_secret=api_secret)
+        
+        # Check each open position
+        positions_to_close = []
+        
+        for position in account.open_positions:
+            try:
+                # Get recent trades for this symbol
+                # Look back 2 hours for any sells
+                start_time = int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000)
+                trades = await mexc.get_my_trades(position.symbol, limit=50, start_time=start_time)
+                
+                if not trades:
+                    continue
+                
+                # Look for SELL trades after our entry
+                entry_time_ms = int(position.entry_time.timestamp() * 1000)
+                
+                for trade in trades:
+                    # Check if this is a sell trade after our entry
+                    trade_time = trade.get('time', 0)
+                    is_buyer = trade.get('isBuyerMaker', True)  # If buyer is maker, we sold
+                    
+                    # A trade where we're NOT the buyer is a sell
+                    if trade_time > entry_time_ms and not is_buyer:
+                        trade_qty = float(trade.get('qty', 0))
+                        trade_price = float(trade.get('price', 0))
+                        
+                        # Check if qty matches our position (allow small difference for partial fills)
+                        if abs(trade_qty - position.qty) / position.qty < 0.1:  # Within 10%
+                            positions_to_close.append({
+                                'position': position,
+                                'exit_price': trade_price,
+                                'exit_time': trade_time,
+                                'reason': 'MEXC_SYNC: External sell detected'
+                            })
+                            await self.db.log(user_id, "INFO", 
+                                f"[LIVE] MEXC SYNC: Erkenne externen Verkauf von {position.symbol} @ {trade_price:.4f}")
+                            break
+                
+            except Exception as e:
+                logger.warning(f"Error checking MEXC trades for {position.symbol}: {e}")
+        
+        # Close detected positions
+        for close_info in positions_to_close:
+            pos = close_info['position']
+            exit_price = close_info['exit_price']
+            reason = close_info['reason']
+            
+            # Calculate PnL
+            pnl = (exit_price - pos.entry_price) * pos.qty
+            pnl_pct = ((exit_price - pos.entry_price) / pos.entry_price) * 100
+            
+            # Record the trade
+            trade = Trade(
+                user_id=user_id,
+                ts=datetime.now(timezone.utc),
+                symbol=pos.symbol,
+                side="SELL",
+                qty=pos.qty,
+                entry=pos.entry_price,
+                exit=exit_price,
+                pnl=pnl,
+                pnl_pct=pnl_pct,
+                mode='live',
+                reason=reason,
+                notional=pos.entry_price * pos.qty
+            )
+            await self.db.add_trade(trade)
+            
+            # Remove position
+            account.open_positions.remove(pos)
+            account.cash += (pos.qty * exit_price)
+            
+            await self.db.log(user_id, "INFO",
+                f"[LIVE] Position {pos.symbol} geschlossen via MEXC Sync | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
+        
+        if positions_to_close:
+            await self.db.update_live_account(account)
     
     async def check_exits_for_user(self, user_id: str):
         """Quick exit check for a user - runs every 30 seconds"""
         settings = await self.db.get_settings(user_id)
-        account = await self.db.get_paper_account(user_id)
         
-        # Skip if no open positions
-        if not account.open_positions:
+        # Only check live mode
+        if not (settings.live_running and settings.live_confirmed):
             return
         
-        # Only check if live mode is running
-        if not (settings.live_running and settings.live_confirmed):
-            # Also check paper positions
-            if not settings.paper_running:
-                return
+        account = await self.db.get_live_account(user_id)
+        if not account or not account.open_positions:
+            return
         
         # Get MEXC client
         mexc = await self.get_user_mexc_client(user_id, settings)
         
-        mode_prefix = f"[{settings.mode.upper()}]"
-        
-        # Check each position
         for position in account.open_positions[:]:
             try:
                 ticker = await mexc.get_ticker_24h(position.symbol)
@@ -198,32 +250,28 @@ class MultiUserTradingWorker:
                 should_exit = False
                 exit_reason = ""
                 
-                # Check stop loss
                 if current_price <= position.stop_loss:
                     should_exit = True
                     exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
                 
-                # Check take profit
                 elif current_price >= position.take_profit:
                     should_exit = True
                     exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
                 
                 if should_exit:
-                    await self.db.log(user_id, "INFO", f"{mode_prefix} EXIT: {position.symbol} - {exit_reason}")
+                    await self.db.log(user_id, "INFO", f"[LIVE] EXIT: {position.symbol} - {exit_reason}")
                     await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
-                    await self.db.update_paper_account(account)
+                    await self.db.update_live_account(account)
                     
             except Exception as e:
                 logger.error(f"Exit check error for {position.symbol}: {e}")
     
     async def process_user(self, user_id: str):
+        """Process trading for a single user (LIVE only)"""
         settings = await self.db.get_settings(user_id)
         
-        # Check if either mode is running
-        paper_running = settings.paper_running
-        live_running = settings.live_running and settings.live_confirmed
-        
-        if not paper_running and not live_running:
+        # Only process live mode
+        if not (settings.live_running and settings.live_confirmed):
             return
         
         # Load exchange info once
@@ -237,7 +285,7 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Failed to load exchange info: {e}")
         
-        # Refresh top pairs every 4 hours (momentum rotation)
+        # Refresh top pairs every 4 hours
         should_refresh = True
         if settings.last_pairs_refresh:
             last_refresh = settings.last_pairs_refresh
@@ -247,76 +295,53 @@ class MultiUserTradingWorker:
         
         if should_refresh:
             await self.refresh_top_pairs(user_id)
-            settings = await self.db.get_settings(user_id)  # Reload
+            settings = await self.db.get_settings(user_id)
         
         if not settings.top_pairs:
             await self.db.log(user_id, "WARNING", "No top pairs available")
             return
         
-        # Process PAPER mode
-        if paper_running:
-            await self.db.log(user_id, "INFO", "[PAPER] Starting trading cycle")
-            await self.scan_and_trade_mode(user_id, settings, mode='paper')
-            await self.db.update_settings(user_id, {'paper_heartbeat': datetime.now(timezone.utc)})
-        
-        # Process LIVE mode (completely separate)
-        if live_running:
-            await self.db.log(user_id, "WARNING", "[LIVE] Starting trading cycle")
-            await self.scan_and_trade_mode(user_id, settings, mode='live')
-            await self.db.update_settings(user_id, {'live_heartbeat': datetime.now(timezone.utc)})
+        await self.db.log(user_id, "WARNING", "[LIVE] Starting trading cycle")
+        await self.scan_and_trade(user_id, settings)
+        await self.db.update_settings(user_id, {'live_heartbeat': datetime.now(timezone.utc)})
     
     async def refresh_top_pairs(self, user_id: str):
-        """MOMENTUM ROTATION: Select Top coins by momentum score, filtered by budget"""
+        """MOMENTUM ROTATION: Select Top coins by momentum score"""
         try:
             settings = await self.db.get_settings(user_id)
-            account = await self.db.get_paper_account(user_id)
-            
-            # Get available budget for filtering
-            min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
+            min_notional = settings.live_min_notional_usdt
             
             await self.db.log(user_id, "INFO", f"Running Momentum Rotation... (Min Order: ${min_notional})")
             
             mexc = MexcClient()
-            
-            # Get ALL USDT pairs (increased limit)
             momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=200)
             
             await self.db.log(user_id, "INFO", f"Gefunden: {len(momentum_pairs)} USDT Coins")
             
-            # Filter: Only BULLISH regime AND affordable
             filtered_pairs = []
-            skipped_expensive = 0
             skipped_bearish = 0
             
-            for pair_data in momentum_pairs[:50]:  # Check top 50 momentum
+            for pair_data in momentum_pairs[:50]:
                 symbol = pair_data['symbol']
                 price = pair_data.get('price', 0)
                 
-                # Skip if price unknown
                 if price <= 0:
                     continue
                 
-                # Check if we can afford at least min_notional worth
-                # Some exchanges have minimum qty requirements, estimate conservatively
-                estimated_min_qty = min_notional / price if price > 0 else 0
-                
                 try:
-                    # Get 4H candles for regime
                     klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
                     
                     if len(klines_4h) >= 200:
                         regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
                         
-                        # Only include BULLISH symbols
                         if regime == "BULLISH":
                             filtered_pairs.append({
                                 **pair_data,
                                 'regime': regime,
-                                'adx': regime_ctx.get('adx', 0),
-                                'estimated_min_qty': estimated_min_qty
+                                'adx': regime_ctx.get('adx', 0)
                             })
                             
-                            if len(filtered_pairs) >= 15:  # Get more pairs
+                            if len(filtered_pairs) >= 15:
                                 break
                         else:
                             skipped_bearish += 1
@@ -324,7 +349,6 @@ class MultiUserTradingWorker:
                     logger.warning(f"Error checking regime for {symbol}: {e}")
                     continue
             
-            # Extract symbols
             tradable_symbols = [p['symbol'] for p in filtered_pairs]
             
             await self.db.update_settings(user_id, {
@@ -333,41 +357,22 @@ class MultiUserTradingWorker:
             })
             
             await self.db.log(
-                user_id, 
-                "INFO", 
+                user_id, "INFO", 
                 f"Momentum Rotation: {len(tradable_symbols)} BULLISH Coins | {skipped_bearish} übersprungen (nicht BULLISH)",
-                {
-                    'symbols': tradable_symbols[:10],
-                    'scores': [f"{p['symbol']}={p['score']:.2f}" for p in filtered_pairs[:5]]
-                }
+                {'symbols': tradable_symbols[:10]}
             )
             
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"Failed to run momentum rotation: {str(e)}")
     
-    async def scan_and_trade_mode(self, user_id: str, settings: UserSettings, mode: str):
-        """Scan and trade for a specific mode (paper or live)"""
-        # Create a modified settings object with the correct mode
-        mode_settings = settings.model_copy()
-        mode_settings.mode = mode
-        
-        await self.scan_and_trade(user_id, mode_settings)
-    
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
-        account = await self.db.get_paper_account(user_id)
-        mode_prefix = f"[{settings.mode.upper()}]"
+        """Scan for trading opportunities and execute (LIVE only)"""
+        account = await self.db.get_live_account(user_id)
         scan_time = datetime.now(timezone.utc)
-        
-        # Initialize paper account with user's budget setting if needed
-        if account.equity == 10000.0 and settings.paper_start_balance_usdt != 10000.0:
-            account.equity = settings.paper_start_balance_usdt
-            account.cash = settings.paper_start_balance_usdt
-            await self.db.update_paper_account(account)
-            await self.db.log(user_id, "INFO", f"{mode_prefix} Paper account initialized with budget: ${settings.paper_start_balance_usdt}")
         
         # Initialize tracking
         if user_id not in self.user_initial_equity:
-            self.user_initial_equity[user_id] = account.equity
+            self.user_initial_equity[user_id] = account.equity if account else 10000.0
         
         strategy = TradingStrategy(
             ema_fast=settings.ema_fast,
@@ -378,228 +383,127 @@ class MultiUserTradingWorker:
         )
         risk_mgr = RiskManager(settings)
         
-        # Get MEXC client with user keys if live mode
+        # Get MEXC client with user keys
         mexc = await self.get_user_mexc_client(user_id, settings)
         
-        # Get live USDT balance if in live mode
-        live_usdt_free = None
-        if settings.mode == 'live' and settings.live_confirmed:
-            try:
-                account_info = await mexc.get_account()
-                balances = account_info.get('balances', [])
-                usdt_balance = next((b for b in balances if b.get('asset') == 'USDT'), None)
-                if usdt_balance:
-                    live_usdt_free = float(usdt_balance.get('free', 0))
-            except Exception as e:
-                await self.db.log(user_id, "ERROR", f"{mode_prefix} Failed to fetch MEXC balance: {e}")
-                return
+        # Get live USDT balance
+        live_usdt_free = 0
+        try:
+            account_info = await mexc.get_account()
+            balances = account_info.get('balances', [])
+            usdt_balance = next((b for b in balances if b.get('asset') == 'USDT'), None)
+            if usdt_balance:
+                live_usdt_free = float(usdt_balance.get('free', 0))
+        except Exception as e:
+            await self.db.log(user_id, "ERROR", f"[LIVE] Failed to fetch MEXC balance: {e}")
+            return
         
-        # Calculate budget info
-        available_budget, used_budget, total_budget = self.calculate_effective_balance(
-            settings, account, live_usdt_free
-        )
+        # Calculate budget
+        used_budget = self.calculate_used_budget(account) if account else 0
+        budget_info = self.calculate_live_budget(settings, used_budget, live_usdt_free)
+        available_budget = budget_info['remaining_budget']
         
         # DAILY CAP CHECK
-        today_exposure = await self.db.get_today_exposure(user_id, settings.mode)
-        daily_cap = settings.live_daily_cap_usdt if settings.mode == 'live' else settings.paper_daily_cap_usdt
+        today_exposure = await self.db.get_today_exposure(user_id, 'live')
+        daily_cap = settings.live_daily_cap_usdt
         daily_remaining = max(0, daily_cap - today_exposure)
         
-        # Update last scan status in settings
-        scan_status = {
-            f'{settings.mode}_last_scan': scan_time.isoformat(),
-            f'{settings.mode}_last_decision': 'SCANNING',
-            f'{settings.mode}_budget_used': round(used_budget, 2),
-            f'{settings.mode}_budget_available': round(available_budget, 2),
-            f'{settings.mode}_daily_used': round(today_exposure, 2),
-            f'{settings.mode}_daily_remaining': round(daily_remaining, 2),
-            f'{settings.mode}_positions_count': len(account.open_positions)
-        }
-        await self.db.update_settings(user_id, scan_status)
+        # Update status
+        positions_count = len(account.open_positions) if account else 0
+        await self.db.update_settings(user_id, {
+            'live_last_scan': scan_time.isoformat(),
+            'live_last_decision': 'SCANNING',
+            'live_budget_used': round(used_budget, 2),
+            'live_budget_available': round(available_budget, 2),
+            'live_daily_used': round(today_exposure, 2),
+            'live_daily_remaining': round(daily_remaining, 2),
+            'live_positions_count': positions_count
+        })
         
-        # Log scan start with full budget info
         await self.db.log(user_id, "INFO", 
-            f"{mode_prefix} ═══ SCAN START ═══ Budget: ${available_budget:.2f} avail | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {len(account.open_positions)}/{settings.max_positions}")
+            f"[LIVE] ═══ SCAN START ═══ Budget: ${available_budget:.2f} | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {positions_count}/{settings.max_positions}")
         
-        # Check daily loss limit
-        if risk_mgr.check_daily_loss_limit(account, self.user_initial_equity[user_id]):
-            await self.db.log(user_id, "ERROR", f"{mode_prefix} ⛔ BLOCKED: Daily loss limit hit - stopping bot")
-            await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': 'BLOCKED: Daily loss limit',
-                'live_running' if settings.mode == 'live' else 'paper_running': False
-            })
-            return
+        # Budget checks
+        min_notional = settings.live_min_notional_usdt
         
-        # Check existing positions for exits using LIVE market data
-        for pos in account.open_positions[:]:
-            await self.check_position_exit(user_id, pos, account, settings, mexc)
-        
-        # Check cooldown - MODE SPECIFIC
-        cooldown_active = self.is_in_cooldown(user_id, settings.mode, settings.cooldown_candles)
-        if cooldown_active:
-            cooldown_mins = settings.cooldown_candles * 15
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min nach letztem Trade)")
-            await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': f'SKIPPED: Cooldown ({cooldown_mins} Min)',
-                f'{settings.mode}_last_symbol': 'Warte auf Cooldown-Ende'
-            })
-            return
-        
-        # Get min_notional based on mode
-        min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
-        
-        # Check if we have budget for new positions
         if available_budget < min_notional:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Kein Budget (${available_budget:.2f} < ${min_notional})")
+            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Kein Budget (${available_budget:.2f} < ${min_notional})")
             await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': f'BLOCKED: Budget zu niedrig (${available_budget:.2f})',
-                f'{settings.mode}_last_symbol': '-'
+                'live_last_decision': f'BLOCKED: Budget zu niedrig (${available_budget:.2f})',
+                'live_last_symbol': '-'
             })
             return
         
-        # Check DAILY CAP
         if daily_remaining < min_notional:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
+            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
             await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': f'BLOCKED: Tageslimit (${today_exposure:.0f}/${daily_cap:.0f})',
-                f'{settings.mode}_last_symbol': '-'
+                'live_last_decision': f'BLOCKED: Tageslimit',
+                'live_last_symbol': '-'
             })
             return
         
-        # Check max positions
-        if not risk_mgr.can_open_position(account):
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ⛔ BLOCKED: Max Positionen erreicht ({len(account.open_positions)}/{settings.max_positions})")
+        if account and not risk_mgr.can_open_position(account):
+            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Max Positionen erreicht ({positions_count}/{settings.max_positions})")
             await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': f'BLOCKED: Max Positionen ({len(account.open_positions)}/{settings.max_positions})',
-                f'{settings.mode}_last_symbol': '-'
+                'live_last_decision': f'BLOCKED: Max Positionen ({positions_count}/{settings.max_positions})',
+                'live_last_symbol': '-'
             })
             return
         
-        # Look for new entries with REGIME DETECTION
-        # COLLECT ALL SIGNALS first, then pick the best one
+        # Check cooldown
+        if self.is_in_cooldown(user_id, settings.cooldown_candles):
+            cooldown_mins = settings.cooldown_candles * 15
+            await self.db.log(user_id, "INFO", f"[LIVE] ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min)")
+            await self.db.update_settings(user_id, {
+                'live_last_decision': f'SKIPPED: Cooldown ({cooldown_mins} Min)',
+                'live_last_symbol': 'Warte auf Cooldown-Ende'
+            })
+            return
+        
+        # Scan for signals
+        signal_candidates = []
         symbols_checked = 0
-        trade_opened = False
-        signal_candidates = []  # List of (symbol, score, data) tuples
         
-        await self.db.log(user_id, "INFO", f"{mode_prefix} Scanne {len(settings.top_pairs[:15])} Coins nach Signalen...")
+        await self.db.log(user_id, "INFO", f"[LIVE] Scanne {len(settings.top_pairs[:15])} Coins nach Signalen...")
         
-        for symbol in settings.top_pairs[:15]:  # Check top 15 coins
+        for symbol in settings.top_pairs[:15]:
             symbols_checked += 1
             try:
-                # Check if symbol is paused (3 losses in 12h)
+                # Check if symbol is paused
                 is_paused = await self.db.is_symbol_paused(user_id, symbol)
                 if is_paused:
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime="N/A", adx=0, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=True,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason="Symbol paused (consecutive losses)"
-                    )
                     continue
                 
-                # Get 4H klines for regime detection (MUST HAPPEN FIRST)
+                # Get 4H klines for regime
                 klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
-                
                 if len(klines_4h) < 200:
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime="N/A", adx=0, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason="Insufficient 4H data for regime detection"
-                    )
                     continue
                 
-                # DETECT REGIME
+                # Detect regime
                 regime, regime_context = self.regime_detector.detect_regime(klines_4h)
                 adx_value = regime_context.get('adx', 0)
                 
-                # REGIME-BASED FILTERING (BEFORE SIGNAL CHECK)
-                
-                # BEARISH: No long trades
-                if regime == "BEARISH":
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason="BEARISH regime - no long trades"
-                    )
-                    continue
-                
-                # SIDEWAYS: No EMA crossover trading
-                if regime == "SIDEWAYS":
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason="SIDEWAYS regime - no EMA trading"
-                    )
-                    continue
-                
-                # BULLISH: Proceed with entry check
+                # Only BULLISH
                 if regime != "BULLISH":
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason=f"Regime {regime} not BULLISH"
-                    )
                     continue
                 
                 # Get 15m klines for entry signal
                 klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
-                
                 if len(klines_15m) < settings.ema_slow:
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime=regime, adx=adx_value, ema_fast=0, ema_slow=0, rsi=0,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason="Insufficient 15m data for EMA"
-                    )
                     continue
                 
-                # Check EMA signal
+                # Check signal
                 signal, context = strategy.generate_signal(klines_15m)
+                if signal != "LONG":
+                    continue
+                
+                # SIGNAL FOUND!
+                current_price = float(klines_15m[-1][4])
                 ema_fast_val = context.get('ema_fast', 0)
                 ema_slow_val = context.get('ema_slow', 0)
                 rsi_val = context.get('rsi', 0)
                 
-                if signal != "LONG":
-                    # Determine specific reason
-                    if ema_fast_val <= ema_slow_val:
-                        skip_reason = f"No EMA crossover (Fast {ema_fast_val:.2f} <= Slow {ema_slow_val:.2f})"
-                    elif rsi_val < settings.rsi_min:
-                        skip_reason = f"RSI below threshold ({rsi_val:.1f} < {settings.rsi_min})"
-                    elif rsi_val > settings.rsi_overbought:
-                        skip_reason = f"RSI overbought ({rsi_val:.1f} > {settings.rsi_overbought})"
-                    else:
-                        skip_reason = f"No LONG signal (Signal: {signal})"
-                    
-                    await self.log_symbol_check(
-                        user_id, mode_prefix, symbol,
-                        regime=regime, adx=adx_value, 
-                        ema_fast=ema_fast_val, ema_slow=ema_slow_val, rsi=rsi_val,
-                        cooldown=False, paused=False,
-                        daily_used=today_exposure, daily_cap=daily_cap,
-                        budget_available=available_budget,
-                        decision="SKIPPED", reason=skip_reason
-                    )
-                    continue
-                
-                # SIGNAL DETECTED! Add to candidates list
-                current_price = float(klines_15m[-1][4])
-                
-                # Calculate ATR for stop loss
+                # Calculate stop/take profit
                 atr = strategy.calculate_atr(klines_15m, 14)
                 if atr:
                     stop_loss = current_price - (atr * 2.5)
@@ -609,16 +513,12 @@ class MultiUserTradingWorker:
                     stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
                     take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
                 
-                # Calculate opportunity score
-                # Higher ADX = stronger trend
-                # RSI not too high = room to grow
-                # EMA spread = trend confirmation
+                # Score calculation
                 ema_spread = ((ema_fast_val - ema_slow_val) / ema_slow_val * 100) if ema_slow_val > 0 else 0
-                
                 opportunity_score = (
-                    adx_value * 0.4 +  # 40% weight on trend strength
-                    (100 - rsi_val) * 0.3 +  # 30% weight on room to grow (lower RSI = more room)
-                    min(ema_spread * 10, 30) * 0.3  # 30% weight on EMA momentum (capped at 30)
+                    adx_value * 0.4 +
+                    (100 - rsi_val) * 0.3 +
+                    min(ema_spread * 10, 30) * 0.3
                 )
                 
                 signal_candidates.append({
@@ -627,9 +527,6 @@ class MultiUserTradingWorker:
                     'regime': regime,
                     'adx': adx_value,
                     'rsi': rsi_val,
-                    'ema_fast': ema_fast_val,
-                    'ema_slow': ema_slow_val,
-                    'ema_spread': ema_spread,
                     'current_price': current_price,
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
@@ -637,672 +534,253 @@ class MultiUserTradingWorker:
                     'context': context
                 })
                 
-                await self.log_symbol_check(
-                    user_id, mode_prefix, symbol,
-                    regime=regime, adx=adx_value,
-                    ema_fast=ema_fast_val, ema_slow=ema_slow_val, rsi=rsi_val,
-                    cooldown=False, paused=False,
-                    daily_used=today_exposure, daily_cap=daily_cap,
-                    budget_available=available_budget,
-                    decision="SIGNAL", reason=f"LONG signal - Score: {opportunity_score:.1f}"
-                )
+                await self.db.log(user_id, "INFO", f"[LIVE] SIGNAL: {symbol} Score={opportunity_score:.1f}, ADX={adx_value:.1f}, RSI={rsi_val:.1f}")
                 
             except Exception as e:
-                await self.db.log(user_id, "ERROR", f"{mode_prefix} Error scanning {symbol}: {str(e)}")
+                await self.db.log(user_id, "ERROR", f"[LIVE] Error scanning {symbol}: {str(e)}")
         
-        # ═══ SELECT BEST CANDIDATE AND EXECUTE ═══
+        # Execute best signal
         if signal_candidates:
-            # Sort by score (highest first)
             signal_candidates.sort(key=lambda x: x['score'], reverse=True)
             
             await self.db.log(user_id, "INFO", 
-                f"{mode_prefix} 🎯 {len(signal_candidates)} Signale gefunden! Wähle besten: " +
+                f"[LIVE] 🎯 {len(signal_candidates)} Signale! Wähle besten: " +
                 ", ".join([f"{c['symbol']}({c['score']:.1f})" for c in signal_candidates[:5]])
             )
             
-            # Try candidates in order of score until one succeeds
             for candidate in signal_candidates:
                 symbol = candidate['symbol']
                 
-                await self.db.log(user_id, "INFO", 
-                    f"{mode_prefix} ▶️ Versuche {symbol} (Score: {candidate['score']:.1f}, ADX: {candidate['adx']:.1f}, RSI: {candidate['rsi']:.1f})"
+                trade_success = await self.open_live_position(
+                    user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, available_budget
                 )
-                
-                # Reduce risk to 0.5% for bullish regime
-                original_risk = settings.risk_per_trade
-                settings.risk_per_trade = 0.005
-                
-                trade_success = await self.open_position_with_budget(
-                    user_id, symbol, candidate['klines_15m'], account, settings,
-                    strategy, risk_mgr, candidate['context'], mexc, candidate['regime'],
-                    candidate['stop_loss'], candidate['take_profit'], available_budget
-                )
-                
-                settings.risk_per_trade = original_risk
                 
                 if trade_success:
-                    self.set_last_trade_time(user_id, settings.mode)
+                    self.set_last_trade_time(user_id)
                     await self.db.update_settings(user_id, {
-                        f'{settings.mode}_last_decision': f'TRADE: {symbol} (Score: {candidate["score"]:.1f})',
-                        f'{settings.mode}_last_regime': candidate['regime'],
-                        f'{settings.mode}_last_symbol': symbol
+                        'live_last_decision': f'TRADE: {symbol} (Score: {candidate["score"]:.1f})',
+                        'live_last_regime': candidate['regime'],
+                        'live_last_symbol': symbol
                     })
-                    trade_opened = True
                     break
                 else:
-                    await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} fehlgeschlagen - versuche nächsten...")
+                    await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol} fehlgeschlagen - versuche nächsten...")
         else:
             await self.db.update_settings(user_id, {
-                f'{settings.mode}_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
-                f'{settings.mode}_last_symbol': '-'
+                'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
+                'live_last_symbol': '-'
             })
         
-        # Log scan completion
-        if symbols_checked > 0:
-            await self.db.log(user_id, "INFO", f"{mode_prefix} ═══ SCAN COMPLETE ═══ {symbols_checked} Coins geprüft, {len(signal_candidates)} Signale")
-        
-        # Save updated account
-        await self.db.update_paper_account(account)
+        await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale")
     
-    async def log_symbol_check(
-        self, user_id: str, mode_prefix: str, symbol: str,
-        regime: str, adx: float, ema_fast: float, ema_slow: float, rsi: float,
-        cooldown: bool, paused: bool,
-        daily_used: float, daily_cap: float, budget_available: float,
-        decision: str, reason: str
-    ):
-        """Log detailed symbol check for transparency"""
-        log_msg = f"""
-{mode_prefix} ══ SYMBOL CHECK ══
-Symbol: {symbol}
-Regime: {regime} | ADX: {adx:.1f}
-EMA Fast: {ema_fast:.2f} | EMA Slow: {ema_slow:.2f}
-RSI: {rsi:.1f}
-Cooldown: {cooldown} | Paused: {paused}
-Daily: ${daily_used:.2f} / ${daily_cap:.2f}
-Budget: ${budget_available:.2f}
-Decision: {decision}
-Reason: {reason}
-══════════════════"""
-        
-        # Use INFO for signals, DEBUG for skips
-        level = "INFO" if decision == "SIGNAL" else "DEBUG"
-        await self.db.log(user_id, level, log_msg.strip(), {
-            'symbol': symbol,
-            'regime': regime,
-            'adx': round(adx, 2),
-            'ema_fast': round(ema_fast, 4),
-            'ema_slow': round(ema_slow, 4),
-            'rsi': round(rsi, 2),
-            'decision': decision,
-            'reason': reason
-        })
-    
-    def is_in_cooldown(self, user_id: str, mode: str, cooldown_candles: int) -> bool:
-        """Check if user is in cooldown - MODE SPECIFIC"""
-        cooldown_key = f"{user_id}_{mode}"
-        if cooldown_key not in self.user_last_trade_time:
-            return False
-        
-        last_trade = self.user_last_trade_time[cooldown_key]
-        cooldown_minutes = cooldown_candles * 15  # 15m candles
-        cooldown_duration = timedelta(minutes=cooldown_minutes)
-        
-        return (datetime.now(timezone.utc) - last_trade) < cooldown_duration
-    
-    def set_last_trade_time(self, user_id: str, mode: str):
-        """Set last trade time - MODE SPECIFIC"""
-        cooldown_key = f"{user_id}_{mode}"
-        self.user_last_trade_time[cooldown_key] = datetime.now(timezone.utc)
-    
-    async def get_user_mexc_client(self, user_id: str, settings: UserSettings) -> MexcClient:
-        if settings.mode == 'live' and settings.live_confirmed:
-            keys = await self.db.get_mexc_keys(user_id)
-            if keys:
-                return MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-            else:
-                await self.db.log(user_id, "WARNING", "Live mode but no API keys found")
-        
-        # Return default client for paper mode or if no keys
-        return MexcClient()
-    
-    async def open_position(
-        self,
-        user_id: str,
-        symbol: str,
-        klines: list,
-        account: PaperAccount,
-        settings: UserSettings,
-        strategy: TradingStrategy,
-        risk_mgr: RiskManager,
-        context: dict,
-        mexc: MexcClient
-    ):
+    async def open_live_position(
+        self, user_id: str, symbol: str, candidate: dict,
+        account: PaperAccount, settings: UserSettings,
+        strategy: TradingStrategy, risk_mgr: RiskManager,
+        mexc: MexcClient, available_budget: float
+    ) -> bool:
+        """Open a live position on MEXC"""
         try:
-            current_price = float(klines[-1][4])  # Close price
-            
-            # Calculate ATR if enabled
-            atr = None
-            if settings.atr_stop:
-                atr = strategy.calculate_atr(klines)
-            
-            # Calculate stop loss and take profit
-            stop_loss = risk_mgr.calculate_stop_loss(current_price, atr)
-            take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+            current_price = candidate['current_price']
+            stop_loss = candidate['stop_loss']
+            take_profit = candidate['take_profit']
             
             # Calculate position size
-            qty, reason = risk_mgr.calculate_position_size(account, current_price, stop_loss)
+            max_order = min(settings.live_max_order_usdt, available_budget)
+            notional = min(max_order, available_budget * 0.95)
             
-            if qty == 0:
-                await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
-                return
+            if notional < settings.live_min_notional_usdt:
+                await self.db.log(user_id, "WARNING", f"[LIVE] Notional ${notional:.2f} below minimum ${settings.live_min_notional_usdt}")
+                return False
             
-            # Apply fees and slippage
-            entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
+            qty = notional / current_price
             
-            # Create position
+            # Apply exchange filters
+            formatted_qty = order_sizer.get_formatted_quantity(symbol, qty)
+            if formatted_qty is None or formatted_qty <= 0:
+                await self.db.log(user_id, "WARNING", f"[LIVE] Invalid quantity for {symbol}")
+                return False
+            
+            # Place REAL order
+            await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING REAL ORDER: {symbol} BUY {formatted_qty} @ MARKET")
+            
+            order_result = await mexc.place_order(
+                symbol=symbol,
+                side="BUY",
+                order_type="MARKET",
+                quantity=formatted_qty
+            )
+            
+            # Parse order result
+            executed_qty = float(order_result.get('executedQty', formatted_qty))
+            avg_price = float(order_result.get('price', current_price))
+            
+            if avg_price == 0:
+                fills = order_result.get('fills', [])
+                if fills:
+                    total_qty = sum(float(f.get('qty', 0)) for f in fills)
+                    total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
+                    avg_price = total_cost / total_qty if total_qty > 0 else current_price
+                else:
+                    avg_price = current_price
+            
+            actual_notional = executed_qty * avg_price
+            
+            # Create position record
             position = Position(
                 symbol=symbol,
                 side="LONG",
-                entry_price=entry_price,
-                qty=qty,
+                entry_price=avg_price,
+                qty=executed_qty,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 entry_time=datetime.now(timezone.utc)
             )
             
             # Update account
-            position_value = qty * entry_price
-            account.cash -= position_value
-            account.open_positions.append(position)
+            if not account:
+                account = PaperAccount(user_id=user_id, equity=0, cash=0, open_positions=[])
             
-            # Log trade
+            account.open_positions.append(position)
+            await self.db.update_live_account(account)
+            
+            # Record trade
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
                 symbol=symbol,
                 side="BUY",
-                qty=qty,
-                entry=entry_price,
-                mode=settings.mode,
-                reason=f"EMA crossover, RSI={context.get('rsi', 0)}"
+                qty=executed_qty,
+                entry=avg_price,
+                mode='live',
+                reason=f"Score={candidate['score']:.1f}, ADX={candidate['adx']:.1f}",
+                notional=actual_notional
             )
             await self.db.add_trade(trade)
             
-            await self.db.log(
-                user_id,
-                "INFO",
-                f"OPEN LONG {symbol} @ {entry_price:.4f}",
-                {
-                    'qty': round(qty, 4),
-                    'stop_loss': round(stop_loss, 4),
-                    'take_profit': round(take_profit, 4),
-                    'position_value': round(position_value, 2),
-                    **context
-                }
-            )
+            await self.db.log(user_id, "WARNING",
+                f"[LIVE] ✅ ORDER CONFIRMED: {symbol} | Qty: {executed_qty} | Price: ${avg_price:.4f} | Notional: ${actual_notional:.2f}")
             
-        except Exception as e:
-            await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
-    
-    async def open_position_with_regime(
-        self,
-        user_id: str,
-        symbol: str,
-        klines: list,
-        account: PaperAccount,
-        settings: UserSettings,
-        strategy: TradingStrategy,
-        risk_mgr: RiskManager,
-        context: dict,
-        mexc: MexcClient,
-        regime: str,
-        stop_loss: float,
-        take_profit: float
-    ):
-        # Deprecated - use open_position_with_budget instead
-        await self.open_position_with_budget(
-            user_id, symbol, klines, account, settings,
-            strategy, risk_mgr, context, mexc, regime,
-            stop_loss, take_profit, available_budget=settings.trading_budget_usdt
-        )
-    
-    async def open_position_with_budget(
-        self,
-        user_id: str,
-        symbol: str,
-        klines: list,
-        account: PaperAccount,
-        settings: UserSettings,
-        strategy: TradingStrategy,
-        risk_mgr: RiskManager,
-        context: dict,
-        mexc: MexcClient,
-        regime: str,
-        stop_loss: float,
-        take_profit: float,
-        available_budget: float
-    ) -> bool:
-        """Open position with budget limit enforcement. Returns True if trade was successful."""
-        try:
-            mode_prefix = f"[{settings.mode.upper()}]"
-            current_price = float(klines[-1][4])
+            await self.db.log(user_id, "INFO",
+                f"[LIVE] 📊 TRADE DETAILS | Stop: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
             
-            # Calculate position size with adjusted risk (0.5% for bullish)
-            qty, reason = risk_mgr.calculate_position_size(account, current_price, stop_loss)
-            
-            if qty == 0:
-                await self.db.log(user_id, "WARNING", f"Cannot size position for {symbol}: {reason}")
-                return False
-            
-            # Calculate notional value
-            notional = qty * current_price
-            
-            # BUDGET LIMIT CHECK 1: Max order notional
-            if settings.max_order_notional_usdt and notional > settings.max_order_notional_usdt:
-                # Reduce position to max order size
-                qty = settings.max_order_notional_usdt / current_price
-                notional = qty * current_price
-                await self.db.log(user_id, "INFO", f"{symbol} position reduced to max order size: ${notional:.2f}")
-            
-            # BUDGET LIMIT CHECK 2: Available budget
-            if notional > available_budget:
-                # Reduce position to available budget
-                qty = available_budget / current_price
-                notional = qty * current_price
-                await self.db.log(user_id, "INFO", f"{symbol} position reduced to available budget: ${notional:.2f}")
-            
-            # Check if position is still viable
-            min_notional = settings.live_min_notional_usdt if settings.mode == 'live' else settings.min_notional_usdt
-            if notional < min_notional:
-                fail_reason = f"Position zu klein: ${notional:.2f} < Min ${min_notional}"
-                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
-                await self.db.update_settings(user_id, {
-                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
-                    f'{settings.mode}_last_symbol': symbol
-                })
-                # NO COOLDOWN - try next coin
-                return False
-            
-            # Round quantity to exchange stepSize
-            rounded_qty = order_sizer.round_quantity(symbol, qty)
-            
-            if rounded_qty == 0:
-                fail_reason = f"Menge {qty:.4f} unter Exchange-Minimum"
-                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
-                await self.db.update_settings(user_id, {
-                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
-                    f'{settings.mode}_last_symbol': symbol
-                })
-                # NO COOLDOWN - try next coin
-                return False
-            
-            # Recalculate notional with rounded qty
-            notional = rounded_qty * current_price
-            
-            # Validate notional value
-            valid, notional_reason = order_sizer.validate_notional(
-                symbol, 
-                rounded_qty, 
-                current_price, 
-                user_min_notional=min_notional
-            )
-            
-            if not valid:
-                fail_reason = f"{notional_reason}"
-                await self.db.log(user_id, "WARNING", f"{mode_prefix} ⚠️ {symbol} - {fail_reason}")
-                await self.db.update_settings(user_id, {
-                    f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
-                    f'{settings.mode}_last_symbol': symbol
-                })
-                # NO COOLDOWN - try next coin
-                return False
-            
-            # Calculate fees and slippage costs
-            fee_rate = settings.fee_bps / 10000
-            slippage_rate = settings.slippage_bps / 10000
-            
-            entry_fee = notional * fee_rate
-            slippage_cost = notional * slippage_rate
-            
-            # Apply fees and slippage to entry price
-            entry_price = risk_mgr.apply_fees_and_slippage(current_price, "BUY")
-            
-            # LOG: TRADE OPENED (BEFORE execution)
-            trade_opened_log = f"""
-{mode_prefix} ══ TRADE OPENED ══
-Symbol: {symbol}
-Qty: {rounded_qty:.6f}
-Entry: {entry_price:.4f}
-Notional: {notional:.2f} USDT
-ATR Stop: {stop_loss:.4f}
-Take Profit: {take_profit:.4f}
-Risk: {settings.risk_per_trade * 100:.1f}%
-Mode: {settings.mode.upper()}
-══════════════════"""
-            await self.db.log(user_id, "INFO", trade_opened_log.strip())
-            
-            # ═══ EXECUTE REAL ORDER FOR LIVE MODE ═══
-            order_id = None
-            executed_price = entry_price
-            actual_qty = rounded_qty
-            
-            if settings.mode == 'live' and settings.live_confirmed:
-                try:
-                    await self.db.log(user_id, "INFO", f"{mode_prefix} 📤 Sende Order an MEXC: {symbol} BUY {rounded_qty}")
-                    
-                    # Place MARKET order on MEXC
-                    order_result = await mexc.place_order(
-                        symbol=symbol,
-                        side="BUY",
-                        order_type="MARKET",
-                        quantity=rounded_qty
-                    )
-                    
-                    # Log full response for debugging
-                    await self.db.log(user_id, "DEBUG", f"{mode_prefix} MEXC Response: {order_result}")
-                    
-                    order_id = order_result.get('orderId')
-                    
-                    # MEXC returns different fields for MARKET orders
-                    # Try multiple field names
-                    executed_price = float(order_result.get('price') or order_result.get('avgPrice') or order_result.get('cummulativeQuoteQty', 0) / float(order_result.get('executedQty', 1)) if order_result.get('executedQty') else entry_price)
-                    actual_qty = float(order_result.get('executedQty') or order_result.get('origQty') or rounded_qty)
-                    
-                    # For MARKET orders, if we got an orderId, it was successful
-                    # Status might be 'NEW' initially or not present at all
-                    status = order_result.get('status', 'FILLED' if order_id else 'UNKNOWN')
-                    
-                    # If we have an orderId, consider it successful
-                    if not order_id:
-                        fail_reason = f"Keine Order ID erhalten: {order_result}"
-                        await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ {symbol} - {fail_reason}")
-                        await self.db.update_settings(user_id, {
-                            f'{settings.mode}_last_decision': f'FAILED: {symbol} - Keine Order ID',
-                            f'{settings.mode}_last_symbol': symbol
-                        })
-                        return False
-                    
-                    await self.db.log(user_id, "INFO", 
-                        f"{mode_prefix} ✅ MEXC Order erfolgreich! ID: {order_id}, Qty: {actual_qty}, Preis: {executed_price}")
-                    
-                except Exception as order_error:
-                    fail_reason = f"MEXC Order Fehler: {str(order_error)}"
-                    await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ {symbol} - {fail_reason}")
-                    await self.db.update_settings(user_id, {
-                        f'{settings.mode}_last_decision': f'FAILED: {symbol} - {fail_reason}',
-                        f'{settings.mode}_last_symbol': symbol
-                    })
-                    return False
-            
-            # Create position with actual executed values
-            position = Position(
-                symbol=symbol,
-                side="LONG",
-                entry_price=executed_price,
-                qty=actual_qty,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                entry_time=datetime.now(timezone.utc)
-            )
-            
-            # Update account
-            position_value = rounded_qty * entry_price
-            account.cash -= position_value
-            account.open_positions.append(position)
-            
-            # Log trade with enhanced info
-            trade = Trade(
-                user_id=user_id,
-                ts=datetime.now(timezone.utc),
-                symbol=symbol,
-                side="BUY",
-                qty=rounded_qty,
-                entry=entry_price,
-                mode=settings.mode,
-                reason=f"Regime: {regime}, EMA crossover, RSI={context.get('rsi', 0)}",
-                notional=notional,
-                fees_paid=entry_fee,
-                slippage_cost=slippage_cost
-            )
-            await self.db.add_trade(trade)
-            
-            # LOG: ORDER CONFIRMED
-            order_confirmed_log = f"""
-{mode_prefix} ══ ORDER CONFIRMED ══
-Exchange: {'MEXC (LIVE)' if settings.mode == 'live' else 'MEXC (SIMULATED)'}
-Order ID: {order_id or 'N/A (Paper)'}
-Status: FILLED
-Executed Qty: {actual_qty:.6f}
-Executed Price: {executed_price:.4f}
-Fee: {entry_fee:.4f} USDT
-══════════════════"""
-            await self.db.log(user_id, "INFO", order_confirmed_log.strip())
-            
-            # AUDIT LOG for trade execution
-            await self.db.audit_log(
-                user_id=user_id,
-                action="TRADE_EXECUTED",
-                details={
-                    'symbol': symbol,
-                    'side': 'BUY',
-                    'qty': round(rounded_qty, 6),
-                    'entry_price': round(entry_price, 4),
-                    'stop_loss': round(stop_loss, 4),
-                    'take_profit': round(take_profit, 4),
-                    'regime': regime,
-                    'risk_pct': settings.risk_per_trade * 100,
-                    'mode': settings.mode,
-                    'notional': round(notional, 2),
-                    'fees': round(entry_fee, 4),
-                    'slippage': round(slippage_cost, 4),
-                    'budget_remaining': round(available_budget - notional, 2)
-                }
-            )
-            
-            # Trade was successful
             return True
             
         except Exception as e:
-            await self.db.log(user_id, "ERROR", f"Failed to open position {symbol}: {str(e)}")
+            await self.db.log(user_id, "ERROR", f"[LIVE] ❌ ORDER FAILED: {symbol} - {str(e)}")
             return False
     
-    async def check_position_exit(
-        self,
-        user_id: str,
-        position: Position,
-        account: PaperAccount,
-        settings: UserSettings,
-        mexc: MexcClient
-    ):
-        try:
-            # Get current price
-            ticker = await mexc.get_ticker_24h(position.symbol)
-            current_price = float(ticker['lastPrice'])
-            
-            should_exit = False
-            exit_reason = ""
-            
-            # Check stop loss
-            if current_price <= position.stop_loss:
-                should_exit = True
-                exit_reason = "Stop loss hit"
-            
-            # Check take profit
-            elif current_price >= position.take_profit:
-                should_exit = True
-                exit_reason = "Take profit hit"
-            
-            if should_exit:
-                await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
-            
-        except Exception as e:
-            await self.db.log(user_id, "ERROR", f"Error checking position {position.symbol}: {str(e)}")
-    
     async def close_position(
-        self,
-        user_id: str,
-        position: Position,
-        exit_price: float,
-        account: PaperAccount,
-        settings: UserSettings,
-        reason: str,
-        mexc: MexcClient = None
+        self, user_id: str, position: Position, exit_price: float,
+        account: PaperAccount, settings: UserSettings, reason: str, mexc: MexcClient
     ):
+        """Close a position with real SELL order"""
         try:
-            risk_mgr = RiskManager(settings)
-            mode_prefix = f"[{settings.mode.upper()}]"
+            # Place REAL SELL order
+            await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {position.qty}")
             
-            # Calculate fees and slippage for exit
-            notional = position.qty * exit_price
-            fee_rate = settings.fee_bps / 10000
-            slippage_rate = settings.slippage_bps / 10000
+            formatted_qty = order_sizer.get_formatted_quantity(position.symbol, position.qty)
+            if formatted_qty is None or formatted_qty <= 0:
+                formatted_qty = position.qty
             
-            exit_fee = notional * fee_rate
-            
-            # ═══ EXECUTE REAL SELL ORDER FOR LIVE MODE ═══
-            actual_exit_price = exit_price
-            actual_qty = position.qty
-            order_id = None
-            
-            if settings.mode == 'live' and settings.live_confirmed and mexc:
-                try:
-                    await self.db.log(user_id, "INFO", f"{mode_prefix} 📤 Sende SELL Order an MEXC: {position.symbol} SELL {position.qty}")
-                    
-                    # Place MARKET SELL order on MEXC
-                    order_result = await mexc.place_order(
-                        symbol=position.symbol,
-                        side="SELL",
-                        order_type="MARKET",
-                        quantity=position.qty
-                    )
-                    
-                    order_id = order_result.get('orderId')
-                    
-                    if not order_id:
-                        await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ SELL fehlgeschlagen: Keine Order ID")
-                        return  # Don't close position if sell failed
-                    
-                    # Get executed values
-                    actual_qty = float(order_result.get('executedQty') or position.qty)
-                    if order_result.get('cummulativeQuoteQty') and actual_qty > 0:
-                        actual_exit_price = float(order_result.get('cummulativeQuoteQty')) / actual_qty
-                    
-                    await self.db.log(user_id, "INFO", 
-                        f"{mode_prefix} ✅ MEXC SELL erfolgreich! ID: {order_id}, Qty: {actual_qty}, Preis: {actual_exit_price:.4f}")
-                    
-                except Exception as sell_error:
-                    await self.db.log(user_id, "ERROR", f"{mode_prefix} ❌ SELL Fehler: {str(sell_error)}")
-                    return  # Don't close position if sell failed
-            
-            # Apply fees and slippage
-            exit_price_adjusted = risk_mgr.apply_fees_and_slippage(actual_exit_price, "SELL")
-            
-            # Calculate PnL (gross)
-            gross_pnl = (exit_price - position.entry_price) * position.qty
-            
-            # Calculate total fees (entry was already applied, estimate it)
-            entry_notional = position.entry_price * position.qty
-            entry_fee = entry_notional * fee_rate
-            total_fees = entry_fee + exit_fee
-            total_slippage = (entry_notional + notional) * slippage_rate
-            
-            # Net PnL after fees and slippage
-            net_pnl = gross_pnl - total_fees - total_slippage
-            pnl_pct = (net_pnl / entry_notional) * 100 if entry_notional > 0 else 0
-            
-            # Update account
-            cash_returned = position.qty * exit_price_adjusted
-            account.cash += cash_returned
-            account.equity = account.cash + sum(
-                p.qty * exit_price for p in account.open_positions if p.symbol != position.symbol
+            order_result = await mexc.place_order(
+                symbol=position.symbol,
+                side="SELL",
+                order_type="MARKET",
+                quantity=formatted_qty
             )
             
-            # Remove position
-            account.open_positions = [
-                p for p in account.open_positions if p.symbol != position.symbol
-            ]
+            # Parse result
+            executed_qty = float(order_result.get('executedQty', position.qty))
+            actual_exit_price = float(order_result.get('price', exit_price))
             
-            # Log trade with enhanced info
+            if actual_exit_price == 0:
+                fills = order_result.get('fills', [])
+                if fills:
+                    total_qty = sum(float(f.get('qty', 0)) for f in fills)
+                    total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
+                    actual_exit_price = total_cost / total_qty if total_qty > 0 else exit_price
+                else:
+                    actual_exit_price = exit_price
+            
+            # Calculate PnL
+            pnl = (actual_exit_price - position.entry_price) * executed_qty
+            pnl_pct = ((actual_exit_price - position.entry_price) / position.entry_price) * 100
+            
+            # Remove from account
+            account.open_positions.remove(position)
+            account.cash += (executed_qty * actual_exit_price)
+            
+            # Record trade
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
                 symbol=position.symbol,
                 side="SELL",
-                qty=position.qty,
+                qty=executed_qty,
                 entry=position.entry_price,
-                exit=exit_price_adjusted,
-                pnl=net_pnl,
+                exit=actual_exit_price,
+                pnl=pnl,
                 pnl_pct=pnl_pct,
-                fees_paid=total_fees,
-                slippage_cost=total_slippage,
-                mode=settings.mode,
+                mode='live',
                 reason=reason,
-                notional=notional
+                notional=position.entry_price * executed_qty
             )
             await self.db.add_trade(trade)
             
-            # AUDIT LOG for trade close
-            await self.db.audit_log(
-                user_id=user_id,
-                action="TRADE_EXECUTED",
-                details={
-                    'symbol': position.symbol,
-                    'side': 'SELL',
-                    'qty': round(position.qty, 4),
-                    'exit_price': round(exit_price_adjusted, 4),
-                    'gross_pnl': round(gross_pnl, 2),
-                    'net_pnl': round(net_pnl, 2),
-                    'pnl_pct': round(pnl_pct, 2),
-                    'total_fees': round(total_fees, 4),
-                    'reason': reason,
-                    'mode': settings.mode
-                }
-            )
+            await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
+                f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
             
-            # Check for consecutive losses and pause symbol if needed
-            if net_pnl < 0:
+            # Check consecutive losses
+            if pnl < 0:
                 recent_losses = await self.db.get_recent_symbol_losses(user_id, position.symbol, hours=12)
                 if recent_losses >= 3:
-                    await self.db.set_symbol_pause(
-                        user_id=user_id,
-                        symbol=position.symbol,
-                        pause_hours=24,
-                        reason="3 consecutive losses in 12h",
-                        consecutive_losses=recent_losses
-                    )
-                    await self.db.log(user_id, "WARNING", f"{position.symbol} paused for 24h due to {recent_losses} losses in 12h")
-            
-            await self.db.log(
-                user_id,
-                "INFO" if net_pnl > 0 else "WARNING",
-                f"CLOSE {position.symbol} @ {exit_price_adjusted:.4f}",
-                {
-                    'entry': round(position.entry_price, 4),
-                    'gross_pnl': round(gross_pnl, 2),
-                    'net_pnl': round(net_pnl, 2),
-                    'pnl_pct': round(pnl_pct, 2),
-                    'fees': round(total_fees, 4),
-                    'reason': reason
-                }
-            )
-            
+                    await self.db.set_symbol_pause(user_id, position.symbol, 24, "3 losses in 12h", recent_losses)
+                    
         except Exception as e:
-            await self.db.log(user_id, "ERROR", f"Failed to close position {position.symbol}: {str(e)}")
+            await self.db.log(user_id, "ERROR", f"[LIVE] ❌ SELL FAILED: {position.symbol} - {str(e)}")
+    
+    def is_in_cooldown(self, user_id: str, cooldown_candles: int) -> bool:
+        """Check if user is in cooldown"""
+        cooldown_key = f"{user_id}_live"
+        if cooldown_key not in self.user_last_trade_time:
+            return False
+        
+        last_trade = self.user_last_trade_time[cooldown_key]
+        cooldown_duration = timedelta(minutes=cooldown_candles * 15)
+        
+        return (datetime.now(timezone.utc) - last_trade) < cooldown_duration
+    
+    def set_last_trade_time(self, user_id: str):
+        """Set last trade time"""
+        cooldown_key = f"{user_id}_live"
+        self.user_last_trade_time[cooldown_key] = datetime.now(timezone.utc)
+    
+    async def get_user_mexc_client(self, user_id: str, settings: UserSettings) -> MexcClient:
+        """Get MEXC client with user's API keys"""
+        if settings.live_confirmed:
+            keys = await self.db.get_mexc_keys(user_id)
+            if keys:
+                from crypto_utils import decrypt_value
+                api_key = decrypt_value(keys['api_key'])
+                api_secret = decrypt_value(keys['api_secret'])
+                return MexcClient(api_key=api_key, api_secret=api_secret)
+        
+        return MexcClient()
     
     async def start(self):
         if self.running:
             return
         
         self.running = True
-        logger.info("Multi-user trading worker started")
-        logger.info("Exit checks every 30 seconds | Signal scans every 5 minutes")
+        logger.info("Multi-user trading worker started (LIVE only)")
+        logger.info("Exit checks: 30s | Signal scans: 5m | MEXC sync: 90s")
         
-        # Start all tasks
         await asyncio.gather(
             self.heartbeat(),
             self.trading_loop(),
-            self.exit_check_loop()  # Fast exit monitoring
+            self.exit_check_loop(),
+            self.mexc_sync_loop()
         )
     
     async def stop(self):
