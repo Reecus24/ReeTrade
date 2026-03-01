@@ -802,7 +802,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'used': round(today_exposure, 2),
                 'remaining': round(daily_remaining, 2)
             },
-            'open_positions_count': len(live_account.open_positions) if live_account else 0
+            'open_positions_count': len(live_account.open_positions) if live_account else 0,
+            # AI Position Range based on available USDT
+            'ai_position_range': self._calculate_ai_position_range(settings, usdt_free, entry_value)
         }
         
     except Exception as e:
@@ -811,6 +813,39 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             status_code=502,
             detail=f"Failed to fetch MEXC balance: {str(e)}"
         )
+
+def _calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:
+    """Calculate AI position range based on available USDT and profile"""
+    from ai_engine_v2 import TradingMode, RISK_PROFILES_V2
+    
+    trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
+    
+    if trading_mode == TradingMode.MANUAL:
+        return {
+            'min': settings.live_min_notional_usdt or 5,
+            'max': settings.live_max_order_usdt or 50,
+            'pct_range': 'Manual'
+        }
+    
+    profile = RISK_PROFILES_V2.get(trading_mode, {})
+    position_pct_min = profile.get('position_pct_min', 5)
+    position_pct_max = profile.get('position_pct_max', 20)
+    
+    # Calculate based on AVAILABLE USDT (not trading budget!)
+    position_usd_min = usdt_free * (position_pct_min / 100)
+    position_usd_max = usdt_free * (position_pct_max / 100)
+    
+    # Apply trading budget cap
+    trading_budget = settings.trading_budget_usdt or 500
+    trading_budget_remaining = max(0, trading_budget - open_value)
+    position_usd_min = min(position_usd_min, trading_budget_remaining)
+    position_usd_max = min(position_usd_max, trading_budget_remaining)
+    
+    return {
+        'min': round(position_usd_min, 2),
+        'max': round(position_usd_max, 2),
+        'pct_range': f"{position_pct_min:.0f}%-{position_pct_max:.0f}%"
+    }
 
 # ============ MARKET DATA ENDPOINTS ============
 
