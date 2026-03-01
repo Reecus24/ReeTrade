@@ -284,8 +284,8 @@ class AITradingEngine:
         # ============ ADJUST STOP LOSS FOR VOLATILITY ============
         base_sl = profile['base_stop_loss_pct']
         if market.volatility_percentile > 60:
-            # Wider stop for high volatility
-            sl_multiplier = 1 + (market.volatility_percentile - 60) / 100
+            # Wider stop for high volatility (max 1.5x multiplier)
+            sl_multiplier = min(1.5, 1 + (market.volatility_percentile - 60) / 100)
             decision.stop_loss_pct = base_sl * sl_multiplier
             decision.add_reason(f"🎯 Stop Loss erweitert wegen Volatilität: {decision.stop_loss_pct:.1f}%")
         else:
