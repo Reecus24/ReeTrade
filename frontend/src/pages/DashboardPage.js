@@ -443,10 +443,10 @@ const DashboardPage = ({ onLogout }) => {
 
         {/* Sub-Tabs */}
         {settings.live_confirmed && (
-          <Tabs defaultValue="trades" className="w-full mt-6">
+          <Tabs defaultValue="history" className="w-full mt-6">
             <TabsList className="bg-zinc-950 border border-red-900/30">
-              <TabsTrigger value="trades" className="data-[state=active]:text-red-500">
-                <History className="w-4 h-4 mr-2" />Trades
+              <TabsTrigger value="history" className="data-[state=active]:text-red-500">
+                <History className="w-4 h-4 mr-2" />History
               </TabsTrigger>
               <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
                 <FileText className="w-4 h-4 mr-2" />Logs
@@ -456,7 +456,7 @@ const DashboardPage = ({ onLogout }) => {
               </TabsTrigger>
             </TabsList>
             <div className="mt-4">
-              <TabsContent value="trades"><TradesTab /></TabsContent>
+              <TabsContent value="history"><TradesTab /></TabsContent>
               <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
               <TabsContent value="settings"><SettingsTab /></TabsContent>
             </div>
