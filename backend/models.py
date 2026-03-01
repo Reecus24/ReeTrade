@@ -184,6 +184,12 @@ class Position(BaseModel):
     stop_loss: float
     take_profit: float
     entry_time: datetime
+    
+    # Partial Profit Tracking (NEW)
+    original_qty: Optional[float] = None  # Original quantity before partial sell
+    partial_profit_taken: bool = False  # Has partial profit been taken?
+    partial_profit_time: Optional[datetime] = None  # When partial was taken
+    sl_moved_to_entry: bool = False  # Has SL been moved to break-even?
 
 class PaperAccount(BaseModel):
     user_id: str
