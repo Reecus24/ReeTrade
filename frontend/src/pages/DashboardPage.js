@@ -276,13 +276,13 @@ const DashboardPage = ({ onLogout }) => {
         {/* MEXC Wallet + Budget System */}
         {settings.live_confirmed ? (
           <div className="space-y-4 mb-6">
-            {/* MEXC Spot Wallet */}
+            {/* Portfolio Übersicht - Vereinfacht */}
             <div className="bg-zinc-950 border border-green-900/30 rounded-lg p-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <Wallet className="w-5 h-5 text-green-500" />
-                  MEXC Spot Wallet
-                  <Badge className="bg-green-500/10 text-green-500 text-xs">SYNCED</Badge>
+                  Portfolio Übersicht
+                  <Badge className="bg-green-500/10 text-green-500 text-xs">LIVE</Badge>
                 </h3>
                 <Button 
                   onClick={fetchBalance} 
@@ -300,32 +300,54 @@ const DashboardPage = ({ onLogout }) => {
                   {balanceError}
                 </div>
               ) : balance ? (
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">USDT Free</div>
-                    <div className="text-xl font-bold font-mono text-green-500">
-                      {formatCurrency(balance.budget?.usdt_free || balance.cash || 0)}
+                <>
+                  {/* Main Stats - 3 große Karten */}
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="p-4 bg-green-950/30 border border-green-900/50 rounded-lg">
+                      <div className="text-xs text-green-400 mb-1">💰 USDT Frei</div>
+                      <div className="text-2xl font-bold font-mono text-green-400">
+                        {formatCurrency(balance.budget?.usdt_free || balance.cash || 0)}
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-1">Verfügbar zum Handeln</div>
+                    </div>
+                    <div className="p-4 bg-purple-950/30 border border-purple-900/50 rounded-lg">
+                      <div className="text-xs text-purple-400 mb-1">📊 Investiert</div>
+                      <div className="text-2xl font-bold font-mono text-purple-400">
+                        {formatCurrency(balance.invested_value || balance.budget?.used_budget || 0)}
+                      </div>
+                      <div className="text-xs text-zinc-500 mt-1">In {balance.open_positions_count || 0} Positionen</div>
+                    </div>
+                    <div className="p-4 bg-blue-950/30 border border-blue-900/50 rounded-lg">
+                      <div className="text-xs text-blue-400 mb-1">🏦 Gesamt Portfolio</div>
+                      <div className="text-2xl font-bold font-mono text-white">
+                        {formatCurrency((balance.budget?.usdt_free || balance.cash || 0) + (balance.invested_value || balance.budget?.used_budget || 0))}
+                      </div>
+                      <div className={`text-xs mt-1 ${(balance.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        PnL: {(balance.total_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(balance.total_pnl || 0)} ({(balance.total_pnl_pct || 0) >= 0 ? '+' : ''}{(balance.total_pnl_pct || 0).toFixed(2)}%)
+                      </div>
                     </div>
                   </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">USDT Locked</div>
-                    <div className="text-xl font-bold font-mono text-orange-500">
-                      {formatCurrency(balance.locked || 0)}
+                  
+                  {/* Sekundäre Stats */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
+                      <div className="text-xs text-zinc-500">Reserve</div>
+                      <div className="text-sm font-mono text-blue-400">{formatCurrency(settings.reserve_usdt)}</div>
+                    </div>
+                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
+                      <div className="text-xs text-zinc-500">Trading Budget</div>
+                      <div className="text-sm font-mono text-white">{formatCurrency(settings.trading_budget_usdt)}</div>
+                    </div>
+                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
+                      <div className="text-xs text-zinc-500">Positionen</div>
+                      <div className="text-sm font-mono">{balance.open_positions_count || 0} / {settings.max_positions}</div>
+                    </div>
+                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
+                      <div className="text-xs text-zinc-500">Max Order</div>
+                      <div className="text-sm font-mono text-white">{formatCurrency(settings.live_max_order_usdt)}</div>
                     </div>
                   </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">Total USDT</div>
-                    <div className="text-xl font-bold font-mono text-white">
-                      {formatCurrency(balance.equity || 0)}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">Positionen</div>
-                    <div className="text-xl font-bold font-mono">
-                      {balance.open_positions_count || 0} / {settings.max_positions}
-                    </div>
-                  </div>
-                </div>
+                </>
               ) : (
                 <div className="text-center text-zinc-500 py-4">
                   <Activity className="w-6 h-6 mx-auto animate-spin mb-2" />
@@ -333,49 +355,6 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               )}
             </div>
-            
-            {/* Budget System */}
-            {balance && (
-              <div className="bg-zinc-950 border border-blue-900/30 rounded-lg p-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-                  <DollarSign className="w-5 h-5 text-blue-500" />
-                  Budget System
-                </h3>
-                
-                <div className="grid grid-cols-5 gap-4">
-                  <div className="p-3 bg-blue-950/30 border border-blue-900/30 rounded-lg">
-                    <div className="text-xs text-blue-400 mb-1">Reserve</div>
-                    <div className="text-xl font-bold font-mono text-blue-400">
-                      {formatCurrency(settings.reserve_usdt)}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">Trading Budget</div>
-                    <div className="text-xl font-bold font-mono text-white">
-                      {formatCurrency(settings.trading_budget_usdt)}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">Used Budget</div>
-                    <div className="text-xl font-bold font-mono text-orange-500">
-                      {formatCurrency(balance.budget?.used_budget || 0)}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-green-950/30 border border-green-900/30 rounded-lg">
-                    <div className="text-xs text-green-400 mb-1">Available</div>
-                    <div className="text-xl font-bold font-mono text-green-500">
-                      {formatCurrency(balance.budget?.remaining_budget || 0)}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-zinc-900 rounded-lg">
-                    <div className="text-xs text-zinc-500 mb-1">Max Order</div>
-                    <div className="text-xl font-bold font-mono text-white">
-                      {formatCurrency(settings.live_max_order_usdt)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Daily Cap Progress */}
             {balance?.daily_cap && (
