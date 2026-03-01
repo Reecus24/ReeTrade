@@ -133,7 +133,7 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
 };
 
 const AIStatusPanel = ({ aiStatus }) => {
-  const { confidence, risk_score, reasoning, last_override } = aiStatus;
+  const { confidence, risk_score, reasoning, last_override, min_position, max_position, current_position } = aiStatus;
   
   const getConfidenceColor = (conf) => {
     if (conf >= 70) return 'text-green-500';
@@ -147,6 +147,8 @@ const AIStatusPanel = ({ aiStatus }) => {
     return 'text-red-500';
   };
 
+  const formatCurrency = (val) => `$${(val || 0).toFixed(0)}`;
+
   return (
     <div className="p-4 bg-purple-950/20 border border-purple-900/30 rounded-lg" data-testid="ai-status-panel">
       <div className="flex items-center gap-2 mb-3">
@@ -154,7 +156,7 @@ const AIStatusPanel = ({ aiStatus }) => {
         <span className="text-sm font-medium text-purple-400">AI Entscheidung</span>
       </div>
       
-      <div className="grid grid-cols-2 gap-4 mb-3">
+      <div className="grid grid-cols-3 gap-3 mb-3">
         {/* Confidence */}
         <div className="p-2 bg-zinc-900/50 rounded">
           <div className="text-xs text-zinc-500 mb-1">Confidence</div>
@@ -169,6 +171,19 @@ const AIStatusPanel = ({ aiStatus }) => {
           <div className={`text-xl font-bold font-mono ${getRiskColor(risk_score || 0)}`}>
             {risk_score?.toFixed(0) || 0}/100
           </div>
+        </div>
+        
+        {/* Position Size Range (NEW) */}
+        <div className="p-2 bg-zinc-900/50 rounded">
+          <div className="text-xs text-zinc-500 mb-1">Min-Max Order</div>
+          <div className="text-lg font-bold font-mono text-purple-400">
+            {formatCurrency(min_position)}-{formatCurrency(max_position)}
+          </div>
+          {current_position > 0 && (
+            <div className="text-xs text-zinc-500">
+              Aktuell: <span className="text-green-400">{formatCurrency(current_position)}</span>
+            </div>
+          )}
         </div>
       </div>
       
