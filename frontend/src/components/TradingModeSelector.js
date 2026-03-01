@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, User, Shield, TrendingUp, Zap, AlertTriangle, Info } from 'lucide-react';
+import { Bot, User, Shield, TrendingUp, Zap, AlertTriangle, Info, Wallet, Target, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -92,12 +92,17 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
 
   // Use preview data if available, otherwise fall back to aiStatus
   const displayData = previewData || {
-    min_order: aiStatus?.min_position || 0,
-    max_order: aiStatus?.max_position || 0,
-    current_order: aiStatus?.current_position || 0,
+    position_pct_range: aiStatus?.position_pct_range || '0%',
+    position_usd_min: aiStatus?.min_position || 0,
+    position_usd_max: aiStatus?.max_position || 0,
+    usdt_free: aiStatus?.usdt_free || 0,
+    trading_budget_remaining: aiStatus?.trading_budget_remaining || 0,
     confidence: aiStatus?.confidence || 0,
     risk_score: aiStatus?.risk_score || 0,
-    reasoning: aiStatus?.reasoning || []
+    reasoning: aiStatus?.reasoning || [],
+    sl_atr_multiplier: aiStatus?.sl_atr_multiplier || '',
+    tp_rr_range: aiStatus?.tp_rr_range || '',
+    max_positions: aiStatus?.max_positions || 0
   };
 
   return (
@@ -165,7 +170,7 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
       
       {/* AI Status Panel - always show when AI mode or previewData available */}
       {(isAiMode || previewData) && displayData && (
-        <AIStatusPanel 
+        <AIStatusPanelV2 
           data={displayData} 
           isAiMode={isAiMode}
           tradingBudget={previewData?.trading_budget}
