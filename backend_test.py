@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 class TradingBotAPITester:
-    def __init__(self, base_url="https://ai-trader-bot-19.preview.emergentagent.com"):
+    def __init__(self, base_url="https://reetrade-ai-v2.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0

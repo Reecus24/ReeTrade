@@ -1,89 +1,52 @@
 <analysis>**original_problem_statement:**
-The user's goal is to create a sophisticated, fully automated SPOT trading bot for the MEXC exchange, built as a full-stack application (FastAPI + React + MongoDB). The project began with basic trading capabilities and has evolved significantly based on user feedback.
+The user's goal is to create a sophisticated, fully automated SPOT trading bot for the MEXC exchange. The project started with basic features and has evolved into a complex system with a dual-mode (Manual/AI) trading engine.
 
-The core requirements implemented and refined over time include:
-- A full multi-user system with registration and login.
-- Removal of the initial Paper Trading mode to focus exclusively on Live Trading.
-- A **Dual Mode System** allowing users to switch between Manual trading and an **AI-driven mode**.
-- The AI mode features three distinct risk profiles: **Conservative, Moderate, and Aggressive**.
-- This **AI Engine** dynamically adjusts key trading parameters (entry signals, position size, Take Profit/Stop Loss levels, max concurrent positions) based on real-time market conditions (market regime via ADX, volatility via ATR, momentum via SMA) and the user's account state (e.g., drawdown).
-- A key feature is the **instant preview of AI decisions**: when a user selects an AI profile, the UI immediately calculates and displays the expected parameters (like min/max order size) based on their current trading budget, providing full transparency before the bot even runs.
-- The backend runs a high-frequency loop (every 1 minute) to scan for new trade entries and a separate loop to sync trade history with the MEXC exchange, ensuring positions closed manually on the exchange are reflected in the app.
-- The user has requested that the bot's scanning mechanism be made more intelligent, to scan a wider array of coins and prioritize those whose price is appropriate for the calculated trade size, making the bot more capital-efficient.
+The latest and most significant request is a complete overhaul of the AI system (referred to as AI V2). The user wants to move away from static percentage-based rules to a fully dynamic and adaptive engine.
+
+**PRODUCT REQUIREMENTS (AI V2 Overhaul):**
+1.  **High-Frequency Exits:** The sell-check loop must run every **1 second** (down from 30 seconds) to react instantly to market dumps.
+2.  **Dynamic SL/TP Engine:**
+    *   **Stop Loss:** Must be ATR-based (e.g., 1.5x-2.5x ATR depending on the profile) or structure-based (below the last swing low), not a fixed percentage. It should tighten in high volatility.
+    *   **Take Profit:** Must target a minimum Risk:Reward ratio per profile and extend during strong momentum (high ADX).
+3.  **Adaptive Risk Scaling:** The risk per trade should adapt based on performance.
+    *   Global Rules: Halve risk after 2 consecutive losses, increase risk after 3 wins, reduce risk on >15% account drawdown.
+4.  **New Position Sizing Logic:**
+    *   Positions must be sized as a **percentage of the total available USDT in the wallet**, not based on the fixed Trading Budget setting.
+    *   The Trading Budget will only act as a maximum total exposure cap.
+    *   The UI should no longer show a Min-Max Order range but instead display the calculated percentage and resulting order size (e.g., Position Size: 25% of Available USDT, Calculated Order: 47.80).
+5.  **New AI Profile Definitions:**
+    *   **Aggressive:** 4-6% risk, 20-35% of available USDT per position, max 3 positions, 2.0-2.5x ATR for SL, min 1:2.5 R:R.
+    *   **Moderate:** 1.5-2.5% risk, 10-20% of available USDT per position, max 2 positions, 1.8x ATR for SL, min 1:2 R:R.
+    *   **Conservative:** 0.5-1% risk, 5-10% of available USDT per position, max 1-2 positions, 1.5x ATR for SL, min 1:1.5 R:R.
+6.  **Confidence Score Integration:** The position size should be scaled based on a confidence score of the trade signal.
+7.  **Performance Safety:** Trading should pause for 1 hour after 3 consecutive losing trades.
 
 **User's preferred language**: The user's primary language is **German**. The next agent MUST respond in German only.
 
 **what currently exists?**
-The ReeTrade Terminal is a live-only, full-stack trading bot application. The paper trading mode has been completely removed from the backend, frontend, and database.
+The ReeTrade Terminal is a full-stack (FastAPI, React, MongoDB) live-only trading bot for the MEXC exchange. It features a dual-mode system allowing users to switch between Manual and AI trading. The codebase has undergone significant iteration, with fixes for coin scanning, diversification, entry/exit logic, and major UI/UX improvements.
 
-The application's core is the **Dual Mode (Manual/AI) System**. The user can select a trading mode from the dashboard:
-- **Manual:** Uses settings configured by the user.
-- **AI (Konservativ, Moderat, Aggressiv):** The AI takes control, dynamically adjusting the strategy.
-
-**Key Features:**
-- **AI Engine ():** A rule-based system that analyzes market conditions and account status to make trading decisions. It overrides manual settings for position size, risk management (TP/SL), and the number of concurrent trades.
-- **Instant AI Feedback Loop:** The frontend features a  component. When a user selects an AI profile, it makes an API call to get a preview of the AI's parameters, calculated against the user's current trading budget. This shows the user exactly how the AI will behave (e.g., Min-Max Order: 3 - 0) before starting the bot.
-- **Live-Only Architecture:** All code related to paper trading has been stripped out, simplifying the codebase.
-- **Efficient Backend Loops:** The  runs two main  loops:
-    1.   (every 60 seconds): Scans for new trading opportunities using the selected Manual or AI strategy.
-    2.   (every 90 seconds): Fetches the user's trade history from MEXC to close positions that might have been sold outside the application.
-- **UI Refinements:**
-    - The Trades tab is now History, and all previous trade data has been cleared.
-    - Risk settings like Max Daily Loss and Max Daily Trades have been removed from the UI and AI logic per user request.
+The agent has just begun a massive overhaul to create an AI V2 engine based on the user's detailed new requirements. This involves creating a new  file and beginning to refactor the core , , and frontend components. The application is currently in a transitional and likely non-functional state due to this partial implementation.
 
 **Last working item**:
--   **Last item agent was working:** The user requested a more intelligent and efficient coin scanning strategy. The current method scans a limited number of coins and doesn't consider the coin's price relative to the small trade sizes calculated by the AI, leading to inefficient capital allocation (e.g., trying to place a  trade on a 000 coin).
--   **Status:** NOT STARTED
+-   **Last item agent was working:** Implementing the complete overhaul of the AI trading engine (AI V2) as specified by the user. This is a large, multi-faceted task that touches the entire application logic. The agent started by creating a new  file to house the new dynamic logic and began modifying , , and  to integrate this new engine.
+-   **Status:** IN PROGRESS
 -   **Agent Testing Done:** N
--   **Which testing method agent to use?** backend testing agent. The agent should verify the logic in  by checking the logs to confirm that:
-    1.  A larger number of coins are being fetched from the exchange.
-    2.  A new filtering logic is applied that excludes coins based on their price relative to the calculated position size.
-    3.  The logs clearly state why a coin was filtered out.
+-   **Which testing method agent to use?** both. This is a full-system overhaul.
+    *   **Backend testing agent:** Must verify the new AI V2 logic: 1-second exit loop, ATR-based SL/TP calculations, position sizing as a % of available USDT, adaptive risk scaling, and performance safety pauses.
+    *   **Frontend testing agent:** Must verify the completely new UI for AI profile selection, which should now show the calculated position size based on wallet percentage instead of a min-max range.
 -   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1:** Implement intelligent coin scanning strategy (P0)
--   **Issue 2:** Improve robustness of the MEXC Connected status indicator (P1)
--   **Issue 3:** Potential  in  (P2)
-
-**Issues Detail:**
--   **Issue 1:**
-    -   **Attempted fixes:** None. This is a new feature request.
-    -   **Next debug checklist:**
-        1.  In  within the  function, increase the number of coins fetched from MEXC by adjusting or removing the slice limit (e.g.,  instead of ).
-        2.  After fetching market data but before the main signal loop, add a filtering step.
-        3.  The filter should compare the coin's  with the AI's calculated .
-        4.  Define a threshold for what constitutes an inefficient trade (e.g., if  is less than 0.1% of the coin's market cap or if the resulting quantity is extremely small) and exclude those coins from the scan.
-        5.  Add logging to show how many coins were filtered and provide examples of filtered coins and the reason.
-    -   **Why fix this issue and what will be achieved with the fix?** This will dramatically improve the bot's capital efficiency. It will stop wasting API calls and processing time on trades that are too small to be meaningful and instead focus on cheaper assets where the allocated capital can secure a more substantial position.
-    -   **Status:** NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Backend
-    -   **Blocked on other issue:** None
--   **Issue 2:**
-    -   **Attempted fixes:** The agent implemented error handling for decrypting keys, but the frontend check remains basic.
-    -   **Next debug checklist:**
-        1.  Modify the  endpoint in .
-        2.  Instead of just checking for the existence of API keys, the endpoint should perform a lightweight authenticated call to MEXC, such as fetching the account balance.
-        3.  The  boolean in the API response should only be  if this authenticated call succeeds.
-    -   **Why fix this issue and what will be achieved with the fix?** This will provide the user with an accurate, real-time status of their connection to the exchange, preventing confusion when the UI shows Connected but trades are failing due to invalid or expired keys.
-    -   **Status:** NOT STARTED
-    -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** Both
-    -   **Blocked on other issue:** None
--   **Issue 3:**
-    -   **Attempted fixes:** None. The previous agent dismissed a lint warning about a potential  for .
-    -   **Next debug checklist:**
-        1.  Review  in the  function.
-        2.  Ensure that the  dictionary is initialized with default values at the start of the function, before any conditional logic paths that might read from it.
-    -   **Why fix this issue and what will be achieved with the fix?** This will prevent a potential runtime crash if the worker enters a state where the dictionary is accessed before being populated, making the application more robust.
-    -   **Status:** NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** Backend
-    -   **Blocked on other issue:** None
+-   There are no pending bugs. The only pending item is the completion of the large AI V2 feature request.
 
 **In progress Task List**:
--   None.
+-   **Task 1: Complete AI Engine V2 Implementation (P0)**
+    -   **Where to resume:** The agent has created  and has begun making changes in , , , and . The next agent must continue this work by fully implementing all aspects of the user's AI V2 specification. The current implementation is partial and incomplete. Key files to review are  (the new core),  (to integrate the 1-second loop and new trade logic),  (for the new preview API), and  (for the new UI).
+    -   **What will be achieved with this?** The application will feature a professional-grade, dynamic, and adaptive trading AI that manages risk and position size based on real-time market conditions and wallet state, fulfilling the user's detailed requirements.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
@@ -95,17 +58,23 @@ The application's core is the **Dual Mode (Manual/AI) System**. The user can sel
   - **P3: Notifications:** Integrate Telegram or Email notifications for trade executions and critical bot events.
 
 **Completed work in this session**
-- **Implemented Dual Mode System (Manual/AI):** A  was added to the UI to switch between Manual and three AI profiles (Konservativ, Moderat, Aggressiv). The backend  was refactored to include an  that dynamically adjusts the trading strategy.
-- **Implemented Instant AI Preview:** The UI now immediately shows the calculated parameters (min/max order size, SL/TP) for any selected AI profile, scaled according to the user's trading budget. This is powered by a new  endpoint.
-- **Removed Paper Trading Mode:** The entire application was refactored to be Live-only, significantly simplifying the codebase by removing all paper-related endpoints, DB collections, worker logic, and UI components.
-- **Implemented MEXC History Sync:** A new background loop in  now syncs with the user's MEXC trade history to reconcile positions.
-- **Fixed Critical AI Logic Bug (ADX=0.0):** Corrected a bug where the AI made decisions using dummy data before fetching real market data. The logic now evaluates signals on a per-symbol basis.
-- **Refined Risk Management:** Removed Max Daily Loss and Max Daily Trades limits from the AI and UI as requested.
-- **Increased Scan Frequency:** The main trading loop was accelerated from 5 minutes to 1 minute.
-- **Resolved Data and UI Issues:** Cleared the trade history, renamed the Trades tab to History, and fixed several recurring API key decryption errors.
+- **Intelligent Coin Scanning & Rotation:** Implemented a system to scan ~100 coins, filter them by price, and automatically rotate to a new batch of 20 coins if no signals are found in the current one.
+- **AI Logic & Bug Fixes:**
+    - **Diversification:** AI now skips buying coins already present in the portfolio.
+    - **Stop Loss Engine:** Fixed a critical bug causing an unbounded SL (e.g., 8% instead of 3.5%) by capping the volatility multiplier.
+    - **Risk/Reward Ratio:** Improved the R:R for the Aggressive profile to 2.5:1 (3% SL / 7.5% TP).
+    - **Position Sizing:** Fixed logic to ensure the AI uses the correct budget for calculations and can place smaller trades if available funds are low.
+- **Critical Sell Bug Fix:** Fixed a major bug where selling one position would incorrectly delete all other open positions of the same symbol from the database. A unique  was added to each trade to resolve this.
+- **Accurate Pricing:** Fixed a bug to ensure the app uses the **actual execution price** from the MEXC order confirmation, not the signal price, and recalculates SL/TP accordingly.
+- **Robust MEXC Sync:** The trade synchronization logic was improved to check actual wallet balances on MEXC, and a manual MEXC Sync button was added to the UI.
+- **Major UI/UX Enhancements:**
+    - Implemented a clear, new **Wallet Overview** showing Free USDT, Invested, and Total Portfolio with live PnL.
+    - Added **live, real-time PnL ($ and %)**, current price, total USDT value, and fee calculations to each position in the list.
+    - The  status is now accurate, performing a real API check and showing Keys ungültig (Invalid Keys) when appropriate.
+- **Improved Logging:** Added detailed logs to explain exactly why each coin is being skipped during a scan (e.g., bearish, low ADX, RSI overbought).
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1: Rate Limiting IP Detection:** The  library identifies all requests as coming from a single proxy IP in the dev environment. This is a known limitation of the setup and is expected to work correctly in production. No fix is required.
+-   None.
 
 **Known issue recurrence from previous fork**
 -   None.
@@ -114,79 +83,80 @@ The application's core is the **Dual Mode (Manual/AI) System**. The user can sel
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, Motor (async MongoDB driver), Pydantic,  for concurrent loops.
-- **Frontend:** React, Tailwind CSS, Axios for API calls.
-- **AI Strategy:** Rule-based engine dynamically adjusting parameters based on market indicators (ADX, ATR, SMA) and account state (drawdown).
-- **Database:** MongoDB
+- **Backend:** FastAPI, Motor (async MongoDB driver), Pydantic, .
+- **Frontend:** React, Tailwind CSS, Axios.
+- **AI Strategy (V2 - In Progress):** Dynamic, adaptive engine using ATR for risk, sizing based on available capital, and scaling based on performance.
+- **Database:** MongoDB.
 - **Authentication:** JWT stored in HttpOnly cookies.
 
 **key DB schema**
-- **users:** 
-- **settings:**  - Contains live settings and AI state. Paper settings have been removed.
-- **live_accounts:** Stores open position details.
-- **trades:** Stores all completed trade history.
+-   **users:** 
+-   **settings:** 
+-   **live_accounts:** Stores open positions. Documents now include a unique .
+-   **trades:** Stores completed trade history.
 
 **changes in tech stack**
 -   None.
 
 **All files of reference**
--   : **CRITICAL REFERENCE.** Contains the core logic for the 1-minute scan loop, the , the per-symbol signal evaluation, and the  loop.
--   : Defines all API endpoints, including the crucial  used for the instant AI preview on the frontend.
--   : **CRITICAL REFERENCE.** The new component that allows users to select a trading mode and immediately see the AI's calculated parameters.
--   : The main page that orchestrates all UI components and state.
--   : Defines the  schema, which includes the new  and various  fields.
+-   : **NEW & CRITICAL.** This file contains the foundation for the new AI overhaul.
+-   : **CRITICAL.** Heavily modified to fix numerous bugs and is currently being refactored to use  and a 1-second exit loop.
+-   : **CRITICAL.** Contains API endpoints, especially the  endpoint which is being rewritten for V2.
+-   : The UI component for AI selection, currently being modified to support the new V2 display logic.
+-   : Significantly enhanced with live PnL, fee calculation, and other UX improvements.
+-   : A new component providing a clear summary of the user's funds.
+-   : Defines the Pydantic models, which are being updated for AI V2.
 
 **Areas that need refactoring**:
--    is becoming large. The  class and its associated profile configurations could be extracted into a dedicated  file to improve modularity.
--    could still be organized into multiple  files based on functionality (e.g., , , ).
+-   The implementation of the **1-second exit loop** in  needs careful review. Such a high frequency can lead to performance bottlenecks or API rate-limiting issues. The next agent should monitor this and consider alternative, more event-driven approaches if problems arise.
+-   The refactoring of logic from  into  should be completed to improve modularity and maintainability.
 
 **key api endpoints**
--   **Bot Control:**
-    -    & 
--   **State and Settings:**
-    -    (Returns all live state, including AI overrides)
-    -    (Handles  changes)
--   **AI Endpoints:**
-    -    **(New & Critical)**: Returns calculated parameters for all AI profiles based on the user's trading budget for instant UI preview.
--   **Data & Actions:**
-    -   
-    -   
+-    & 
+-   : Returns bot and user state.
+-   : **(Being rewritten for V2)** Returns calculated parameters for the selected AI profile based on available wallet balance.
+-   : Sells a specific position by its unique ID.
+-   : **(New)** Manually triggers a sync with the MEXC exchange.
 
 **Critical Info for New Agent**
--   **Top Priority:** The user's most recent and important request is to implement **intelligent coin scanning**. The current implementation is capital-inefficient. Your first task is to modify  to scan more coins and filter them based on price to match the AI's calculated trade size.
--   **AI is Central:** The application's core logic now resides in the  in . All strategic trading decisions are made or influenced by this engine when an AI mode is active.
--   **Instant Feedback is Key:** The user loves the instant feedback loop provided by the  and the  endpoint. Any changes to the AI's calculation logic must be reflected in this preview endpoint to maintain UI consistency and user trust.
--   **User with Invalid Keys:** Be aware that the test user () has invalid MEXC API keys. This is useful for testing error handling in the UI. The logs show that the worker functions correctly for another user who has valid keys. Do not get stuck trying to fix the keys for the test user; focus on implementing new functionality.
+-   **Top Priority:** You must complete the **AI V2 overhaul**. This is a large, complex task that the previous agent has only started. The application is currently in a broken, transitional state. Refer to the user's detailed requirements in the original_problem_statement.
+-   **New Position Sizing:** The most fundamental change is that position size is now a percentage of **available wallet USDT**, not the old Trading Budget. This changes the entire capital management strategy.
+-   **High-Frequency Loop:** The user has explicitly requested a 1-second exit-check loop. Be mindful of the performance implications.
+-   **Deprecation:** The old AI logic in  and the old profile structures are now deprecated. All new logic should be built within or integrated with .
 
 **documents and test reports created in this job**
--    (updated multiple times)
+-   
+-   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User Request:** The scan is too slow, change it to every minute. (Completed)
-2.  **User Request:** Remove the daily loss limit. The AI panel should show the min/max order size it's using. Change the Max Order input to a Min-Max Order range. (Completed)
-3.  **User Concern/Request:** Why is ADX showing 0.0? The AI seems to have data issues. Also, remove any daily trade limits. And please clear my trade history and rename the tab to History. (Completed - fixed AI data bug, removed limits, cleared history)
-4.  **User Concern/Request:** The old trade history is still there. The AI information should appear instantly when I select a profile, and the min/max order size should scale with my trading budget. (Completed - found and deleted trades from another DB, implemented instant AI preview that scales with budget)
-5.  **User Request (PENDING):** The bot should scan way more than just 8 coins. It needs to find cheap, new coins because it's pointless to use a tiny - trade size on an expensive 000 coin. The AI must be smart enough to find coins that match its small trade size.
+1.  **User Request:** Request for a comprehensive AI system overhaul (AI V2) with dynamic, ATR-based SL/TP, adaptive risk, 1-second exit checks, and a new position sizing model based on available wallet funds. (IN PROGRESS)
+2.  **User Concern:** The USDT value of a position shown in the app doesn't match the EUR value on MEXC. (Resolved: Explained it's due to USD vs. EUR and different exchange rates).
+3.  **User Concern:** The quantity display for large numbers is confusing (e.g., 222.308 for 222,308 tokens). (Resolved: Agent clarified the formatting and added Stk for clarity).
+4.  **User Request:** Implement automatic coin rotation, so if there are no signals in the current batch of 20 coins, the bot scans a new batch. (Completed).
+5.  **User Request:** Add more detailed logs to explain why the bot isn't buying any of the 20 scanned coins. (Completed).
+6.  **User Concern:** Asks if a coin is available for repurchase immediately after being sold. (Resolved: Agent confirmed this is the current behavior and asked if a cooldown is desired).
+7.  **User Request:** Redesign the wallet overview to be clearer, showing Free, Invested, and Total portfolio values. (Completed).
+8.  **User Request:** Add the total USDT value invested across all positions to the UI. (Completed).
+9.  **User Request:** Show the current market price for each open position. (Completed).
+10. **User Concern:** The ADX minimum of 15 seems too strict, as no trades are happening. (Resolved: Agent lowered the ADX minimum for the Aggressive profile to 5).
 
 **Project Health Check:**
--   **Broken:** None. The application is functional.
--   **Mocked:** None. The application is in a Live-only state.
+-   **Broken:** Yes. The application is in a broken state due to the partial, in-progress implementation of the AI V2 overhaul.
+-   **Mocked:** None.
 
 **3rd Party Integrations**
 -   **MEXC Exchange API:** Used for fetching market data, account information, and executing live trades.
 
 **Testing status**
--   **Testing agent used after significant changes:** NO
+-   **Testing agent used after significant changes:** YES (but this was *before* the AI V2 overhaul began).
 -   **Troubleshoot agent used after agent stuck in loop:** NO
 -   **Test files created:** None
--   **Known regressions:** None.
+-   **Known regressions:** The entire application's trading logic is currently in a regressed/broken state due to the ongoing AI V2 refactoring.
 
 **Credentials to test flow:**
 -   **Email:** 
 -   **Password:** 
--   **Note:** This user account has **invalid** MEXC API keys. This is intentional for testing UI error states. The backend logs show the worker operating correctly for a different user with valid keys.
+-   **Note:** This user account has **invalid** MEXC API keys, which is useful for testing error handling in the UI.
 
 **What agent forgot to execute**
--   The agent did not begin implementing the user's latest and most critical request: to create an intelligent coin scanning mechanism that is capital-efficient.
--   The agent did not address the misleading MEXC Connected status indicator, which shows a positive status even when API keys are invalid.
--   The agent noted but did not fix a potential  in , which could affect the application's stability.</analysis>
+The agent did not forget anything. It was actively working on the user's largest and most complex feature request (the AI V2 overhaul) when the session ended. The entire AI V2 feature set is the primary unfinished task.</analysis>
