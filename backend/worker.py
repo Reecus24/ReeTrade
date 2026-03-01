@@ -370,7 +370,7 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "ERROR", f"Failed to run momentum rotation: {str(e)}")
     
     async def scan_and_trade(self, user_id: str, settings: UserSettings):
-        """Scan for trading opportunities and execute (LIVE only)"""
+        """Scan for trading opportunities and execute (LIVE only) with AI support"""
         account = await self.db.get_live_account(user_id)
         scan_time = datetime.now(timezone.utc)
         
@@ -409,11 +409,85 @@ class MultiUserTradingWorker:
         
         # DAILY CAP CHECK
         today_exposure = await self.db.get_today_exposure(user_id, 'live')
+        today_trades = await self.db.get_today_trades_count(user_id, 'live')
+        today_pnl = await self.db.get_today_pnl(user_id, 'live')
         daily_cap = settings.live_daily_cap_usdt
         daily_remaining = max(0, daily_cap - today_exposure)
         
-        # Update status
+        # Calculate drawdown
+        initial_equity = self.user_initial_equity.get(user_id, live_usdt_free)
+        current_equity = live_usdt_free + used_budget
+        drawdown_pct = ((current_equity - initial_equity) / initial_equity * 100) if initial_equity > 0 else 0
+        
         positions_count = len(account.open_positions) if account else 0
+        
+        # ============ AI DECISION ============
+        trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
+        is_ai_mode = trading_mode != TradingMode.MANUAL
+        
+        ai_decision = None
+        effective_max_positions = settings.max_positions
+        effective_position_size = settings.live_max_order_usdt
+        
+        if is_ai_mode:
+            await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Mode: {trading_mode.value}")
+            
+            # Build market conditions (will be updated per symbol)
+            market_conditions = MarketConditions(
+                regime=MarketRegime.SIDEWAYS,  # Will be updated
+                volatility_percentile=50.0,     # Will be calculated
+                momentum_score=0.0,             # Will be calculated
+                adx_value=0.0,                  # Will be updated
+                rsi_value=50.0                  # Will be updated
+            )
+            
+            account_state = AccountState(
+                total_equity=current_equity,
+                available_budget=available_budget,
+                current_drawdown_pct=drawdown_pct,
+                open_positions_count=positions_count,
+                today_pnl=today_pnl,
+                today_trades_count=today_trades
+            )
+            
+            manual_settings = {
+                'live_max_order_usdt': settings.live_max_order_usdt,
+                'max_positions': settings.max_positions
+            }
+            
+            # Get initial AI decision (will be refined per signal)
+            ai_decision = self.ai_engine.make_decision(
+                trading_mode, market_conditions, account_state, manual_settings
+            )
+            
+            # Check if AI blocks trading entirely
+            if not ai_decision.should_trade:
+                await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI BLOCKED: {ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'}")
+                
+                # Save AI decision to settings
+                await self.db.update_settings(user_id, {
+                    'live_last_scan': scan_time.isoformat(),
+                    'live_last_decision': f'AI BLOCKED: {ai_decision.reasoning[-1] if ai_decision.reasoning else "Unbekannt"}',
+                    'ai_confidence': ai_decision.confidence,
+                    'ai_risk_score': ai_decision.risk_score,
+                    'ai_reasoning': ai_decision.reasoning,
+                    'ai_last_override': {
+                        'timestamp': scan_time.isoformat(),
+                        'should_trade': False,
+                        'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in ai_decision.overrides]
+                    }
+                })
+                return
+            
+            effective_max_positions = ai_decision.max_positions
+            effective_position_size = ai_decision.position_size_usdt
+            
+            # Log AI overrides
+            for override in ai_decision.overrides:
+                await self.db.log(user_id, "INFO", 
+                    f"[LIVE] 🤖 AI Override: {override.field} {override.manual_value} → {override.ai_value} ({override.reason})")
+        
+        # Update status
         await self.db.update_settings(user_id, {
             'live_last_scan': scan_time.isoformat(),
             'live_last_decision': 'SCANNING',
@@ -421,11 +495,15 @@ class MultiUserTradingWorker:
             'live_budget_available': round(available_budget, 2),
             'live_daily_used': round(today_exposure, 2),
             'live_daily_remaining': round(daily_remaining, 2),
-            'live_positions_count': positions_count
+            'live_positions_count': positions_count,
+            'ai_confidence': ai_decision.confidence if ai_decision else None,
+            'ai_risk_score': ai_decision.risk_score if ai_decision else None,
+            'ai_reasoning': ai_decision.reasoning if ai_decision else None
         })
         
+        mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
         await self.db.log(user_id, "INFO", 
-            f"[LIVE] ═══ SCAN START ═══ Budget: ${available_budget:.2f} | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {positions_count}/{settings.max_positions}")
+            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ Budget: ${available_budget:.2f} | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {positions_count}/{effective_max_positions}")
         
         # Budget checks
         min_notional = settings.live_min_notional_usdt
@@ -446,10 +524,11 @@ class MultiUserTradingWorker:
             })
             return
         
-        if account and not risk_mgr.can_open_position(account):
-            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Max Positionen erreicht ({positions_count}/{settings.max_positions})")
+        # Use AI-adjusted max positions
+        if positions_count >= effective_max_positions:
+            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Max Positionen erreicht ({positions_count}/{effective_max_positions})")
             await self.db.update_settings(user_id, {
-                'live_last_decision': f'BLOCKED: Max Positionen ({positions_count}/{settings.max_positions})',
+                'live_last_decision': f'BLOCKED: Max Positionen ({positions_count}/{effective_max_positions})',
                 'live_last_symbol': '-'
             })
             return
@@ -487,8 +566,39 @@ class MultiUserTradingWorker:
                 regime, regime_context = self.regime_detector.detect_regime(klines_4h)
                 adx_value = regime_context.get('adx', 0)
                 
-                # Only BULLISH
-                if regime != "BULLISH":
+                # Calculate volatility percentile (ATR based)
+                atr_values = []
+                for i in range(14, len(klines_4h)):
+                    high = float(klines_4h[i][2])
+                    low = float(klines_4h[i][3])
+                    close_prev = float(klines_4h[i-1][4])
+                    tr = max(high - low, abs(high - close_prev), abs(low - close_prev))
+                    atr_values.append(tr)
+                
+                current_atr = sum(atr_values[-14:]) / 14 if len(atr_values) >= 14 else 0
+                avg_atr = sum(atr_values) / len(atr_values) if atr_values else 1
+                volatility_percentile = min(100, (current_atr / avg_atr) * 50) if avg_atr > 0 else 50
+                
+                # AI Mode: Update market conditions and get refined decision
+                if is_ai_mode and ai_decision:
+                    market_conditions = MarketConditions(
+                        regime=MarketRegime(regime),
+                        volatility_percentile=volatility_percentile,
+                        momentum_score=regime_context.get('momentum', 0),
+                        adx_value=adx_value,
+                        rsi_value=regime_context.get('rsi', 50)
+                    )
+                    
+                    # Get refined AI decision for this symbol
+                    ai_decision = self.ai_engine.make_decision(
+                        trading_mode, market_conditions, account_state, manual_settings
+                    )
+                    
+                    if not ai_decision.should_trade:
+                        continue  # AI says skip this symbol
+                
+                # Only BULLISH for manual mode
+                if not is_ai_mode and regime != "BULLISH":
                     continue
                 
                 # Get 15m klines for entry signal
@@ -507,9 +617,13 @@ class MultiUserTradingWorker:
                 ema_slow_val = context.get('ema_slow', 0)
                 rsi_val = context.get('rsi', 0)
                 
-                # Calculate stop/take profit
+                # Calculate stop/take profit (AI or manual)
                 atr = strategy.calculate_atr(klines_15m, 14)
-                if atr:
+                if is_ai_mode and ai_decision:
+                    # Use AI-determined TP/SL percentages
+                    stop_loss = current_price * (1 - ai_decision.stop_loss_pct / 100)
+                    take_profit = current_price * (1 + ai_decision.take_profit_pct / 100)
+                elif atr:
                     stop_loss = current_price - (atr * 2.5)
                     risk_amount = current_price - stop_loss
                     take_profit = current_price + (risk_amount * 2.5)
@@ -535,7 +649,9 @@ class MultiUserTradingWorker:
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
                     'klines_15m': klines_15m,
-                    'context': context
+                    'context': context,
+                    'ai_decision': ai_decision,
+                    'volatility_percentile': volatility_percentile
                 })
                 
                 await self.db.log(user_id, "INFO", f"[LIVE] SIGNAL: {symbol} Score={opportunity_score:.1f}, ADX={adx_value:.1f}, RSI={rsi_val:.1f}")
@@ -555,16 +671,32 @@ class MultiUserTradingWorker:
             for candidate in signal_candidates:
                 symbol = candidate['symbol']
                 
+                # Use AI position size if available
+                position_budget = effective_position_size if is_ai_mode else available_budget
+                
                 trade_success = await self.open_live_position(
-                    user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, available_budget
+                    user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
+                    position_budget, is_ai_mode, candidate.get('ai_decision')
                 )
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
+                    decision_text = f'TRADE: {symbol} (Score: {candidate["score"]:.1f})'
+                    if is_ai_mode:
+                        decision_text = f'🤖 AI TRADE: {symbol} (Score: {candidate["score"]:.1f})'
+                    
                     await self.db.update_settings(user_id, {
-                        'live_last_decision': f'TRADE: {symbol} (Score: {candidate["score"]:.1f})',
+                        'live_last_decision': decision_text,
                         'live_last_regime': candidate['regime'],
-                        'live_last_symbol': symbol
+                        'live_last_symbol': symbol,
+                        'ai_last_override': {
+                            'timestamp': scan_time.isoformat(),
+                            'symbol': symbol,
+                            'position_size': effective_position_size,
+                            'stop_loss_pct': ai_decision.stop_loss_pct if ai_decision else None,
+                            'take_profit_pct': ai_decision.take_profit_pct if ai_decision else None,
+                            'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in (ai_decision.overrides if ai_decision else [])]
+                        } if is_ai_mode else None
                     })
                     break
                 else:
