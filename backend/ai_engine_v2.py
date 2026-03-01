@@ -155,8 +155,8 @@ RISK_PROFILES_V2 = {
         "tp_rr_max": 2.5,
         
         # Market Conditions
-        "allowed_regimes": [MarketRegime.BULLISH],  # Only Bullish
-        "min_adx": 15,
+        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],  # BULLISH + SIDEWAYS
+        "min_adx": 10,
         "momentum_tp_boost_adx": 25,
         
         # Confidence Scaling
