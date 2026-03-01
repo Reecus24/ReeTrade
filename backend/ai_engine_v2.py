@@ -455,14 +455,19 @@ class AITradingEngineV2:
         
         return position_size, actual_pct
     
+    def is_low_cap_coin(self, market: MarketConditions, profile: Dict) -> bool:
+        """Check if coin is low-cap based on 24h volume threshold"""
+        volume_threshold = profile.get('lowcap_volume_threshold', 1000000)
+        return market.volume_24h < volume_threshold and market.volume_24h > 0
+    
     def calculate_atr_stop_loss(
         self,
         market: MarketConditions,
         profile: Dict
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, bool]:
         """
-        Calculate ATR-based stop loss
-        Returns: (stop_loss_price, stop_loss_percent)
+        Calculate ATR-based stop loss with MAX CAP
+        Returns: (stop_loss_price, stop_loss_percent, is_low_cap)
         """
         # Base ATR multiplier
         atr_mult = profile['sl_atr_multiplier_base']
@@ -473,12 +478,25 @@ class AITradingEngineV2:
         elif market.volatility_percentile < 30:
             atr_mult = profile['sl_atr_multiplier_max']
         
+        # Low-Cap Detection - apply tighter stop for volatile low-cap coins
+        is_low_cap = self.is_low_cap_coin(market, profile)
+        if is_low_cap:
+            lowcap_reduction = profile.get('lowcap_sl_reduction', 0.5)
+            atr_mult *= lowcap_reduction  # Reduce ATR multiplier
+        
         # Calculate stop loss distance
         sl_distance = market.atr_value * atr_mult
-        sl_price = market.current_price - sl_distance
         sl_pct = (sl_distance / market.current_price) * 100
         
-        return sl_price, sl_pct
+        # Apply MAX STOP LOSS CAP
+        sl_max_pct = profile.get('sl_max_pct', 10.0)
+        if sl_pct > sl_max_pct:
+            sl_pct = sl_max_pct
+            sl_distance = market.current_price * (sl_pct / 100)
+        
+        sl_price = market.current_price - sl_distance
+        
+        return sl_price, sl_pct, is_low_cap
     
     def calculate_take_profit(
         self,
