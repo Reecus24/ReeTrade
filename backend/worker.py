@@ -659,9 +659,12 @@ class MultiUserTradingWorker:
                         rsi_value=regime_context.get('rsi', 50)
                     )
                     
+                    # Use trading_budget for AI position sizing, not just available_budget
+                    trading_budget = settings.trading_budget_usdt or 500
+                    
                     account_state = AccountState(
                         total_equity=current_equity,
-                        available_budget=available_budget,
+                        available_budget=trading_budget,  # Use full trading budget for sizing
                         current_drawdown_pct=drawdown_pct,
                         open_positions_count=positions_count,
                         today_pnl=today_pnl,
