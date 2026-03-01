@@ -112,9 +112,9 @@ RISK_PROFILES_V2 = {
         "tp_rr_base": 2.5,  # Minimum 1:2.5
         "tp_rr_max": 3.5,  # At strong momentum
         
-        # Market Conditions
-        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS],
-        "min_adx": 10,
+        # Market Conditions - Accept ALL regimes for maximum opportunity scanning
+        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS, MarketRegime.BEARISH],
+        "min_adx": 5,  # Lower ADX threshold for more trades
         "momentum_tp_boost_adx": 30,  # ADX > 30 = extend TP
         
         # Confidence Scaling
