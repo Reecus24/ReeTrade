@@ -818,8 +818,10 @@ class MultiUserTradingWorker:
                 'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
                 'live_last_symbol': '-'
             })
+            if symbols_already_owned > 0:
+                await self.db.log(user_id, "INFO", f"[LIVE] 💼 {symbols_already_owned} Coins übersprungen (bereits im Portfolio)")
         
-        await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale")
+        await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen")
     
     async def open_live_position(
         self, user_id: str, symbol: str, candidate: dict,
