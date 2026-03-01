@@ -528,8 +528,9 @@ class MultiUserTradingWorker:
         })
         
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
+        trade_size_label = f"${ai_min_position:.0f}-${ai_max_position:.0f}" if is_ai_mode and ai_min_position else f"${effective_position_size:.0f}"
         await self.db.log(user_id, "INFO", 
-            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ Budget: ${available_budget:.2f} | Daily: ${today_exposure:.2f}/${daily_cap:.2f} | Positions: {positions_count}/{effective_max_positions}")
+            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ Budget: ${available_budget:.2f} | Trade: {trade_size_label} | Positions: {positions_count}/{effective_max_positions}")
         
         # Budget checks
         min_notional = settings.live_min_notional_usdt
