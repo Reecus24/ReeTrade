@@ -89,6 +89,7 @@ class UserSettings(BaseModel):
     
     # Market data
     top_pairs: List[str] = Field(default_factory=list)
+    all_pairs: List[str] = Field(default_factory=list)  # All coins for batch rotation
     last_pairs_refresh: Optional[datetime] = None
     paper_heartbeat: Optional[datetime] = None
     live_heartbeat: Optional[datetime] = None
