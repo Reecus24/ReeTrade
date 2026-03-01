@@ -709,8 +709,15 @@ class MultiUserTradingWorker:
                         pos.entry_price * pos.qty for pos in account.open_positions
                     ) if account and account.open_positions else 0
                     
+                    # Convert regime string (BULLISH/SIDEWAYS/BEARISH) to enum (bullish/sideways/bearish)
+                    try:
+                        regime_enum = MarketRegime(regime.lower())
+                    except ValueError:
+                        await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol}: Unbekanntes Regime '{regime}' - überspringe")
+                        continue
+                    
                     market_conditions = MarketConditions(
-                        regime=MarketRegime(regime),
+                        regime=regime_enum,
                         adx_value=adx_value,
                         atr_value=current_atr,
                         atr_percent=atr_percent,
