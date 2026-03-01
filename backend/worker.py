@@ -803,19 +803,26 @@ class MultiUserTradingWorker:
             current_price = candidate['current_price']
             stop_loss = candidate['stop_loss']
             take_profit = candidate['take_profit']
+            min_notional = settings.live_min_notional_usdt
             
             # Calculate position size (AI or manual)
             if is_ai_mode and ai_decision and ai_decision.position_size_usdt > 0:
-                # Use AI-determined position size
-                notional = min(ai_decision.position_size_usdt, available_budget * 0.95)
+                # Use AI-determined position size, but ensure it meets minimum
+                ai_size = ai_decision.position_size_usdt
+                if ai_size < min_notional and available_budget >= min_notional:
+                    # AI calculated too small, use minimum instead
+                    notional = min(min_notional, available_budget * 0.95)
+                    await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Size ${ai_size:.2f} < Min ${min_notional} → verwende Minimum")
+                else:
+                    notional = min(ai_size, available_budget * 0.95)
                 await self.db.log(user_id, "INFO", f"[LIVE] 🤖 AI Position Size: ${notional:.2f}")
             else:
                 # Manual position sizing
                 max_order = min(settings.live_max_order_usdt, available_budget)
                 notional = min(max_order, available_budget * 0.95)
             
-            if notional < settings.live_min_notional_usdt:
-                await self.db.log(user_id, "WARNING", f"[LIVE] Notional ${notional:.2f} below minimum ${settings.live_min_notional_usdt}")
+            if notional < min_notional:
+                await self.db.log(user_id, "WARNING", f"[LIVE] Notional ${notional:.2f} below minimum ${min_notional} (Budget: ${available_budget:.2f})")
                 return False
             
             qty = notional / current_price
