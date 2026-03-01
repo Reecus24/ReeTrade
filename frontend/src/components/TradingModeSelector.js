@@ -119,11 +119,14 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
               return (
                 <SelectItem key={profile.mode} value={profile.mode}>
                   <div className="flex items-center gap-2">
+                    <span>{profile.emoji || ''}</span>
                     <Icon className={`w-4 h-4 ${PROFILE_COLORS[profile.mode]}`} />
                     <span>{profile.name}</span>
-                    <span className="text-xs text-zinc-500 ml-2">
-                      (${profile.min_order?.toFixed(0)}-${profile.max_order?.toFixed(0)})
-                    </span>
+                    {profile.position_pct_range && profile.position_pct_range !== 'Manuell' && (
+                      <span className="text-xs text-zinc-500 ml-2">
+                        ({profile.position_pct_range})
+                      </span>
+                    )}
                   </div>
                 </SelectItem>
               );
