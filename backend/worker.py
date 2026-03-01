@@ -828,7 +828,7 @@ class MultiUserTradingWorker:
             qty = notional / current_price
             
             # Apply exchange filters
-            formatted_qty = order_sizer.get_formatted_quantity(symbol, qty)
+            formatted_qty = order_sizer.round_quantity(symbol, qty)
             if formatted_qty is None or formatted_qty <= 0:
                 await self.db.log(user_id, "WARNING", f"[LIVE] Invalid quantity for {symbol}")
                 return False
