@@ -823,6 +823,24 @@ async def manual_sell_position(
         'pnl_pct': round(pnl_pct, 2)
     }
 
+@app.post("/api/positions/sync")
+async def sync_positions_with_mexc(current_user: dict = Depends(get_current_user)):
+    """Manually trigger sync with MEXC to detect externally sold positions"""
+    user_id = current_user['user_id']
+    
+    if worker:
+        await worker.sync_mexc_trades(user_id)
+        
+        # Return updated positions
+        account = await db.get_live_account(user_id)
+        return {
+            'success': True,
+            'message': 'Sync mit MEXC abgeschlossen',
+            'open_positions': len(account.open_positions) if account else 0
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Worker not available")
+
 # ============ METRICS ENDPOINTS ============
 
 @app.get("/api/metrics/daily_pnl")
