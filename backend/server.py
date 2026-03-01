@@ -250,31 +250,6 @@ async def revoke_live_mode(current_user: dict = Depends(get_current_user)):
     await db.log(user_id, "INFO", "Live mode revoked")
     return {"message": "Live mode revoked", "confirmed": False}
 
-# ----- LEGACY ENDPOINTS (for backwards compatibility) -----
-
-@app.post("/api/bot/start")
-async def start_bot_legacy(current_user: dict = Depends(get_current_user)):
-    """Legacy: Start bot (defaults to paper)"""
-    return await start_paper_bot(current_user)
-
-@app.post("/api/bot/stop")
-async def stop_bot_legacy(current_user: dict = Depends(get_current_user)):
-    """Legacy: Stop bot (stops paper)"""
-    return await stop_paper_bot(current_user)
-
-@app.post("/api/bot/live/request")
-async def request_live_legacy(current_user: dict = Depends(get_current_user)):
-    return await request_live_mode(current_user)
-
-@app.post("/api/bot/live/confirm")
-@limiter.limit("3/minute")
-async def confirm_live_legacy(request: Request, body: LiveConfirmRequest, current_user: dict = Depends(get_current_user)):
-    return await confirm_live_mode(request, body, current_user)
-
-@app.post("/api/bot/live/disable")
-async def disable_live_legacy(current_user: dict = Depends(get_current_user)):
-    return await revoke_live_mode(current_user)
-
 # ============ STATUS ENDPOINTS ============
 
 @app.get("/api/status")
