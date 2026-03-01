@@ -241,12 +241,20 @@ class MultiUserTradingWorker:
             return
         
         # Get MEXC client
-        mexc = await self.get_user_mexc_client(user_id, settings)
+        try:
+            mexc = await self.get_user_mexc_client(user_id, settings)
+        except Exception as e:
+            await self.db.log(user_id, "ERROR", f"[EXIT] MEXC Client Fehler: {str(e)[:50]}")
+            return
         
         for position in account.open_positions[:]:
             try:
                 ticker = await mexc.get_ticker_24h(position.symbol)
                 current_price = float(ticker['lastPrice'])
+                
+                # Calculate current PnL for logging
+                pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
+                sl_distance = ((current_price - position.stop_loss) / position.stop_loss) * 100
                 
                 should_exit = False
                 exit_reason = ""
@@ -260,12 +268,23 @@ class MultiUserTradingWorker:
                     exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
                 
                 if should_exit:
-                    await self.db.log(user_id, "INFO", f"[LIVE] EXIT: {position.symbol} - {exit_reason}")
+                    await self.db.log(user_id, "WARNING", f"[EXIT] {position.symbol} - {exit_reason} | PnL: {pnl_pct:.1f}%")
                     await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
                     await self.db.update_live_account(account)
+                else:
+                    # Log check every 5 minutes (10 checks)
+                    if not hasattr(self, '_exit_log_counter'):
+                        self._exit_log_counter = {}
+                    counter_key = f"{user_id}_{position.symbol}"
+                    self._exit_log_counter[counter_key] = self._exit_log_counter.get(counter_key, 0) + 1
+                    if self._exit_log_counter[counter_key] >= 10:
+                        await self.db.log(user_id, "INFO", 
+                            f"[EXIT CHECK] {position.symbol}: Preis={current_price:.4f} | SL={position.stop_loss:.4f} | PnL={pnl_pct:.1f}%")
+                        self._exit_log_counter[counter_key] = 0
                     
             except Exception as e:
                 logger.error(f"Exit check error for {position.symbol}: {e}")
+                await self.db.log(user_id, "ERROR", f"[EXIT] {position.symbol} Check Fehler: {str(e)[:50]}")
     
     async def process_user(self, user_id: str):
         """Process trading for a single user (LIVE only)"""
