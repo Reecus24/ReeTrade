@@ -213,7 +213,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                 <div>
                   <div className="font-bold text-white">{pos.symbol}</div>
                   <div className="text-xs text-zinc-500">
-                    {pos.qty?.toLocaleString()} @ {formatCurrency(pos.entry_price)}
+                    {formatQty(pos.qty)} @ {formatCurrency(pos.entry_price)}
                   </div>
                   {/* Current Price & Value */}
                   {hasCurrentPrice && (
