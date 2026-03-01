@@ -650,6 +650,15 @@ const DashboardPage = ({ onLogout }) => {
                 <BotStatusPanel settings={settings} mode="live" balance={liveBalance} />
               )}
 
+              {/* Live Positions Panel */}
+              {settings.live_confirmed && (
+                <PositionsPanel 
+                  positions={paper_account?.open_positions || []} 
+                  mode="live"
+                  onSellComplete={() => { fetchStatus(); fetchLiveBalance(); }}
+                />
+              )}
+
               {/* Live Sub-Tabs */}
               {settings.live_confirmed && (
                 <Tabs defaultValue="trades" className="w-full">
