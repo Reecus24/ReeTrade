@@ -804,7 +804,7 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             },
             'open_positions_count': len(live_account.open_positions) if live_account else 0,
             # AI Position Range based on available USDT
-            'ai_position_range': self._calculate_ai_position_range(settings, usdt_free, entry_value)
+            'ai_position_range': calculate_ai_position_range(settings, usdt_free, entry_value)
         }
         
     except Exception as e:
@@ -814,7 +814,7 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             detail=f"Failed to fetch MEXC balance: {str(e)}"
         )
 
-def _calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:
+def calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:
     """Calculate AI position range based on available USDT and profile"""
     from ai_engine_v2 import TradingMode, RISK_PROFILES_V2
     
