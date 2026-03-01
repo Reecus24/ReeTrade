@@ -30,13 +30,13 @@ class MultiUserTradingWorker:
         self.symbol_skip_counts: Dict[str, Dict[str, int]] = {}  # {user_id: {symbol: scans_remaining}}
     
     def should_skip_symbol(self, user_id: str, symbol: str) -> bool:
-        """Check if symbol should be skipped (no signal in recent scans)"""
+        """Check if symbol should be skipped (had signal but wasn't traded)"""
         if user_id not in self.symbol_skip_counts:
             return False
         return self.symbol_skip_counts[user_id].get(symbol, 0) > 0
     
-    def mark_symbol_no_signal(self, user_id: str, symbol: str, skip_scans: int = 5):
-        """Mark symbol to skip for next N scans (no signal found)"""
+    def mark_symbol_cooldown(self, user_id: str, symbol: str, skip_scans: int = 5):
+        """Mark symbol to skip for next N scans (had signal but wasn't traded)"""
         if user_id not in self.symbol_skip_counts:
             self.symbol_skip_counts[user_id] = {}
         self.symbol_skip_counts[user_id][symbol] = skip_scans
@@ -45,7 +45,6 @@ class MultiUserTradingWorker:
         """Decrement all skip counts for user at start of scan"""
         if user_id not in self.symbol_skip_counts:
             return
-        # Decrement and remove zeros
         to_remove = []
         for symbol, count in self.symbol_skip_counts[user_id].items():
             if count <= 1:
@@ -55,10 +54,11 @@ class MultiUserTradingWorker:
         for symbol in to_remove:
             del self.symbol_skip_counts[user_id][symbol]
     
-    def clear_symbol_skip(self, user_id: str, symbol: str):
-        """Clear skip for symbol (e.g. when trade executed)"""
-        if user_id in self.symbol_skip_counts and symbol in self.symbol_skip_counts[user_id]:
-            del self.symbol_skip_counts[user_id][symbol]
+    def get_skipped_symbols_count(self, user_id: str) -> int:
+        """Get count of symbols currently on cooldown"""
+        if user_id not in self.symbol_skip_counts:
+            return 0
+        return len(self.symbol_skip_counts[user_id])
     
     def calculate_used_budget(self, account: PaperAccount) -> float:
         """Calculate total notional of all open positions"""
