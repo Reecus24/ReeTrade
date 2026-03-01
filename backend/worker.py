@@ -635,39 +635,60 @@ class MultiUserTradingWorker:
                 ", ".join([f"{c['symbol']}({c['score']:.1f})" for c in signal_candidates[:5]])
             )
             
+            # Get AI decision from best candidate
+            best_ai_decision = signal_candidates[0].get('ai_decision') if signal_candidates else None
+            
             for candidate in signal_candidates:
                 symbol = candidate['symbol']
+                candidate_ai = candidate.get('ai_decision')
                 
                 # Use AI position size if available
-                position_budget = effective_position_size if is_ai_mode else available_budget
+                position_budget = candidate_ai.position_size_usdt if candidate_ai else available_budget
                 
                 trade_success = await self.open_live_position(
                     user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
-                    position_budget, is_ai_mode, candidate.get('ai_decision')
+                    position_budget, is_ai_mode, candidate_ai
                 )
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
                     decision_text = f'TRADE: {symbol} (Score: {candidate["score"]:.1f})'
-                    if is_ai_mode:
+                    if is_ai_mode and candidate_ai:
                         decision_text = f'🤖 AI TRADE: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     await self.db.update_settings(user_id, {
                         'live_last_decision': decision_text,
                         'live_last_regime': candidate['regime'],
                         'live_last_symbol': symbol,
+                        'ai_confidence': candidate_ai.confidence if candidate_ai else None,
+                        'ai_risk_score': candidate_ai.risk_score if candidate_ai else None,
+                        'ai_reasoning': candidate_ai.reasoning if candidate_ai else None,
+                        'ai_min_position': candidate_ai.min_position_usdt if candidate_ai else None,
+                        'ai_max_position': candidate_ai.max_position_usdt if candidate_ai else None,
+                        'ai_current_position': candidate_ai.position_size_usdt if candidate_ai else None,
                         'ai_last_override': {
                             'timestamp': scan_time.isoformat(),
                             'symbol': symbol,
-                            'position_size': effective_position_size,
-                            'stop_loss_pct': ai_decision.stop_loss_pct if ai_decision else None,
-                            'take_profit_pct': ai_decision.take_profit_pct if ai_decision else None,
-                            'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in (ai_decision.overrides if ai_decision else [])]
+                            'position_size': candidate_ai.position_size_usdt if candidate_ai else None,
+                            'stop_loss_pct': candidate_ai.stop_loss_pct if candidate_ai else None,
+                            'take_profit_pct': candidate_ai.take_profit_pct if candidate_ai else None,
+                            'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in (candidate_ai.overrides if candidate_ai else [])]
                         } if is_ai_mode else None
                     })
                     break
                 else:
                     await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol} fehlgeschlagen - versuche nächsten...")
+            else:
+                # No trade executed but we have AI data from best candidate
+                if best_ai_decision:
+                    await self.db.update_settings(user_id, {
+                        'ai_confidence': best_ai_decision.confidence,
+                        'ai_risk_score': best_ai_decision.risk_score,
+                        'ai_reasoning': best_ai_decision.reasoning,
+                        'ai_min_position': best_ai_decision.min_position_usdt,
+                        'ai_max_position': best_ai_decision.max_position_usdt,
+                        'ai_current_position': best_ai_decision.position_size_usdt,
+                    })
         else:
             await self.db.update_settings(user_id, {
                 'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins',
