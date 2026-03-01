@@ -195,6 +195,19 @@ const SettingsTab = () => {
           </Field>
           
           <Field 
+            label="Min Order" 
+            unit="USDT"
+            tip="Minimale Order-Größe (MEXC Mindestanforderung)"
+          >
+            <Input
+              type="number"
+              value={settings.live_min_notional_usdt || 10}
+              onChange={(e) => setSettings(prev => ({ ...prev, live_min_notional_usdt: parseFloat(e.target.value) || 10 }))}
+              className="bg-zinc-800 border-zinc-700 font-mono"
+            />
+          </Field>
+          
+          <Field 
             label="Max Order" 
             unit="USDT"
             tip="Maximale Größe pro einzelnem Trade"
@@ -206,19 +219,17 @@ const SettingsTab = () => {
               className="bg-zinc-800 border-zinc-700 font-mono"
             />
           </Field>
-          
-          <Field 
-            label="Min Notional" 
-            unit="USDT"
-            tip="Minimale Order-Größe (MEXC Mindestanforderung)"
-          >
-            <Input
-              type="number"
-              value={settings.live_min_notional_usdt || 10}
-              onChange={(e) => setSettings(prev => ({ ...prev, live_min_notional_usdt: parseFloat(e.target.value) || 10 }))}
-              className="bg-zinc-800 border-zinc-700 font-mono"
-            />
-          </Field>
+        </div>
+        
+        {/* Min-Max Order Range Display */}
+        <div className="mt-4 p-3 bg-zinc-900/50 rounded-lg">
+          <div className="text-xs text-zinc-500 mb-2">Order Range (Manual Mode)</div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-mono text-blue-400">${settings.live_min_notional_usdt || 10}</span>
+            <span className="text-zinc-600">-</span>
+            <span className="text-lg font-mono text-blue-400">${settings.live_max_order_usdt || 50}</span>
+            <span className="text-xs text-zinc-500 ml-2">(AI überschreibt diese Werte dynamisch)</span>
+          </div>
         </div>
       </div>
 
