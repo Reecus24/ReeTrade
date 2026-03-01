@@ -650,18 +650,12 @@ async def manual_sell_position(
 @app.get("/api/metrics/daily_pnl")
 async def get_daily_pnl(
     days: int = 30,
-    mode: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get daily PnL aggregation for chart"""
+    """Get daily PnL aggregation for chart (LIVE only)"""
     user_id = current_user['user_id']
     
-    # If no mode specified, use current mode from settings
-    if not mode:
-        settings = await db.get_settings(user_id)
-        mode = settings.mode
-    
-    daily_data = await db.get_daily_pnl(user_id, mode=mode, days=days)
+    daily_data = await db.get_daily_pnl(user_id, mode='live', days=days)
     
     # Calculate summary stats
     total_pnl = sum(d['pnl'] for d in daily_data)
@@ -678,7 +672,6 @@ async def get_daily_pnl(
             'losing_days': losing_days,
             'win_rate': round(winning_days / (winning_days + losing_days) * 100, 1) if (winning_days + losing_days) > 0 else 0
         },
-        'mode': mode,
         'days': days
     }
 
