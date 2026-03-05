@@ -20,7 +20,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
   const isRunning = mode === 'live' ? settings?.live_running : settings?.paper_running;
   
   const getDecisionInfo = () => {
-    if (!lastDecision) return { icon: Minus, color: 'text-zinc-400', label: 'Wartet...' };
+    if (!lastDecision) return { icon: Minus, color: 'text-zinc-400', label: 'Waiting...' };
     
     if (lastDecision.startsWith('TRADE:') || lastDecision.includes('RL-AI')) {
       return { icon: CheckCircle, color: 'text-green-400', label: lastDecision };
@@ -32,7 +32,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
       return { icon: Pause, color: 'text-yellow-400', label: lastDecision };
     }
     if (lastDecision === 'SCANNING') {
-      return { icon: Activity, color: 'text-cyan-400', label: 'Scannt Markt...' };
+      return { icon: Activity, color: 'text-cyan-400', label: 'Scanning Market...' };
     }
     return { icon: Minus, color: 'text-zinc-400', label: lastDecision };
   };
@@ -77,7 +77,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         <div className="bg-black/50 border border-purple-500/20 p-4">
           <div className="text-sm text-purple-400 flex items-center gap-2 font-mono-cyber mb-2">
             <Clock className="w-4 h-4" />
-            LETZTER SCAN
+            LAST SCAN
           </div>
           <div className="text-base font-mono-cyber text-zinc-200">
             {lastScan ? (
@@ -92,7 +92,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         
         {/* Last Symbol */}
         <div className="bg-black/50 border border-purple-500/20 p-4">
-          <div className="text-sm text-purple-400 font-mono-cyber mb-2">LETZTER COIN</div>
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">LAST COIN</div>
           <div className="text-xl font-cyber text-white">
             {lastSymbol ? lastSymbol.replace('USDT', '') : '-'}
           </div>
@@ -100,7 +100,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         
         {/* Regime */}
         <div className="bg-black/50 border border-purple-500/20 p-4">
-          <div className="text-sm text-purple-400 font-mono-cyber mb-2">MARKT</div>
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">MARKET</div>
           <div className={`text-lg font-cyber flex items-center gap-2 ${regimeInfo.color}`}>
             <RegimeIcon className="w-5 h-5" />
             {regimeInfo.label}
@@ -109,7 +109,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         
         {/* Positions */}
         <div className="bg-black/50 border border-purple-500/20 p-4">
-          <div className="text-sm text-purple-400 font-mono-cyber mb-2">POSITIONEN</div>
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">POSITIONS</div>
           <div className="text-xl font-cyber text-white">
             {positionsCount} <span className="text-zinc-500">/ {maxPositions}</span>
           </div>
@@ -118,7 +118,7 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
       
       {/* Last Decision */}
       <div className="p-4 bg-black/50 border border-purple-500/20">
-        <div className="text-sm text-purple-400 font-mono-cyber mb-2">LETZTE ENTSCHEIDUNG</div>
+        <div className="text-sm text-purple-400 font-mono-cyber mb-2">LAST DECISION</div>
         <div className={`text-base font-mono-cyber flex items-center gap-3 ${decisionInfo.color}`}>
           <DecisionIcon className="w-5 h-5 flex-shrink-0" />
           <span>{decisionInfo.label}</span>

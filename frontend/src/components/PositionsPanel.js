@@ -162,7 +162,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                 POSITIONS <span className="text-zinc-400">({positions.length})</span>
               </h3>
               <p className="text-base text-zinc-300 font-mono-cyber">
-                Gesamt: <span className="text-white text-lg">{totalCurrentValue.toFixed(2)} $</span>
+                Total: <span className="text-white text-lg">{totalCurrentValue.toFixed(2)} $</span>
                 <span className={`ml-3 text-lg ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} $ ({totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
                 </span>
@@ -220,16 +220,16 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                     )}
                   </div>
                   <div className="text-base text-zinc-300 font-mono-cyber">
-                    <span className="text-zinc-500">Menge:</span> {formatQty(pos.qty)} 
-                    <span className="text-zinc-500 ml-3">Kauf:</span> {formatCurrency(pos.entry_price)}
+                    <span className="text-zinc-500">Qty:</span> {formatQty(pos.qty)} 
+                    <span className="text-zinc-500 ml-3">Entry:</span> {formatCurrency(pos.entry_price)}
                   </div>
                   {hasCurrentPrice && (
                     <div className="text-base font-mono-cyber mt-2">
-                      <span className="text-zinc-500">Jetzt: </span>
+                      <span className="text-zinc-500">Now: </span>
                       <span className={`text-lg ${pos.current_price >= pos.entry_price ? 'text-green-400' : 'text-red-400'}`}>
                         {formatCurrency(pos.current_price)}
                       </span>
-                      <span className="text-zinc-500 ml-4">Wert: </span>
+                      <span className="text-zinc-500 ml-4">Value: </span>
                       <span className="text-lg text-white">{currentValue.toFixed(2)} $</span>
                     </div>
                   )}
