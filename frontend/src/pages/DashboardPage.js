@@ -153,6 +153,7 @@ const DashboardPage = ({ onLogout }) => {
   }
 
   const { settings, live_account, mexc_keys_connected } = status;
+  const mexc_connected = mexc_keys_connected;
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
@@ -406,9 +407,17 @@ const DashboardPage = ({ onLogout }) => {
             )}
           </div>
         ) : (
-          <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center text-zinc-500 mb-6">
-            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-zinc-700" />
-            <p>Live Mode muss zuerst aktiviert werden um Wallet-Daten anzuzeigen.</p>
+          <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center mb-6">
+            <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
+            <p className="text-zinc-400 mb-4">Live Mode muss zuerst aktiviert werden um Wallet-Daten anzuzeigen.</p>
+            {!mexc_connected && (
+              <div className="p-4 bg-red-950/30 border border-red-900/50 rounded-lg">
+                <p className="text-red-400 font-medium">⚠️ MEXC API Keys fehlen!</p>
+                <p className="text-zinc-500 text-sm mt-2">
+                  Bitte gehe zum <span className="text-red-400 font-bold">Settings</span> Tab unten und gib deine MEXC API Keys ein.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -426,27 +435,33 @@ const DashboardPage = ({ onLogout }) => {
           />
         )}
 
-        {/* Sub-Tabs */}
-        {settings.live_confirmed && (
-          <Tabs defaultValue="history" className="w-full mt-6">
-            <TabsList className="bg-zinc-950 border border-red-900/30">
-              <TabsTrigger value="history" className="data-[state=active]:text-red-500">
-                <History className="w-4 h-4 mr-2" />History
-              </TabsTrigger>
-              <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
-                <FileText className="w-4 h-4 mr-2" />Logs
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="data-[state=active]:text-red-500">
-                <Settings className="w-4 h-4 mr-2" />Settings
-              </TabsTrigger>
-            </TabsList>
-            <div className="mt-4">
-              <TabsContent value="history"><TradesTab /></TabsContent>
-              <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
-              <TabsContent value="settings"><SettingsTab /></TabsContent>
-            </div>
-          </Tabs>
-        )}
+        {/* Sub-Tabs - IMMER anzeigen, nicht nur wenn live_confirmed */}
+        <Tabs defaultValue={settings.live_confirmed ? "history" : "settings"} className="w-full mt-6">
+          <TabsList className="bg-zinc-950 border border-red-900/30">
+            {settings.live_confirmed && (
+              <>
+                <TabsTrigger value="history" className="data-[state=active]:text-red-500">
+                  <History className="w-4 h-4 mr-2" />History
+                </TabsTrigger>
+                <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
+                  <FileText className="w-4 h-4 mr-2" />Logs
+                </TabsTrigger>
+              </>
+            )}
+            <TabsTrigger value="settings" className="data-[state=active]:text-red-500">
+              <Settings className="w-4 h-4 mr-2" />Settings
+            </TabsTrigger>
+          </TabsList>
+          <div className="mt-4">
+            {settings.live_confirmed && (
+              <>
+                <TabsContent value="history"><TradesTab /></TabsContent>
+                <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
+              </>
+            )}
+            <TabsContent value="settings"><SettingsTab /></TabsContent>
+          </div>
+        </Tabs>
 
         {/* Live Mode Confirmation Dialog */}
         <LiveModeConfirm 
