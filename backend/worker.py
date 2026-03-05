@@ -50,6 +50,10 @@ class MultiUserTradingWorker:
         # Dedupe für Telegram-Benachrichtigungen
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
         self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
+        
+        # Position tracking to prevent race conditions
+        self._buying_positions: set = set()  # Symbols currently being bought
+        self._selling_positions: set = set()  # Symbols currently being sold
     
     async def notify_telegram(self, notification_type: str, data: Dict, user_id: str = None):
         """Sende Telegram-Benachrichtigung (mit Dedupe) an User-spezifische Chat ID"""
@@ -356,10 +360,6 @@ class MultiUserTradingWorker:
         trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
         profile = RISK_PROFILES_V2.get(trading_mode, {}) if trading_mode != TradingMode.MANUAL else {}
         
-        # Track positions being sold to prevent duplicates
-        if not hasattr(self, '_selling_positions'):
-            self._selling_positions = set()
-        
         for position in account.open_positions[:]:
             # Skip if already being sold (prevent duplicate sells)
             position_key = f"{user_id}_{position.symbol}_{position.id}"
@@ -410,7 +410,7 @@ class MultiUserTradingWorker:
                     ki_state = await self.ki_engine.get_ki_state(user_id)
                     
                     # Hole zusätzliche Indikatoren für Smart Analysis
-                    klines = await mexc.get_klines(position.symbol, "1h", limit=50)
+                    klines = await mexc.get_klines(position.symbol, "60m", limit=50)
                     closes = [float(k[4]) for k in klines]
                     
                     # Berechne Indikatoren
