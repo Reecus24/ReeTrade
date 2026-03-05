@@ -435,6 +435,9 @@ class MultiUserTradingWorker:
                         state=rl_market_state
                     )
                     
+                    # Log ALLE RL-Entscheidungen (nicht nur SELL)
+                    logger.info(f"[RL] {position.symbol}: {rl_decision['reasoning']}")
+                    
                     if rl_decision['should_sell']:
                         should_exit = True
                         exit_reason = f"🧠 RL-EXIT: {rl_decision['reasoning']}"
