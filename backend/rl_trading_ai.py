@@ -550,12 +550,7 @@ class RLTradingAI:
         """
         Soll gekauft werden? - 100% KI-ENTSCHEIDUNG
         
-        Die KI entscheidet selbstständig basierend auf:
-        - Gelernten Q-Values (was hat in der Vergangenheit funktioniert?)
-        - Exploration (neue Strategien ausprobieren)
-        
-        Das Reward-System sagt der KI was das Ziel ist:
-        → Schnelle profitable Trades = hoher Reward
+        WICHTIG: Konservativere Buy-Exploration (30% statt 50%)
         """
         if state.has_position:
             return {
@@ -582,9 +577,10 @@ class RLTradingAI:
         is_exploration = random.random() < self.brain.epsilon
         
         if is_exploration:
-            # Exploration: Zufällig BUY oder HOLD (50/50)
-            action = Action.BUY if random.random() < 0.5 else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (zufällig, um zu lernen)"
+            # KONSERVATIVE Buy-Exploration: Nur 30% Chance zu kaufen
+            # Verhindert zu viele zufällige Käufe
+            action = Action.BUY if random.random() < 0.3 else Action.HOLD
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (30% Buy-Chance)"
         else:
             # Exploitation: Nutze gelerntes Wissen
             action = Action.BUY if q_values[1] > q_values[0] else Action.HOLD
@@ -607,13 +603,7 @@ class RLTradingAI:
         """
         Soll verkauft werden? - 100% KI-ENTSCHEIDUNG
         
-        Die KI entscheidet selbstständig basierend auf:
-        - Gelernten Q-Values (was hat in der Vergangenheit funktioniert?)
-        - Exploration mit PROFIT-BIAS (bei Gewinn eher verkaufen)
-        
-        Das Reward-System sagt der KI was das Ziel ist:
-        → Schnelle profitable Trades = hoher Reward
-        → Langes Halten = niedriger Reward
+        WICHTIG: Mindest-Haltezeit von 2 Minuten nach Kauf!
         """
         if not state.has_position:
             return {
@@ -625,6 +615,20 @@ class RLTradingAI:
             }
         
         pnl = state.position_pnl_pct
+        hold_hours = state.position_hold_hours if hasattr(state, 'position_hold_hours') else 0
+        hold_minutes = hold_hours * 60
+        
+        # ============ MINDEST-HALTEZEIT: 2 Minuten ============
+        # Verhindert sofortiges Verkaufen nach Kauf (Churn)
+        if hold_minutes < 2:
+            return {
+                'should_sell': False,
+                'confidence': 0,
+                'reasoning': f'⏳ Mindest-Haltezeit: {hold_minutes:.1f}min < 2min',
+                'action': 'HOLD',
+                'exploration': False
+            }
+        
         state_array = state.to_array()
         q_values = self.brain.get_q_values(state_array)
         
@@ -633,18 +637,17 @@ class RLTradingAI:
         
         if is_exploration:
             # PROFIT-BIAS: Bei Gewinn höhere Wahrscheinlichkeit zu verkaufen
-            # So lernt die KI schneller dass Gewinne mitnehmen = gut
             if pnl >= 0.5:
                 sell_prob = 0.8  # 80% SELL bei Profit >= 0.5%
             elif pnl > 0:
                 sell_prob = 0.6  # 60% SELL bei kleinem Profit
-            elif pnl > -1:
-                sell_prob = 0.4  # 40% SELL bei kleinem Verlust
+            elif pnl > -2:
+                sell_prob = 0.3  # 30% SELL bei kleinem Verlust (Geduld!)
             else:
                 sell_prob = 0.5  # 50/50 bei größerem Verlust
             
             action = Action.SELL if random.random() < sell_prob else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (Profit-Bias: {sell_prob*100:.0f}% SELL) | PnL: {pnl:+.2f}%"
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (Bias: {sell_prob*100:.0f}%) | PnL: {pnl:+.2f}% | {hold_minutes:.0f}min"
             logger.info(f"[RL] {symbol}: {reason}")
         else:
             # Exploitation: Nutze gelerntes Wissen
