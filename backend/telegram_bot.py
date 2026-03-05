@@ -284,7 +284,7 @@ class TelegramBot:
 """
     
     async def _get_status(self, user_id: str) -> str:
-        """Hole aktuelle offene Positionen"""
+        """Hole aktuelle offene Positionen direkt von MEXC API"""
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
         
@@ -292,15 +292,51 @@ class TelegramBot:
             return "❌ Kein User verknüpft."
         
         try:
-            account_doc = await self.db.live_accounts.find_one({"user_id": user_id})
+            # Hole API Keys des Users
+            keys = await self.db.get_mexc_keys(user_id)
             
-            if not account_doc:
-                account_doc = await self.db.paper_accounts.find_one({"user_id": user_id})
+            if not keys or not keys.get('api_key'):
+                return "❌ Keine API Keys konfiguriert"
             
-            if not account_doc:
-                return "📭 Kein Account gefunden"
+            # Lade Balance direkt von MEXC
+            from mexc_client import MexcClient
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            account_info = await mexc.get_account()
             
-            positions = account_doc.get('positions', [])
+            # Alle Coins mit Balance > 0 (außer USDT)
+            positions = []
+            
+            for b in account_info.get('balances', []):
+                asset = b.get('asset', '')
+                free = float(b.get('free', 0))
+                locked = float(b.get('locked', 0))
+                total = free + locked
+                
+                if total > 0 and asset != 'USDT':
+                    # Hole aktuellen Preis
+                    try:
+                        ticker = await mexc.get_ticker(f"{asset}USDT")
+                        price = float(ticker.get('lastPrice', 0))
+                        value = total * price
+                        if value > 0.5:  # Mindestens 50 Cent
+                            # Hole Entry aus trades DB
+                            last_trade = await self.db.trades.find_one(
+                                {"user_id": user_id, "symbol": f"{asset}USDT", "side": "BUY"},
+                                sort=[("ts", -1)]
+                            )
+                            entry_price = float(last_trade.get('entry', price)) if last_trade else price
+                            pnl_pct = ((price - entry_price) / entry_price * 100) if entry_price > 0 else 0
+                            
+                            positions.append({
+                                'symbol': f"{asset}USDT",
+                                'qty': total,
+                                'entry': entry_price,
+                                'current': price,
+                                'value': value,
+                                'pnl_pct': pnl_pct
+                            })
+                    except:
+                        pass
             
             if not positions:
                 return "📭 Keine offenen Positionen"
@@ -308,20 +344,17 @@ class TelegramBot:
             text = f"📊 <b>OFFENE POSITIONEN</b> ({len(positions)})\n\n"
             
             for pos in positions[:10]:
-                if isinstance(pos, dict):
-                    symbol = pos.get('symbol', '?')
-                    entry = float(pos.get('entry_price', 0))
-                    current = float(pos.get('current_price', entry))
-                    pnl_pct = ((current - entry) / entry * 100) if entry > 0 else 0
-                    emoji = "🟢" if pnl_pct >= 0 else "🔴"
-                    text += f"{emoji} <b>{symbol}</b>\n"
-                    text += f"   Entry: ${entry:.6f}\n"
-                    text += f"   PnL: {'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%\n\n"
+                emoji = "🟢" if pos['pnl_pct'] >= 0 else "🔴"
+                text += f"{emoji} <b>{pos['symbol']}</b>\n"
+                text += f"   Entry: ${pos['entry']:.6f}\n"
+                text += f"   Current: ${pos['current']:.6f}\n"
+                text += f"   PnL: {'+' if pos['pnl_pct'] >= 0 else ''}{pos['pnl_pct']:.2f}%\n"
+                text += f"   Value: ${pos['value']:.2f}\n\n"
             
             return text
         except Exception as e:
             logger.error(f"Status error: {e}")
-            return f"❌ Fehler: {str(e)[:50]}"
+            return f"❌ Fehler: {str(e)[:100]}"
     
     async def _get_profit(self, user_id: str, period: str) -> str:
         """Hole Profit für einen Zeitraum"""
@@ -380,7 +413,7 @@ class TelegramBot:
             return f"❌ Fehler: {str(e)[:50]}"
     
     async def _get_balance(self, user_id: str) -> str:
-        """Hole Wallet-Balance"""
+        """Hole Wallet-Balance direkt von MEXC API"""
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
         
@@ -388,46 +421,72 @@ class TelegramBot:
             return "❌ Kein User verknüpft. Bitte in der App einloggen."
         
         try:
-            # Versuche live_accounts Collection
-            account_doc = await self.db.live_accounts.find_one({"user_id": user_id})
+            # Hole API Keys des Users
+            keys = await self.db.get_mexc_keys(user_id)
             
-            if not account_doc:
-                # Fallback: paper_accounts
-                account_doc = await self.db.paper_accounts.find_one({"user_id": user_id})
-            
-            if not account_doc:
+            if not keys or not keys.get('api_key'):
                 return """
 💰 <b>WALLET BALANCE</b>
 
-Noch kein Account gefunden.
-Bitte starte den Bot in der App.
+❌ Keine API Keys konfiguriert.
+Bitte API Keys in der App eintragen.
 """
             
-            balance = float(account_doc.get('balance', 0))
-            positions = account_doc.get('positions', [])
+            # Lade Balance direkt von MEXC
+            from mexc_client import MexcClient
+            mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            account_info = await mexc.get_account()
             
-            # Berechne Positions-Wert
+            # USDT Balance
+            usdt_balance = next(
+                (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
+                {'free': '0', 'locked': '0'}
+            )
+            usdt_free = float(usdt_balance.get('free', 0))
+            usdt_locked = float(usdt_balance.get('locked', 0))
+            
+            # Alle Coins mit Balance > 0 (außer USDT)
+            positions = []
             positions_value = 0
-            for p in positions:
-                if isinstance(p, dict):
-                    qty = float(p.get('qty', 0))
-                    entry = float(p.get('entry_price', 0))
-                    positions_value += qty * entry
             
-            total = balance + positions_value
+            for b in account_info.get('balances', []):
+                asset = b.get('asset', '')
+                free = float(b.get('free', 0))
+                locked = float(b.get('locked', 0))
+                total = free + locked
+                
+                if total > 0 and asset != 'USDT':
+                    # Hole aktuellen Preis
+                    try:
+                        ticker = await mexc.get_ticker(f"{asset}USDT")
+                        price = float(ticker.get('lastPrice', 0))
+                        value = total * price
+                        if value > 0.01:  # Mindestens 1 Cent
+                            positions.append({
+                                'symbol': f"{asset}USDT",
+                                'qty': total,
+                                'price': price,
+                                'value': value
+                            })
+                            positions_value += value
+                    except:
+                        pass
+            
+            total_balance = usdt_free + usdt_locked + positions_value
             
             return f"""
 💰 <b>WALLET BALANCE</b>
 
-<b>Verfügbar:</b> ${balance:.2f}
+<b>USDT Verfügbar:</b> ${usdt_free:.2f}
+<b>USDT Locked:</b> ${usdt_locked:.2f}
 <b>In Positionen:</b> ${positions_value:.2f}
-<b>Gesamt:</b> ${total:.2f}
+<b>Gesamt:</b> ${total_balance:.2f}
 
 <b>Offene Positionen:</b> {len(positions)}
 """
         except Exception as e:
             logger.error(f"Balance error: {e}")
-            return f"❌ Fehler: {str(e)[:50]}"
+            return f"❌ Fehler: {str(e)[:100]}"
     
     async def _get_recent_trades(self, user_id: str) -> str:
         """Hole letzte Trades"""
