@@ -189,16 +189,27 @@ class MexcFuturesClient:
         """Test if MEXC Futures API is reachable (no authentication needed)"""
         try:
             result = await self._request("GET", "/api/v1/contract/ping")
+            # The ping endpoint returns just the server time as an integer, or a dict with error
             if isinstance(result, dict) and result.get("error"):
                 return {"reachable": False, "error": result.get("error")}
-            return {"reachable": True, "server_time": result.get("serverTime")}
+            # Result is the server timestamp directly (int) or wrapped in dict
+            if isinstance(result, int):
+                return {"reachable": True, "server_time": result}
+            if isinstance(result, dict):
+                return {"reachable": True, "server_time": result.get("data", result)}
+            return {"reachable": True, "server_time": result}
         except Exception as e:
             return {"reachable": False, "error": str(e)}
     
     async def get_server_time(self) -> int:
         """Get MEXC server time"""
         result = await self._request("GET", "/api/v1/contract/ping")
-        return result.get("serverTime", int(time.time() * 1000))
+        # Handle both int and dict responses
+        if isinstance(result, int):
+            return result
+        if isinstance(result, dict):
+            return result.get("data", int(time.time() * 1000))
+        return int(time.time() * 1000)
     
     async def get_contract_detail(self, symbol: str) -> Dict[str, Any]:
         """Get contract details for a symbol"""
