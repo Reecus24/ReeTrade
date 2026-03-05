@@ -183,22 +183,22 @@ class MultiUserTradingWorker:
             await asyncio.sleep(60)
     
     async def trading_loop(self):
-        """Main trading loop - 1 minute intervals for new entries"""
+        """Main trading loop - 30 second intervals for HOCHFREQUENZ entries"""
         while self.running:
             try:
                 active_settings = await self.db.get_all_active_users()
                 
                 if not active_settings:
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(30)
                     continue
                 
-                logger.info(f"Trading cycle for {len(active_settings)} active user(s)")
+                logger.debug(f"Trading cycle for {len(active_settings)} active user(s)")
                 
                 for settings_doc in active_settings:
                     user_id = settings_doc.get('user_id')
                     try:
                         await self.process_user(user_id)
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(1)  # Schneller zwischen Users
                     except Exception as e:
                         await self.db.log(user_id, "ERROR", f"Trading cycle error: {str(e)}")
                         logger.exception(f"Error processing user {user_id}: {e}")
@@ -206,7 +206,7 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Trading loop error: {e}")
             
-            await asyncio.sleep(60)  # 1 minute
+            await asyncio.sleep(30)  # 30 SEKUNDEN - Hochfrequenz!
     
     async def exit_check_loop(self):
         """Ultra-fast loop to check exits every 1 second for immediate SL/TP reaction"""
@@ -405,21 +405,13 @@ class MultiUserTradingWorker:
                         self._selling_positions.discard(partial_key)
                     continue  # Skip full exit check this iteration
                 
-                # ============ SMART EXIT ANALYSIS (KI-gesteuert) ============
-                # WICHTIG: Mindest-Haltezeit von 5 Minuten nach Kauf!
-                min_hold_time_minutes = 5
-                if hasattr(position, 'entry_time') and position.entry_time:
-                    time_held = datetime.now(timezone.utc) - position.entry_time
-                    if time_held.total_seconds() < min_hold_time_minutes * 60:
-                        # Position ist zu neu - kein Smart Exit
-                        await self.db.log(user_id, "DEBUG", 
-                            f"[EXIT CHECK] {position.symbol}: Haltezeit {time_held.total_seconds():.0f}s < {min_hold_time_minutes}min - Smart Exit übersprungen")
-                        continue
+                # ============ RL-KI EXIT ENTSCHEIDUNG (HOCHFREQUENZ) ============
+                # KEINE Mindest-Haltezeit mehr - KI kann sofort verkaufen!
                 
                 # ========== RL-KI EXIT ENTSCHEIDUNG ==========
                 try:
-                    # Hole Marktdaten für RL-KI
-                    klines = await mexc.get_klines(position.symbol, "60m", limit=50)
+                    # Hole Marktdaten für RL-KI (kürzerer Timeframe für Hochfrequenz)
+                    klines = await mexc.get_klines(position.symbol, "15m", limit=50)  # 15min statt 60min
                     closes = [float(k[4]) for k in klines]
                     
                     # Berechne Indikatoren für Logging
@@ -467,21 +459,15 @@ class MultiUserTradingWorker:
                     logger.warning(f"Smart Exit error for {position.symbol}: {smart_err}")
                     # Fallback auf normale SL/TP Checks
                 
-                # ============ FALLBACK: STOP LOSS CHECK ============
-                if not should_exit and current_price <= position.stop_loss:
+                # ============ NOTFALL STOP LOSS (nur bei extremem Verlust) ============
+                # KI entscheidet normalerweise - aber bei -10% wird automatisch verkauft
+                emergency_sl_pct = -10.0
+                if not should_exit and pnl_pct <= emergency_sl_pct:
                     should_exit = True
-                    if position.sl_moved_to_entry:
-                        exit_reason = f"🔄 BREAK-EVEN EXIT @ {current_price:.4f}"
-                    else:
-                        exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
+                    exit_reason = f"🚨 NOTFALL-STOP @ {current_price:.4f} (PnL: {pnl_pct:.1f}%)"
+                    await self.db.log(user_id, "ERROR", f"[EMERGENCY] {position.symbol} erreichte {pnl_pct:.1f}% - Notfall-Verkauf!")
                 
-                # ============ FALLBACK: TAKE PROFIT CHECK ============
-                elif not should_exit and current_price >= position.take_profit:
-                    should_exit = True
-                    if position.partial_profit_taken:
-                        exit_reason = f"🎯 FINAL TP (nach Teilgewinn) @ {current_price:.4f}"
-                    else:
-                        exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
+                # KEIN Take Profit mehr - KI entscheidet selbst wann Gewinn mitnehmen!
                 
                 if should_exit:
                     # Mark position as being sold BEFORE attempting sell
@@ -1861,7 +1847,7 @@ class MultiUserTradingWorker:
         
         self.running = True
         logger.info("Multi-user trading worker started (LIVE only)")
-        logger.info("Exit checks: 30s | Signal scans: 1m | MEXC sync: 90s")
+        logger.info("🚀 HOCHFREQUENZ-MODUS: Exit checks 1s | Signal scans 30s | MEXC sync 90s")
         
         await asyncio.gather(
             self.heartbeat(),

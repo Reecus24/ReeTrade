@@ -650,21 +650,49 @@ class RLTradingAI:
     async def end_episode(self, symbol: str, final_state: MarketState, exit_price: float, pnl_pct: float):
         """
         Beende Episode (Trade geschlossen) und lerne daraus
+        
+        HOCHFREQUENZ-TRADING REWARDS:
+        - Schnelle profitable Trades = HOHER Reward
+        - Langes Halten = BESTRAFUNG
+        - Kleine Gewinne schnell > Große Gewinne langsam
         """
         if symbol not in self.current_episode:
             return
         
         episode = self.current_episode[symbol]
+        duration_hours = (datetime.now(timezone.utc) - episode['start_time']).total_seconds() / 3600
+        duration_minutes = duration_hours * 60
         
-        # Berechne Reward
-        # Positiver Reward für Gewinn, negativer für Verlust
-        # Skaliert nach Größe des Gewinns/Verlusts
-        reward = pnl_pct  # Einfach: Reward = PnL%
+        # ============ HOCHFREQUENZ REWARD SYSTEM ============
+        # Basis: PnL Prozent
+        reward = pnl_pct
         
-        # Bonus für schnelle profitable Trades
-        duration = (datetime.now(timezone.utc) - episode['start_time']).total_seconds() / 3600
-        if pnl_pct > 0 and duration < 2:  # Schneller Profit
-            reward *= 1.5
+        # BONUS für schnelle Trades (Hochfrequenz!)
+        if pnl_pct > 0:
+            if duration_minutes < 5:      # Unter 5 Min = MEGA BONUS
+                reward *= 3.0
+                logger.info(f"[RL] ⚡ BLITZ-TRADE! {duration_minutes:.1f}min → 3x Reward")
+            elif duration_minutes < 15:   # Unter 15 Min = Großer Bonus
+                reward *= 2.0
+                logger.info(f"[RL] 🚀 SCHNELL-TRADE! {duration_minutes:.1f}min → 2x Reward")
+            elif duration_minutes < 30:   # Unter 30 Min = Bonus
+                reward *= 1.5
+            elif duration_hours > 2:      # Über 2 Stunden = Reduziert
+                reward *= 0.5
+                logger.info(f"[RL] 🐢 Zu langsam gehalten ({duration_hours:.1f}h) → 0.5x Reward")
+        
+        # BESTRAFUNG für langes Halten bei Verlust
+        if pnl_pct < 0:
+            if duration_hours > 1:  # Verlust über 1 Stunde gehalten
+                reward *= 1.5  # Verstärke negative Strafe
+                logger.info(f"[RL] ⚠️ Verlust zu lange gehalten → Extra Strafe")
+            if duration_minutes < 10 and pnl_pct > -1:  # Schneller kleiner Verlust ist OK
+                reward *= 0.5  # Reduziere Strafe für schnelles Aussteigen
+                logger.info(f"[RL] 👍 Schnell bei kleinem Verlust raus → Reduzierte Strafe")
+        
+        # BONUS für viele Trades (KI soll aktiv sein)
+        if self.brain.total_trades > 0 and self.brain.total_trades % 10 == 0:
+            reward += 1.0  # Bonus alle 10 Trades
         
         # Lerne aus der Erfahrung
         states = episode['states']
@@ -674,7 +702,7 @@ class RLTradingAI:
             exp = Experience(
                 state=states[i],
                 action=actions[i],
-                reward=reward / len(states),  # Verteile Reward
+                reward=reward / len(states),
                 next_state=states[i + 1],
                 done=(i == len(states) - 2)
             )
@@ -700,7 +728,7 @@ class RLTradingAI:
         del self.current_episode[symbol]
         
         emoji = "✅" if pnl_pct > 0 else "❌"
-        logger.info(f"[RL] {emoji} Episode beendet: {symbol} | PnL: {pnl_pct:.2f}% | Reward: {reward:.2f} | Win-Rate: {self.brain.win_rate:.1%}")
+        logger.info(f"[RL] {emoji} Episode beendet: {symbol} | PnL: {pnl_pct:.2f}% | Dauer: {duration_minutes:.0f}min | Reward: {reward:.2f}")
         
         # Detailliertes Lern-Log
         logger.info(f"[RL] 📊 LERNSTATUS nach {symbol}:")
