@@ -135,11 +135,32 @@ async def telegram_polling_loop():
                     user = await db.users.find_one({"telegram_chat_id": str(chat_id)})
                     user_id = str(user['_id']) if user else None
                     
-                    # Wenn kein User gefunden, verwende Default
-                    if not user_id and str(chat_id) == default_chat_id:
-                        # Finde ersten User mit Live-Mode
-                        first_user = await db.users.find_one({"live_mode_confirmed": True})
-                        user_id = str(first_user['_id']) if first_user else None
+                    # Wenn kein User gefunden, versuche Fallback
+                    if not user_id:
+                        # Fallback 1: Default chat_id
+                        if str(chat_id) == default_chat_id:
+                            first_user = await db.users.find_one({"live_mode_confirmed": True})
+                            user_id = str(first_user['_id']) if first_user else None
+                            if user_id:
+                                logger.info(f"[TELEGRAM] Fallback: Using default user for chat {chat_id}")
+                        
+                        # Fallback 2: Wenn nur EIN User existiert, nutze diesen
+                        if not user_id:
+                            user_count = await db.users.count_documents({})
+                            if user_count == 1:
+                                single_user = await db.users.find_one({})
+                                user_id = str(single_user['_id']) if single_user else None
+                                if user_id:
+                                    logger.info(f"[TELEGRAM] Fallback: Single user mode for chat {chat_id}")
+                                    # Auto-Link this chat_id to the single user
+                                    await db.users.update_one(
+                                        {"_id": single_user['_id']},
+                                        {"$set": {"telegram_chat_id": str(chat_id)}}
+                                    )
+                                    logger.info(f"[TELEGRAM] Auto-linked chat {chat_id} to user {user_id[:8]}...")
+                        
+                        if not user_id:
+                            logger.warning(f"[TELEGRAM] No user found for chat_id {chat_id}. Use /link CODE to connect.")
                     
                     if text.startswith('/'):
                         response = await telegram_bot.handle_command(chat_id, text.split()[0], user_id)
