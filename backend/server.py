@@ -678,7 +678,12 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
     
     keys = await db.get_mexc_keys(user_id)
     if not keys:
-        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+        return {
+            "futures_enabled": settings.futures_enabled,
+            "error": "MEXC API keys nicht konfiguriert",
+            "account": None,
+            "positions": []
+        }
     
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
@@ -686,8 +691,28 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
         # Get futures account assets
         assets = await futures_client.get_account_asset("USDT")
         
+        # Check for API errors in the response
+        if isinstance(assets, dict) and assets.get('error'):
+            return {
+                "futures_enabled": settings.futures_enabled,
+                "error": f"Futures API Fehler: {assets.get('error')}",
+                "account": None,
+                "positions": [],
+                "settings": {
+                    "default_leverage": settings.futures_default_leverage,
+                    "max_leverage": settings.futures_max_leverage,
+                    "risk_per_trade": settings.futures_risk_per_trade,
+                    "margin_mode": settings.futures_margin_mode,
+                    "allow_shorts": settings.futures_allow_shorts
+                }
+            }
+        
         # Get open futures positions
-        positions = await futures_client.get_open_positions()
+        positions = []
+        try:
+            positions = await futures_client.get_open_positions()
+        except Exception as pos_err:
+            logger.warning(f"Futures positions fetch error: {pos_err}")
         
         return {
             "futures_enabled": settings.futures_enabled,
@@ -721,7 +746,19 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
         }
     except Exception as e:
         logger.error(f"Futures status error: {e}")
-        raise HTTPException(status_code=502, detail=f"Futures API Fehler: {str(e)}")
+        return {
+            "futures_enabled": settings.futures_enabled,
+            "error": f"Futures API Fehler: {str(e)}. Stelle sicher, dass dein API-Key Futures-Berechtigung hat.",
+            "account": None,
+            "positions": [],
+            "settings": {
+                "default_leverage": settings.futures_default_leverage,
+                "max_leverage": settings.futures_max_leverage,
+                "risk_per_trade": settings.futures_risk_per_trade,
+                "margin_mode": settings.futures_margin_mode,
+                "allow_shorts": settings.futures_allow_shorts
+            }
+        }
 
 
 @app.post("/api/futures/enable")
@@ -926,26 +963,41 @@ async def get_available_coins(current_user: dict = Depends(get_current_user)):
     futures_coins = []
     
     try:
-        # Get SPOT coins
+        # Get SPOT coins using ticker endpoint (more reliable)
         mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-        exchange_info = await mexc.get_exchange_info()
+        tickers = await mexc.get_ticker_24h()
         
-        for symbol_info in exchange_info.get('symbols', []):
-            symbol = symbol_info.get('symbol', '')
-            if symbol.endswith('USDT') and symbol_info.get('status') == 'ENABLED':
-                spot_coins.append(symbol)
+        # Filter USDT pairs with volume
+        for ticker in tickers:
+            if isinstance(ticker, dict):
+                symbol = ticker.get('symbol', '')
+                volume = float(ticker.get('quoteVolume', 0))
+                if symbol.endswith('USDT') and volume > 10000:  # Min $10k volume
+                    spot_coins.append(symbol)
         
-        spot_coins = sorted(spot_coins)[:200]  # Limit to top 200
+        # Sort alphabetically and limit
+        spot_coins = sorted(list(set(spot_coins)))[:500]
+        logger.info(f"Found {len(spot_coins)} SPOT coins")
     except Exception as e:
         logger.error(f"SPOT coins fetch error: {e}")
     
     try:
         # Get FUTURES coins
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-        futures_coins = await futures_client.get_available_futures_pairs("USDT")
-        futures_coins = sorted(futures_coins)[:100]  # Limit to top 100
+        contracts = await futures_client.get_all_contracts()
+        
+        for contract in contracts:
+            symbol = contract.get('symbol', '')
+            if symbol.endswith('_USDT'):
+                futures_coins.append(symbol)
+        
+        # Sort and limit
+        futures_coins = sorted(list(set(futures_coins)))[:300]
+        logger.info(f"Found {len(futures_coins)} FUTURES coins")
     except Exception as e:
         logger.error(f"Futures coins fetch error: {e}")
+        # If futures fails, return empty but don't crash
+        futures_coins = []
     
     return {
         "spot_coins": spot_coins,
@@ -1180,15 +1232,10 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'invested_value': round(invested_value, 2),
             'total_pnl': round(total_pnl, 4),
             'total_pnl_pct': round(total_pnl_pct, 2),
-            # Reserve & Budget info
+            # Budget info (simplified - no reserve)
             'budget': {
                 'usdt_free': round(usdt_free, 2),
-                'reserve_usdt': settings.reserve_usdt,
-                'available_to_bot': round(available_to_bot, 2),
-                'trading_budget': settings.trading_budget_usdt,
-                'used_budget': round(invested_value, 2),  # Use actual invested value from MEXC
-                'remaining_budget': round(max(0, settings.trading_budget_usdt - invested_value), 2),
-                'max_order': settings.live_max_order_usdt
+                'used_budget': round(invested_value, 2),
             },
             # Daily Cap
             'daily_cap': {
@@ -1200,7 +1247,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             # AI max positions based on profile
             'ai_max_positions': get_ai_max_positions(settings),
             # AI Position Range based on available USDT
-            'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value)
+            'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value),
+            # Futures data
+            'futures': await get_futures_balance_data(keys, settings)
         }
         
     except Exception as e:
@@ -1221,6 +1270,35 @@ def get_ai_max_positions(settings) -> int:
     
     profile = RISK_PROFILES_V2.get(trading_mode, {})
     return profile.get('max_positions', settings.max_positions or 3)
+
+
+async def get_futures_balance_data(keys: dict, settings) -> dict:
+    """Get futures account balance data"""
+    if not settings.futures_enabled or not keys:
+        return None
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        assets = await futures_client.get_account_asset("USDT")
+        positions = await futures_client.get_open_positions()
+        
+        return {
+            'available_balance': float(assets.get("availableBalance", 0)),
+            'frozen_balance': float(assets.get("frozenBalance", 0)),
+            'equity': float(assets.get("equity", 0)),
+            'unrealized_pnl': float(assets.get("unrealisedPnl", 0)),
+            'open_positions': len(positions)
+        }
+    except Exception as e:
+        logger.warning(f"Futures balance fetch error: {e}")
+        return {
+            'available_balance': 0,
+            'frozen_balance': 0,
+            'equity': 0,
+            'unrealized_pnl': 0,
+            'open_positions': 0,
+            'error': str(e)
+        }
 
 def calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:
     """Calculate AI position range based on available USDT and profile"""

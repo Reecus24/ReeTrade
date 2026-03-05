@@ -35,9 +35,14 @@ export default function FuturesTab({ token, settings, onSettingsUpdate }) {
         headers: { Authorization: `Bearer ${token}` }
       });
       setFuturesStatus(res.data);
-      setError(null);
+      // Check for error in response (not HTTP error)
+      if (res.data?.error) {
+        setError(res.data.error);
+      } else {
+        setError(null);
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Fehler beim Laden des Futures-Status');
+      setError(err.response?.data?.detail || err.response?.data?.error || 'Fehler beim Laden des Futures-Status');
     } finally {
       setLoading(false);
     }

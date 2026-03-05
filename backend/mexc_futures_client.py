@@ -160,8 +160,17 @@ class MexcFuturesClient:
     
     async def get_all_contracts(self) -> List[Dict]:
         """Get all available futures contracts"""
-        result = await self._request("GET", "/api/v1/contract/detail")
-        return result if isinstance(result, list) else []
+        try:
+            result = await self._request("GET", "/api/v1/contract/detail")
+            if isinstance(result, list):
+                return result
+            elif isinstance(result, dict):
+                # Sometimes the API returns {data: [...]}
+                return result.get('data', [])
+            return []
+        except Exception as e:
+            logger.error(f"get_all_contracts error: {e}")
+            return []
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get ticker data for a symbol"""
@@ -200,13 +209,20 @@ class MexcFuturesClient:
     
     async def get_account_asset(self, currency: str = "USDT") -> Dict[str, Any]:
         """Get specific asset balance"""
-        result = await self._request(
-            "GET", 
-            "/api/v1/private/account/asset",
-            {"currency": currency},
-            signed=True
-        )
-        return result
+        try:
+            result = await self._request(
+                "GET", 
+                "/api/v1/private/account/asset",
+                {"currency": currency},
+                signed=True
+            )
+            # Handle different response formats
+            if isinstance(result, dict):
+                return result
+            return {"availableBalance": 0, "frozenBalance": 0, "equity": 0}
+        except Exception as e:
+            logger.error(f"get_account_asset error: {e}")
+            return {"availableBalance": 0, "frozenBalance": 0, "equity": 0, "error": str(e)}
     
     # ============ PRIVATE ENDPOINTS (Positions) ============
     

@@ -6,7 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot, Brain, Zap
+  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot, Brain, Zap,
+  TrendingUp
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -307,54 +308,94 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               ) : balance ? (
                 <>
-                  {/* Main Stats - 3 große Karten */}
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="p-4 bg-green-950/30 border border-green-900/50 rounded-lg">
-                      <div className="text-xs text-green-400 mb-1">💰 USDT Frei</div>
-                      <div className="text-2xl font-bold font-mono text-green-400">
-                        {formatCurrency(balance.budget?.usdt_free || balance.cash || 0)}
-                      </div>
-                      <div className="text-xs text-zinc-500 mt-1">Verfügbar zum Handeln</div>
+                  {/* SPOT Wallet */}
+                  <div className="mb-4">
+                    <div className="text-xs text-green-400 mb-2 flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" /> SPOT WALLET
                     </div>
-                    <div className="p-4 bg-purple-950/30 border border-purple-900/50 rounded-lg">
-                      <div className="text-xs text-purple-400 mb-1">📊 Investiert</div>
-                      <div className="text-2xl font-bold font-mono text-purple-400">
-                        {formatCurrency(balance.invested_value || balance.budget?.used_budget || 0)}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-4 bg-green-950/30 border border-green-900/50 rounded-lg">
+                        <div className="text-xs text-green-400 mb-1">💰 USDT Frei</div>
+                        <div className="text-2xl font-bold font-mono text-green-400">
+                          {formatCurrency(balance.budget?.usdt_free || balance.cash || 0)}
+                        </div>
+                        <div className="text-xs text-zinc-500 mt-1">Verfügbar zum Handeln</div>
                       </div>
-                      <div className="text-xs text-zinc-500 mt-1">In {balance.open_positions_count || 0} Positionen</div>
-                    </div>
-                    <div className="p-4 bg-blue-950/30 border border-blue-900/50 rounded-lg">
-                      <div className="text-xs text-blue-400 mb-1">🏦 Gesamt Portfolio</div>
-                      <div className="text-2xl font-bold font-mono text-white">
-                        {formatCurrency((balance.budget?.usdt_free || balance.cash || 0) + (balance.invested_value || balance.budget?.used_budget || 0))}
+                      <div className="p-4 bg-purple-950/30 border border-purple-900/50 rounded-lg">
+                        <div className="text-xs text-purple-400 mb-1">📊 Investiert</div>
+                        <div className="text-2xl font-bold font-mono text-purple-400">
+                          {formatCurrency(balance.invested_value || balance.budget?.used_budget || 0)}
+                        </div>
+                        <div className="text-xs text-zinc-500 mt-1">In {balance.open_positions_count || 0} Positionen</div>
                       </div>
-                      <div className={`text-xs mt-1 ${(balance.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        PnL: {(balance.total_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(balance.total_pnl || 0)} ({(balance.total_pnl_pct || 0) >= 0 ? '+' : ''}{(balance.total_pnl_pct || 0).toFixed(2)}%)
+                      <div className="p-4 bg-blue-950/30 border border-blue-900/50 rounded-lg">
+                        <div className="text-xs text-blue-400 mb-1">🏦 Gesamt SPOT</div>
+                        <div className="text-2xl font-bold font-mono text-white">
+                          {formatCurrency((balance.budget?.usdt_free || balance.cash || 0) + (balance.invested_value || balance.budget?.used_budget || 0))}
+                        </div>
+                        <div className={`text-xs mt-1 ${(balance.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          PnL: {(balance.total_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(balance.total_pnl || 0)}
+                        </div>
                       </div>
                     </div>
                   </div>
                   
-                  {/* Sekundäre Stats */}
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">Reserve</div>
-                      <div className="text-sm font-mono text-blue-400">{formatCurrency(settings.reserve_usdt)}</div>
+                  {/* FUTURES Wallet */}
+                  {settings.futures_enabled && (
+                    <div className="mb-4">
+                      <div className="text-xs text-orange-400 mb-2 flex items-center gap-1">
+                        <Zap className="w-3 h-3" /> FUTURES WALLET
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="p-4 bg-orange-950/30 border border-orange-900/50 rounded-lg">
+                          <div className="text-xs text-orange-400 mb-1">⚡ Margin Frei</div>
+                          <div className="text-2xl font-bold font-mono text-orange-400">
+                            {formatCurrency(balance.futures?.available_balance || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">Verfügbare Margin</div>
+                        </div>
+                        <div className="p-4 bg-red-950/30 border border-red-900/50 rounded-lg">
+                          <div className="text-xs text-red-400 mb-1">🔒 In Positionen</div>
+                          <div className="text-2xl font-bold font-mono text-red-400">
+                            {formatCurrency(balance.futures?.frozen_balance || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">{balance.futures?.open_positions || 0} Futures Pos.</div>
+                        </div>
+                        <div className="p-4 bg-yellow-950/30 border border-yellow-900/50 rounded-lg">
+                          <div className="text-xs text-yellow-400 mb-1">📈 Unrealisiert</div>
+                          <div className={`text-2xl font-bold font-mono ${(balance.futures?.unrealized_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {(balance.futures?.unrealized_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(balance.futures?.unrealized_pnl || 0)}
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">PnL</div>
+                        </div>
+                      </div>
                     </div>
+                  )}
+                  
+                  {/* Quick Stats */}
+                  <div className="grid grid-cols-3 gap-3">
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">Budget (Cap)</div>
-                      <div className="text-sm font-mono text-white">{formatCurrency(settings.trading_budget_usdt)}</div>
-                    </div>
-                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">Positionen</div>
+                      <div className="text-xs text-zinc-500">SPOT Positionen</div>
                       <div className="text-sm font-mono">{balance.open_positions_count || 0} / {balance.ai_max_positions || settings.max_positions}</div>
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
-                      <div className="text-xs text-zinc-500">AI Order Range</div>
+                      <div className="text-xs text-zinc-500">AI Position Range</div>
                       <div className="text-sm font-mono text-purple-400">
                         {settings.trading_mode !== 'manual' && balance?.ai_position_range ? (
                           `${formatCurrency(balance.ai_position_range.min)} - ${formatCurrency(balance.ai_position_range.max)}`
                         ) : (
                           formatCurrency(settings.live_max_order_usdt)
+                        )}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-zinc-900 rounded-lg text-center">
+                      <div className="text-xs text-zinc-500">Gesamt Portfolio</div>
+                      <div className="text-sm font-mono text-white">
+                        {formatCurrency(
+                          (balance.budget?.usdt_free || 0) + 
+                          (balance.invested_value || 0) + 
+                          (balance.futures?.available_balance || 0) + 
+                          (balance.futures?.frozen_balance || 0)
                         )}
                       </div>
                     </div>
@@ -367,49 +408,6 @@ const DashboardPage = ({ onLogout }) => {
                 </div>
               )}
             </div>
-
-            {/* Daily Cap Progress */}
-            {balance?.daily_cap && (
-              <div className="bg-zinc-950 border border-red-900/30 rounded-lg p-4" data-testid="live-daily-cap">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-red-500" />
-                    <span className="text-sm font-medium text-red-500">Daily Trading Cap</span>
-                  </div>
-                  <div className="text-xs text-zinc-500">Reset: 00:00 UTC</div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-400">
-                      Heute gehandelt: <span className="font-mono text-white">{formatCurrency(balance.daily_cap.used)}</span>
-                    </span>
-                    <span className="text-zinc-400">
-                      Limit: <span className="font-mono text-white">{formatCurrency(balance.daily_cap.cap)}</span>
-                    </span>
-                  </div>
-                  <div className="relative h-3 bg-zinc-800 rounded-full overflow-hidden">
-                    <div 
-                      className={`absolute left-0 top-0 h-full rounded-full transition-all ${
-                        (balance.daily_cap.used / balance.daily_cap.cap) >= 0.9 ? 'bg-red-500' : 
-                        (balance.daily_cap.used / balance.daily_cap.cap) >= 0.7 ? 'bg-yellow-500' : 'bg-green-500'
-                      }`}
-                      style={{ width: `${Math.min(100, (balance.daily_cap.used / balance.daily_cap.cap) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className={balance.daily_cap.remaining <= 0 ? 'text-red-400' : 'text-green-400'}>
-                      {balance.daily_cap.remaining <= 0 
-                        ? '⚠️ Tageslimit erreicht!' 
-                        : `${formatCurrency(balance.daily_cap.remaining)} verfügbar`
-                      }
-                    </span>
-                    <span className="text-zinc-500">
-                      {Math.round((balance.daily_cap.used / balance.daily_cap.cap) * 100)}% genutzt
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center mb-6">
