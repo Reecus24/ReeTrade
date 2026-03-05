@@ -46,13 +46,36 @@ class MultiUserTradingWorker:
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
+        
+        # Dedupe für Telegram-Benachrichtigungen
+        self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
+        self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
     
     async def notify_telegram(self, notification_type: str, data: Dict):
-        """Sende Telegram-Benachrichtigung"""
+        """Sende Telegram-Benachrichtigung (mit Dedupe)"""
         if not self.telegram or not self.telegram_chat_id:
             return
         
         try:
+            # Dedupe-Key erstellen
+            symbol = data.get('symbol', '')
+            dedupe_key = f"{notification_type}:{symbol}"
+            
+            # Prüfen ob kürzlich gesendet
+            now = datetime.now(timezone.utc).timestamp()
+            last_sent = self._sent_notifications.get(dedupe_key, 0)
+            
+            if now - last_sent < self._notification_cooldown:
+                logger.debug(f"Telegram notification dedupe: {dedupe_key} (sent {now - last_sent:.0f}s ago)")
+                return
+            
+            # Markieren als gesendet
+            self._sent_notifications[dedupe_key] = now
+            
+            # Alte Einträge aufräumen (älter als 5 Minuten)
+            cutoff = now - 300
+            self._sent_notifications = {k: v for k, v in self._sent_notifications.items() if v > cutoff}
+            
             chat_id = int(self.telegram_chat_id)
             
             if notification_type == 'trade_opened':
@@ -969,6 +992,10 @@ class MultiUserTradingWorker:
         if account and account.open_positions:
             owned_symbols = {pos.symbol for pos in account.open_positions}
         
+        # ADDITIONAL CHECK: Also check _buying_positions to prevent race conditions
+        buying_symbols = {key.split('_')[1] for key in self._buying_positions if '_' in key}
+        owned_symbols = owned_symbols.union(buying_symbols)
+        
         # Calculate effective position size for runtime filtering
         effective_scan_position = effective_position_size if is_ai_mode else settings.live_max_order_usdt
         
@@ -1225,6 +1252,15 @@ class MultiUserTradingWorker:
                     market_type = getattr(candidate_ai, 'market_type', 'spot')
                     use_futures = market_type == 'futures'
                 
+                # FINAL SAFETY CHECK: Double-check we don't already own this symbol
+                current_owned = set()
+                if account and account.open_positions:
+                    current_owned = {pos.symbol for pos in account.open_positions}
+                
+                if symbol in current_owned:
+                    await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol} bereits im Portfolio - Trade übersprungen")
+                    continue
+                
                 if use_futures:
                     # Execute FUTURES trade
                     trade_success = await self.open_futures_position(
@@ -1352,6 +1388,13 @@ class MultiUserTradingWorker:
     ) -> bool:
         """Open a live position on MEXC with optional AI position sizing"""
         try:
+            # SAFETY CHECK: Verify we don't already own this symbol
+            if account and account.open_positions:
+                owned = {pos.symbol for pos in account.open_positions}
+                if symbol in owned:
+                    await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ ABBRUCH: {symbol} bereits im Portfolio!")
+                    return False
+            
             current_price = candidate['current_price']
             stop_loss = candidate['stop_loss']
             take_profit = candidate['take_profit']
