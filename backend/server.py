@@ -1522,12 +1522,13 @@ async def sync_positions_with_mexc(current_user: dict = Depends(get_current_user
 @app.get("/api/metrics/daily_pnl")
 async def get_daily_pnl(
     days: int = 30,
+    market_type: Optional[str] = None,  # "spot" or "futures"
     current_user: dict = Depends(get_current_user)
 ):
-    """Get daily PnL aggregation for chart (LIVE only)"""
+    """Get daily PnL aggregation for chart (LIVE only), optionally filtered by market type"""
     user_id = current_user['user_id']
     
-    daily_data = await db.get_daily_pnl(user_id, mode='live', days=days)
+    daily_data = await db.get_daily_pnl(user_id, mode='live', days=days, market_type=market_type)
     
     # Calculate summary stats
     total_pnl = sum(d['pnl'] for d in daily_data)
@@ -1552,17 +1553,19 @@ async def get_daily_pnl(
 @app.get("/api/trades")
 async def get_trades_history(
     symbol: Optional[str] = None,
+    market_type: Optional[str] = None,  # "spot" or "futures"
     limit: int = 200,
     offset: int = 0,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get paginated trade history (LIVE only)"""
+    """Get paginated trade history (LIVE only), optionally filtered by market type"""
     user_id = current_user['user_id']
     
     trades, total = await db.get_trades_paginated(
         user_id, 
         mode='live',  # Only live trades
         symbol=symbol,
+        market_type=market_type,
         limit=min(limit, 500),
         offset=offset
     )

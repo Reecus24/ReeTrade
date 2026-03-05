@@ -1,70 +1,57 @@
 # ReeTrade Terminal - Product Requirements Document
 
 ## Originale Anforderung
-Ein Full-Stack Trading-Bot für die MEXC Kryptobörse mit:
-- Multi-User-System
-- **KI Learning by Doing** - KI übernimmt nach 10 Trades
-- **SPOT & FUTURES Trading** mit Hebel (Isolated Margin)
-- **Portfolio-basiertes Position Sizing**
-- **Coin-Auswahl** - User wählt Coins
-- Info Tab mit Konzept-Erklärung
+KI-gesteuerter Trading Bot für MEXC mit:
+- **Learning by Doing AI** - KI übernimmt nach 10 Trades
+- **SPOT & FUTURES Trading** (komplett getrennt)
+- **Alles automatisch** - KI setzt Limits, SL/TP selbst
+- Portfolio-basiertes Position Sizing
 
-## Implementierte Features (Stand: 05.03.2026)
+## Implementierte Features (05.03.2026)
 
-### UI Updates ✅
-- [x] **Budget/Reserve ENTFERNT** aus Portfolio-Übersicht
-- [x] **SPOT Wallet** sauber dargestellt
-- [x] **FUTURES Wallet** separat angezeigt (wenn aktiviert)
-- [x] **Daily Cap ENTFERNT** (vereinfacht)
-- [x] **Gesamt Portfolio** Summe (SPOT + FUTURES)
-- [x] **Coin-Auswahl** zeigt alle verfügbaren Coins (~500 SPOT, ~300 FUTURES)
-- [x] **Info Tab** erklärt das komplette Konzept
+### Neue Tab-Struktur ✅
+- **Info Tab als Default** - Öffnet sich beim Start
+- **Settings Tab** - Oben/Links positioniert
+- **SPOT Tab** - Separate History für SPOT Trades
+- **FUTURES Tab** - Separate History + Konto + Positionen
+- **KI Log Tab** - Was die KI gelernt hat
+- **Logs Tab** - System Logs
 
-### Backend Fixes ✅
-- [x] **SPOT Coins Endpoint** verwendet jetzt `ticker_24h` (zuverlässiger)
-- [x] **FUTURES Coins Endpoint** lädt alle Contracts
-- [x] **Futures API robuster** - bessere Fehlerbehandlung
-- [x] **Balance Endpoint** inkludiert Futures-Daten
+### SPOT History ✅
+- Eigene History nur für SPOT Trades
+- PnL Chart getrennt
+- Win Rate nur für SPOT
+
+### FUTURES Tab (komplett) ✅
+- **Futures Konto** - Balance, Margin, PnL
+- **Offene Positionen** - Live mit Liquidationspreis
+- **Futures History** - Alle Long/Short Trades
+- **Einstellungen** - Hebel, Short erlauben
+- **Alles automatisch** - KI setzt SL/TP automatisch
 
 ### KI Learning Engine ✅
-- [x] Erste 10 Trades: Datensammlung
-- [x] Ab Trade 11: KI übernimmt (VETO-Recht)
-- [x] Feedback-Loop: Lernt aus Fehlern
-- [x] KI Log Tab zeigt Lernfortschritt
+- Erste 10 Trades: Datensammlung
+- Ab Trade 11: KI übernimmt
+- Feedback-Loop: Lernt aus Fehlern
+- Gelernte Parameter automatisch angepasst
 
-### SPOT & FUTURES Trading ✅
-- [x] SPOT Trading
-- [x] FUTURES mit Hebel 2x-20x
-- [x] Isolated Margin
-- [x] Long & Short Positionen
-- [x] AI entscheidet SPOT/FUTURES basierend auf Markt-Regime
+### Entfernt ✅
+- Budget/Reserve System
+- Manuelle Limit-Eingabe
+- Daily Cap
 
 ## Offene Aufgaben
 
-### P0 - Deployment
-- [ ] Code auf Hetzner pullen und testen
+### P0
+- [ ] Deployment auf Hetzner
 
-### P2 - Zukünftig
-- [ ] User Management
+### P2
 - [ ] Telegram-Benachrichtigungen
-
-## Changelog
-- **05.03.2026:** ✅ Budget/Reserve aus UI entfernt
-- **05.03.2026:** ✅ SPOT/FUTURES Wallet getrennt angezeigt
-- **05.03.2026:** ✅ Coin-Endpoint verbessert (alle Coins laden)
-- **05.03.2026:** ✅ Futures-API robuster gemacht
-- **05.03.2026:** ✅ Info Tab hinzugefügt
-- **05.03.2026:** ✅ KI in Trading-Loop integriert
-- **05.03.2026:** ✅ Coin-Auswahl im Worker
+- [ ] User Management
 
 ## Deployment
-- **Hetzner Cloud VPS:** 178.104.19.199
-- **Repository:** GitHub (Reecus24/ReeTrade)
-
-### Deploy-Befehle:
 ```bash
-cd /opt/reetrade
-git pull origin main
+cd /opt/reetrade && git pull origin main
 cd backend && source venv/bin/activate && pip install numpy httpx tenacity
 cd ../frontend && npm run build  
 sudo systemctl restart reetrade-backend reetrade-worker

@@ -317,6 +317,7 @@ class Database:
         user_id: str, 
         mode: Optional[str] = None,
         symbol: Optional[str] = None,
+        market_type: Optional[str] = None,  # "spot" or "futures"
         limit: int = 200, 
         offset: int = 0
     ) -> tuple[List[dict], int]:
@@ -328,6 +329,15 @@ class Database:
         if symbol:
             query['symbol'] = symbol
         
+        # Filter by market type based on reason field
+        if market_type == 'futures':
+            query['reason'] = {'$regex': '\\[FUTURES', '$options': 'i'}
+        elif market_type == 'spot':
+            query['$or'] = [
+                {'reason': {'$not': {'$regex': '\\[FUTURES', '$options': 'i'}}},
+                {'reason': {'$exists': False}}
+            ]
+        
         # Get total count
         total = await self.trades.count_documents(query)
         
@@ -338,8 +348,10 @@ class Database:
         result = []
         for trade in trades:
             trade.pop('_id', None)
-            if isinstance(trade['ts'], str):
+            if isinstance(trade.get('ts'), str):
                 trade['ts'] = datetime.fromisoformat(trade['ts']).isoformat()
+            elif hasattr(trade.get('ts'), 'isoformat'):
+                trade['ts'] = trade['ts'].isoformat()
             result.append(trade)
         
         return result, total
@@ -348,7 +360,8 @@ class Database:
         self, 
         user_id: str, 
         mode: Optional[str] = None,
-        days: int = 30
+        days: int = 30,
+        market_type: Optional[str] = None  # "spot" or "futures"
     ) -> List[dict]:
         """Aggregate PnL by day for the last N days"""
         # Calculate date range
@@ -362,6 +375,15 @@ class Database:
         }
         if mode:
             query['mode'] = mode
+        
+        # Filter by market type
+        if market_type == 'futures':
+            query['reason'] = {'$regex': '\\[FUTURES', '$options': 'i'}
+        elif market_type == 'spot':
+            query['$or'] = [
+                {'reason': {'$not': {'$regex': '\\[FUTURES', '$options': 'i'}}},
+                {'reason': {'$exists': False}}
+            ]
         
         # Get all relevant trades
         cursor = self.trades.find(query)

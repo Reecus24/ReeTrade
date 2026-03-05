@@ -438,16 +438,19 @@ const DashboardPage = ({ onLogout }) => {
           />
         )}
 
-        {/* Sub-Tabs - IMMER anzeigen, nicht nur wenn live_confirmed */}
-        <Tabs defaultValue={settings.live_confirmed ? "history" : "settings"} className="w-full mt-6">
-          <TabsList className="bg-zinc-950 border border-red-900/30">
+        {/* Sub-Tabs - Neue Struktur */}
+        <Tabs defaultValue="info" className="w-full mt-6">
+          <TabsList className="bg-zinc-950 border border-red-900/30 flex-wrap">
+            <TabsTrigger value="settings" className="data-[state=active]:text-blue-500">
+              <Settings className="w-4 h-4 mr-2" />Settings
+            </TabsTrigger>
             {settings.live_confirmed && (
               <>
-                <TabsTrigger value="history" className="data-[state=active]:text-red-500">
-                  <History className="w-4 h-4 mr-2" />History
+                <TabsTrigger value="spot" className="data-[state=active]:text-green-500">
+                  <TrendingUp className="w-4 h-4 mr-2" />SPOT
                 </TabsTrigger>
                 <TabsTrigger value="futures" className="data-[state=active]:text-yellow-500">
-                  <Zap className="w-4 h-4 mr-2" />Futures
+                  <Zap className="w-4 h-4 mr-2" />FUTURES
                 </TabsTrigger>
                 <TabsTrigger value="ki" className="data-[state=active]:text-purple-500">
                   <Brain className="w-4 h-4 mr-2" />KI Log
@@ -457,17 +460,17 @@ const DashboardPage = ({ onLogout }) => {
                 </TabsTrigger>
               </>
             )}
-            <TabsTrigger value="settings" className="data-[state=active]:text-red-500">
-              <Settings className="w-4 h-4 mr-2" />Settings
-            </TabsTrigger>
-            <TabsTrigger value="info" className="data-[state=active]:text-blue-500">
+            <TabsTrigger value="info" className="data-[state=active]:text-cyan-500">
               <Info className="w-4 h-4 mr-2" />Info
             </TabsTrigger>
           </TabsList>
           <div className="mt-4">
+            <TabsContent value="settings"><SettingsTab /></TabsContent>
             {settings.live_confirmed && (
               <>
-                <TabsContent value="history"><TradesTab /></TabsContent>
+                <TabsContent value="spot">
+                  <TradesTab marketType="spot" />
+                </TabsContent>
                 <TabsContent value="futures">
                   <FuturesTab 
                     token={localStorage.getItem('auth_token')}
@@ -479,7 +482,6 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
               </>
             )}
-            <TabsContent value="settings"><SettingsTab /></TabsContent>
             <TabsContent value="info"><InfoTab /></TabsContent>
           </div>
         </Tabs>

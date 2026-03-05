@@ -31,7 +31,7 @@ const getAuthHeaders = () => {
   return { headers: { Authorization: `Bearer ${token}` } };
 };
 
-const TradesTab = () => {
+const TradesTab = ({ marketType = 'spot' }) => {
   const [trades, setTrades] = useState([]);
   const [dailyPnl, setDailyPnl] = useState([]);
   const [pnlSummary, setPnlSummary] = useState(null);
@@ -43,12 +43,16 @@ const TradesTab = () => {
   
   const [filterSymbol, setFilterSymbol] = useState('all');
   const [chartDays, setChartDays] = useState(30);
+  
+  const isSpot = marketType === 'spot';
+  const tabColor = isSpot ? 'green' : 'orange';
 
   const fetchTrades = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         limit: limit.toString(),
-        offset: offset.toString()
+        offset: offset.toString(),
+        market_type: marketType
       });
       if (filterSymbol !== 'all') params.append('symbol', filterSymbol);
       
@@ -58,12 +62,12 @@ const TradesTab = () => {
     } catch (error) {
       console.error('Trades fetch error:', error);
     }
-  }, [filterSymbol, offset]);
+  }, [filterSymbol, offset, marketType]);
 
   const fetchDailyPnl = useCallback(async () => {
     try {
       const response = await axios.get(
-        `${BACKEND_URL}/api/metrics/daily_pnl?days=${chartDays}`,
+        `${BACKEND_URL}/api/metrics/daily_pnl?days=${chartDays}&market_type=${marketType}`,
         getAuthHeaders()
       );
       setDailyPnl(response.data.data || []);
@@ -71,7 +75,7 @@ const TradesTab = () => {
     } catch (error) {
       console.error('PnL fetch error:', error);
     }
-  }, [chartDays]);
+  }, [chartDays, marketType]);
 
   const fetchSymbols = async () => {
     try {
@@ -108,27 +112,41 @@ const TradesTab = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid={`trades-tab-${marketType}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className={`text-xl font-bold flex items-center gap-2 text-${tabColor}-500`}>
+          {isSpot ? (
+            <><TrendingUp className="w-5 h-5" /> SPOT History</>
+          ) : (
+            <><Activity className="w-5 h-5" /> FUTURES History</>
+          )}
+        </h2>
+        <Badge className={`bg-${tabColor}-900/50 text-${tabColor}-400 border-${tabColor}-700`}>
+          {total} Trades
+        </Badge>
+      </div>
+      
       {/* Summary Cards */}
       {pnlSummary && (
         <div className="grid grid-cols-4 gap-4">
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+          <div className={`p-4 bg-zinc-950 border border-${tabColor}-900/30 rounded-lg`}>
             <div className="text-xs text-zinc-500 mb-1">Total PnL ({chartDays}d)</div>
             <div className={`text-2xl font-bold font-mono ${pnlSummary.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {formatCurrency(pnlSummary.total_pnl)}
             </div>
           </div>
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+          <div className={`p-4 bg-zinc-950 border border-${tabColor}-900/30 rounded-lg`}>
             <div className="text-xs text-zinc-500 mb-1">Trades</div>
             <div className="text-2xl font-bold font-mono">{pnlSummary.total_trades}</div>
           </div>
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
-            <div className="text-xs text-zinc-500 mb-1">Win Rate (Tage)</div>
+          <div className={`p-4 bg-zinc-950 border border-${tabColor}-900/30 rounded-lg`}>
+            <div className="text-xs text-zinc-500 mb-1">Win Rate</div>
             <div className={`text-2xl font-bold font-mono ${pnlSummary.win_rate >= 50 ? 'text-green-500' : 'text-red-500'}`}>
               {pnlSummary.win_rate}%
             </div>
           </div>
-          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+          <div className={`p-4 bg-zinc-950 border border-${tabColor}-900/30 rounded-lg`}>
             <div className="text-xs text-zinc-500 mb-1">W/L Tage</div>
             <div className="text-2xl font-bold font-mono">
               <span className="text-green-500">{pnlSummary.winning_days}</span>
