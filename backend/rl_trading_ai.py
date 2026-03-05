@@ -517,16 +517,31 @@ class RLTradingAI:
             # Position-Kontext
             if position:
                 state.has_position = True
-                state.position_pnl_pct = (state.current_price - position.entry_price) / position.entry_price * 100
                 
-                if hasattr(position, 'entry_time') and position.entry_time:
-                    state.position_hold_hours = (datetime.now(timezone.utc) - position.entry_time).total_seconds() / 3600
+                # Handle both Position object and dict
+                if isinstance(position, dict):
+                    entry_price = position.get('entry_price', 0)
+                    entry_time = position.get('entry_time')
+                    stop_loss = position.get('stop_loss')
+                    take_profit = position.get('take_profit')
+                else:
+                    entry_price = position.entry_price
+                    entry_time = getattr(position, 'entry_time', None)
+                    stop_loss = getattr(position, 'stop_loss', None)
+                    take_profit = getattr(position, 'take_profit', None)
                 
-                if position.stop_loss:
-                    state.distance_to_stop_loss = (state.current_price - position.stop_loss) / position.stop_loss * 100
+                if entry_price and entry_price > 0:
+                    state.position_pnl_pct = (state.current_price - entry_price) / entry_price * 100
                 
-                if position.take_profit:
-                    state.distance_to_take_profit = (position.take_profit - state.current_price) / state.current_price * 100
+                if entry_time:
+                    if isinstance(entry_time, datetime):
+                        state.position_hold_hours = (datetime.now(timezone.utc) - entry_time).total_seconds() / 3600
+                
+                if stop_loss and stop_loss > 0:
+                    state.distance_to_stop_loss = (state.current_price - stop_loss) / stop_loss * 100
+                
+                if take_profit and take_profit > 0:
+                    state.distance_to_take_profit = (take_profit - state.current_price) / state.current_price * 100
             
         except Exception as e:
             logger.error(f"Market analysis error: {e}")
