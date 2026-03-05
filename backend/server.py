@@ -2335,3 +2335,37 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
     }
 
 
+
+
+
+@app.post("/api/migrate/remove-tp")
+async def migrate_remove_tp(current_user: dict = Depends(get_current_user)):
+    """
+    Migriere bestehende Positionen: Entferne festes TP, setze nur Notfall-SL
+    """
+    user_id = current_user['user_id']
+    
+    try:
+        live_account = await db.get_live_account(user_id)
+        if not live_account or not live_account.open_positions:
+            return {"message": "Keine offenen Positionen", "updated": 0}
+        
+        updated = 0
+        for pos in live_account.open_positions:
+            # Setze Notfall-SL auf -10% vom Entry
+            pos.stop_loss = pos.entry_price * 0.90
+            # Setze TP auf sehr hohen Wert (wird ignoriert)
+            pos.take_profit = pos.entry_price * 999
+            updated += 1
+        
+        await db.update_live_account(live_account)
+        
+        await db.log(user_id, "INFO", f"[MIGRATION] {updated} Positionen auf KI-Modus umgestellt (kein festes TP)")
+        
+        return {
+            "message": f"{updated} Positionen migriert",
+            "updated": updated,
+            "info": "TP entfernt, nur Notfall-SL bei -10%"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
