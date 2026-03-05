@@ -604,6 +604,11 @@ class RLTradingAI:
     async def should_sell(self, symbol: str, state: MarketState) -> Dict:
         """
         Soll die KI verkaufen?
+        
+        HOCHFREQUENZ-LOGIK:
+        - Bei kleinem Profit → aggressiv verkaufen (Quick Profit!)
+        - Bei Verlust der sich verschlechtert → schnell raus
+        - KI lernt zusätzlich aus allen Entscheidungen
         """
         if not state.has_position:
             return {
@@ -614,6 +619,49 @@ class RLTradingAI:
                 'exploration': False
             }
         
+        pnl = state.position_pnl_pct
+        
+        # ============ HOCHFREQUENZ QUICK-PROFIT REGELN ============
+        # Diese Regeln helfen der KI schneller zu lernen
+        
+        # QUICK PROFIT: Bei +0.5% bis +2% Gewinn → hohe Verkaufswahrscheinlichkeit
+        quick_profit_sell = False
+        quick_profit_reason = ""
+        
+        if pnl >= 0.5:
+            # Je höher der Profit, desto höher die Verkaufswahrscheinlichkeit
+            sell_probability = min(0.8, 0.3 + (pnl * 0.1))  # 30% + 10% pro 1% Gewinn
+            
+            if random.random() < sell_probability:
+                quick_profit_sell = True
+                quick_profit_reason = f"⚡ QUICK PROFIT: +{pnl:.2f}% (Prob: {sell_probability*100:.0f}%)"
+                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
+        
+        # SCHNELLER LOSS-CUT: Bei sinkendem Trend und Verlust → raus
+        elif pnl < -0.5 and state.price_change_1h < -1:
+            # Momentum ist negativ und wir sind im Minus → 60% Verkaufswahrscheinlichkeit
+            if random.random() < 0.6:
+                quick_profit_sell = True
+                quick_profit_reason = f"📉 LOSS-CUT: {pnl:.2f}% bei negativem Momentum ({state.price_change_1h:.1f}%)"
+                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
+        
+        # RSI ÜBERKAUFT: RSI > 70 und im Profit → verkaufen
+        elif pnl > 0 and state.rsi > 70:
+            if random.random() < 0.7:
+                quick_profit_sell = True
+                quick_profit_reason = f"📊 RSI ÜBERKAUFT: RSI={state.rsi:.0f}, PnL: +{pnl:.2f}%"
+                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
+        
+        if quick_profit_sell:
+            return {
+                'should_sell': True,
+                'confidence': 80,
+                'reasoning': quick_profit_reason,
+                'action': 'SELL',
+                'exploration': False
+            }
+        
+        # ============ RL-KI ENTSCHEIDUNG (lernt dazu) ============
         state_array = state.to_array()
         action = self.brain.choose_action(state_array, can_buy=False, has_position=True)
         
@@ -625,7 +673,7 @@ class RLTradingAI:
         return {
             'should_sell': action == Action.SELL,
             'confidence': confidence,
-            'reasoning': f"RL Decision: {Action.to_string(action)} | Q-Values: {q_values.round(2)} | PnL: {state.position_pnl_pct:.2f}%",
+            'reasoning': f"RL Decision: {Action.to_string(action)} | Q-Values: {q_values.round(2)} | PnL: {pnl:.2f}%",
             'action': Action.to_string(action),
             'exploration': is_exploration
         }
