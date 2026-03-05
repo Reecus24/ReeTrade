@@ -609,7 +609,7 @@ class RLTradingAI:
         
         Die KI entscheidet selbstständig basierend auf:
         - Gelernten Q-Values (was hat in der Vergangenheit funktioniert?)
-        - Exploration (neue Strategien ausprobieren)
+        - Exploration mit PROFIT-BIAS (bei Gewinn eher verkaufen)
         
         Das Reward-System sagt der KI was das Ziel ist:
         → Schnelle profitable Trades = hoher Reward
@@ -632,18 +632,28 @@ class RLTradingAI:
         is_exploration = random.random() < self.brain.epsilon
         
         if is_exploration:
-            # Exploration: Zufällig SELL oder HOLD (50/50)
-            action = Action.SELL if random.random() < 0.5 else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (zufällig) | PnL: {pnl:+.2f}%"
+            # PROFIT-BIAS: Bei Gewinn höhere Wahrscheinlichkeit zu verkaufen
+            # So lernt die KI schneller dass Gewinne mitnehmen = gut
+            if pnl >= 0.5:
+                sell_prob = 0.8  # 80% SELL bei Profit >= 0.5%
+            elif pnl > 0:
+                sell_prob = 0.6  # 60% SELL bei kleinem Profit
+            elif pnl > -1:
+                sell_prob = 0.4  # 40% SELL bei kleinem Verlust
+            else:
+                sell_prob = 0.5  # 50/50 bei größerem Verlust
+            
+            action = Action.SELL if random.random() < sell_prob else Action.HOLD
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (Profit-Bias: {sell_prob*100:.0f}% SELL) | PnL: {pnl:+.2f}%"
+            logger.info(f"[RL] {symbol}: {reason}")
         else:
             # Exploitation: Nutze gelerntes Wissen
             action = Action.SELL if q_values[2] > q_values[0] else Action.HOLD
             reason = f"🧠 KI: {Action.to_string(action)} | Q[SELL]={q_values[2]:.3f} vs Q[HOLD]={q_values[0]:.3f} | PnL: {pnl:+.2f}%"
+            if action == Action.SELL:
+                logger.info(f"[RL] {symbol}: {reason}")
         
         confidence = max(0, min(100, 50 + abs(q_values[2] - q_values[0]) * 30))
-        
-        if action == Action.SELL:
-            logger.info(f"[RL] {symbol}: {reason}")
         
         return {
             'should_sell': action == Action.SELL,

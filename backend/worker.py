@@ -432,9 +432,7 @@ class MultiUserTradingWorker:
                     
                     rl_decision = await self.rl_ai.should_sell(
                         symbol=position.symbol,
-                        state=rl_market_state,
-                        entry_price=position.entry_price,
-                        current_price=current_price
+                        state=rl_market_state
                     )
                     
                     if rl_decision['should_sell']:
