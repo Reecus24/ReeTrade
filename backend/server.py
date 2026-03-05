@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 async def telegram_polling_loop():
     """Polling loop für Telegram Befehle"""
-    global telegram_bot, telegram_link_codes
+    global telegram_bot
     
     if not telegram_bot:
         return
@@ -155,20 +155,21 @@ async def telegram_polling_loop():
 
 async def handle_telegram_link(chat_id: int, code: str) -> str:
     """Handle /link command to connect Telegram account"""
-    global telegram_link_codes
     
-    # Check if code exists and is valid
-    if code not in telegram_link_codes:
+    # Look up code in database
+    link_doc = await db.db.telegram_link_codes.find_one({'code': code.upper()})
+    
+    if not link_doc:
         return "❌ Ungültiger oder abgelaufener Code.\n\nBitte generiere einen neuen Code in der Web-App."
     
-    link_data = telegram_link_codes[code]
-    
     # Check expiration
-    if datetime.now(timezone.utc) > link_data['expires_at']:
-        del telegram_link_codes[code]
+    expires_at = link_doc.get('expires_at')
+    if expires_at and datetime.now(timezone.utc) > expires_at:
+        # Delete expired code
+        await db.db.telegram_link_codes.delete_one({'code': code.upper()})
         return "❌ Code ist abgelaufen.\n\nBitte generiere einen neuen Code in der Web-App."
     
-    user_id = link_data['user_id']
+    user_id = link_doc['user_id']
     
     # Save chat_id to user
     from bson import ObjectId
@@ -177,8 +178,8 @@ async def handle_telegram_link(chat_id: int, code: str) -> str:
         {"$set": {"telegram_chat_id": str(chat_id)}}
     )
     
-    # Remove used code
-    del telegram_link_codes[code]
+    # Delete used code
+    await db.db.telegram_link_codes.delete_one({'code': code.upper()})
     
     # Log
     await db.log(user_id, "INFO", f"Telegram-Konto verknüpft (Chat ID: {str(chat_id)[:5]}...)")
@@ -2079,9 +2080,6 @@ async def send_summary_now(current_user: dict = Depends(get_current_user)):
 
 # ============ TELEGRAM ACCOUNT LINKING ============
 
-# In-memory storage for temporary linking codes (expires after 10 min)
-telegram_link_codes: Dict[str, Dict] = {}
-
 @app.get("/api/telegram/link-code")
 async def get_telegram_link_code(current_user: dict = Depends(get_current_user)):
     """Generate a temporary code for linking Telegram account"""
@@ -2092,18 +2090,24 @@ async def get_telegram_link_code(current_user: dict = Depends(get_current_user))
     # Generate a 6-character alphanumeric code
     code = secrets.token_hex(3).upper()  # e.g., "A1B2C3"
     
-    # Store with expiration (10 minutes)
-    telegram_link_codes[code] = {
-        'user_id': user_id,
-        'created_at': datetime.now(timezone.utc),
-        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=10)
-    }
+    # Store in database with expiration (10 minutes)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
     
-    # Clean up old codes
-    now = datetime.now(timezone.utc)
-    expired = [c for c, v in telegram_link_codes.items() if v['expires_at'] < now]
-    for c in expired:
-        del telegram_link_codes[c]
+    await db.db.telegram_link_codes.update_one(
+        {'user_id': user_id},
+        {'$set': {
+            'code': code,
+            'user_id': user_id,
+            'created_at': datetime.now(timezone.utc),
+            'expires_at': expires_at
+        }},
+        upsert=True
+    )
+    
+    # Clean up old expired codes
+    await db.db.telegram_link_codes.delete_many({
+        'expires_at': {'$lt': datetime.now(timezone.utc)}
+    })
     
     return {
         "code": code,
