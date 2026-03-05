@@ -1333,10 +1333,19 @@ class MultiUserTradingWorker:
             # Log raw MEXC BUY response
             logger.info(f"[MEXC] {symbol} BUY Response: price={order_result.get('price')}, fills={order_result.get('fills', [])}, cummulativeQuoteQty={order_result.get('cummulativeQuoteQty')}")
             
-            # MEXC returns price=0 for MARKET orders, need to calculate from fills or cummulativeQuoteQty
-            avg_price = float(order_result.get('price', 0))
+            # IMPORTANT: For MARKET orders, MEXC returns price=0 or wrong price!
+            # The ONLY reliable way is: cummulativeQuoteQty / executedQty
+            avg_price = 0
             
-            # Method 1: Calculate from fills
+            # Method 1 (BEST): Calculate from cummulativeQuoteQty / executedQty
+            cumm_quote = order_result.get('cummulativeQuoteQty')
+            if cumm_quote is not None and cumm_quote != 'None':
+                cumm_quote = float(cumm_quote)
+                if cumm_quote > 0 and executed_qty > 0:
+                    avg_price = cumm_quote / executed_qty
+                    logger.info(f"[MEXC] {symbol} Entry price from cummulativeQuoteQty: {cumm_quote} / {executed_qty} = ${avg_price:.6f}")
+            
+            # Method 2: Calculate from fills
             if avg_price == 0:
                 fills = order_result.get('fills', [])
                 if fills:
@@ -1344,24 +1353,24 @@ class MultiUserTradingWorker:
                     total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
                     if total_qty > 0:
                         avg_price = total_cost / total_qty
-                        logger.info(f"[MEXC] {symbol} Entry price from fills: ${avg_price}")
+                        logger.info(f"[MEXC] {symbol} Entry price from fills: ${avg_price:.6f}")
             
-            # Method 2: Calculate from cummulativeQuoteQty / executedQty
+            # Method 3: Use price field (often unreliable for MARKET orders)
             if avg_price == 0:
-                cumm_quote = float(order_result.get('cummulativeQuoteQty', 0) or 0)
-                if cumm_quote > 0 and executed_qty > 0:
-                    avg_price = cumm_quote / executed_qty
-                    logger.info(f"[MEXC] {symbol} Entry price from cummulativeQuoteQty: {cumm_quote} / {executed_qty} = ${avg_price}")
+                price_field = order_result.get('price')
+                if price_field and price_field != '0' and price_field != 0:
+                    avg_price = float(price_field)
+                    logger.info(f"[MEXC] {symbol} Entry price from price field: ${avg_price:.6f}")
                     
-            # Fallback: if no fills data, get current ticker price (LAST RESORT)
+            # LAST RESORT: Get ticker price (may be different from execution!)
             if avg_price == 0:
                 try:
                     ticker = await mexc.get_ticker_24h(symbol)
                     avg_price = float(ticker.get('lastPrice', current_price))
-                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to ticker: ${avg_price}")
+                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to ticker (UNRELIABLE!): ${avg_price:.6f}")
                 except Exception:
                     avg_price = current_price
-                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to current_price: ${avg_price}")
+                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to current_price (UNRELIABLE!): ${avg_price:.6f}")
             
             # Recalculate SL/TP based on ACTUAL execution price
             # HOCHFREQUENZ-MODUS: Kein festes TP - KI entscheidet selbst!
@@ -1515,30 +1524,42 @@ class MultiUserTradingWorker:
             
             # Parse result
             executed_qty = float(order_result.get('executedQty', position.qty))
-            actual_exit_price = float(order_result.get('price', 0))
             
             # Log raw MEXC response for debugging
             logger.info(f"[MEXC] {position.symbol} SELL Response: price={order_result.get('price')}, fills={order_result.get('fills', [])}, cummulativeQuoteQty={order_result.get('cummulativeQuoteQty')}")
             
+            # IMPORTANT: For MARKET orders, use cummulativeQuoteQty / executedQty
+            actual_exit_price = 0
+            
+            # Method 1 (BEST): Calculate from cummulativeQuoteQty / executedQty
+            cumm_quote = order_result.get('cummulativeQuoteQty')
+            if cumm_quote is not None and cumm_quote != 'None':
+                cumm_quote = float(cumm_quote)
+                if cumm_quote > 0 and executed_qty > 0:
+                    actual_exit_price = cumm_quote / executed_qty
+                    logger.info(f"[MEXC] {position.symbol} Exit price from cummulativeQuoteQty: {cumm_quote} / {executed_qty} = ${actual_exit_price:.6f}")
+            
+            # Method 2: Calculate from fills
             if actual_exit_price == 0:
-                # Try to get price from fills
                 fills = order_result.get('fills', [])
                 if fills:
                     total_qty = sum(float(f.get('qty', 0)) for f in fills)
                     total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
-                    actual_exit_price = total_cost / total_qty if total_qty > 0 else 0
+                    if total_qty > 0:
+                        actual_exit_price = total_cost / total_qty
+                        logger.info(f"[MEXC] {position.symbol} Exit price from fills: ${actual_exit_price:.6f}")
+            
+            # Method 3: Use price field
+            if actual_exit_price == 0:
+                price_field = order_result.get('price')
+                if price_field and price_field != '0' and price_field != 0:
+                    actual_exit_price = float(price_field)
+                    logger.info(f"[MEXC] {position.symbol} Exit price from price field: ${actual_exit_price:.6f}")
                 
-                # Fallback to cummulativeQuoteQty / executedQty
-                if actual_exit_price == 0:
-                    cumm_quote = float(order_result.get('cummulativeQuoteQty', 0))
-                    if cumm_quote > 0 and executed_qty > 0:
-                        actual_exit_price = cumm_quote / executed_qty
-                        logger.info(f"[MEXC] Using cummulativeQuoteQty: {cumm_quote} / {executed_qty} = {actual_exit_price}")
-                
-                # Final fallback to current ticker price
-                if actual_exit_price == 0:
-                    actual_exit_price = exit_price
-                    logger.warning(f"[MEXC] Could not get actual price, using exit_price: {exit_price}")
+            # Final fallback to current ticker price
+            if actual_exit_price == 0:
+                actual_exit_price = exit_price
+                logger.warning(f"[MEXC] {position.symbol} Exit price FALLBACK (UNRELIABLE!): ${exit_price:.6f}")
             
             # Calculate PnL
             pnl = (actual_exit_price - position.entry_price) * executed_qty
