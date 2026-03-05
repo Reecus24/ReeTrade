@@ -20,6 +20,7 @@ from ki_learning_engine import get_ki_engine
 from smart_exit_engine import SmartExitEngine, check_position_exit, PositionContext
 from telegram_bot import get_telegram_bot
 from ml_trading_model import get_ml_model, MLTradingModel, TradeFeatures
+from rl_trading_ai import get_rl_trading_ai, RLTradingAI, MarketState, Action
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,9 @@ class MultiUserTradingWorker:
         
         # Echte ML Trading KI
         self.ml_model = get_ml_model(db)
+        
+        # Reinforcement Learning KI (echtes Lernen!)
+        self.rl_ai = get_rl_trading_ai(db)
     
     async def notify_telegram(self, notification_type: str, data: Dict, user_id: str = None):
         """Sende Telegram-Benachrichtigung (mit Dedupe) an User-spezifische Chat ID"""
@@ -1220,6 +1224,45 @@ class MultiUserTradingWorker:
                     # Update effective position size from AI V2
                     effective_position_size = ai_decision.position_size_usdt
                 
+                # ============ RL TRADING AI ENTRY CHECK ============
+                # Die RL-KI lernt selbstständig aus Erfahrung
+                try:
+                    # Hole Ticker für RL-Analyse
+                    ticker_data = await mexc.get_ticker_24h(symbol)
+                    
+                    # Analysiere Markt für RL-KI
+                    rl_market_state = await self.rl_ai.analyze_market(
+                        symbol=symbol,
+                        klines=klines_4h,
+                        ticker=ticker_data,
+                        position=None  # Noch keine Position
+                    )
+                    
+                    # Frage RL-KI ob kaufen
+                    rl_decision = await self.rl_ai.should_buy(
+                        symbol=symbol,
+                        state=rl_market_state,
+                        can_afford=(effective_position_size > 0)
+                    )
+                    
+                    # Logge RL-Entscheidung
+                    rl_status = self.rl_ai.get_status()
+                    await self.db.log(user_id, "INFO", 
+                        f"[RL] 🧠 {symbol}: {rl_decision['action']} | "
+                        f"Exploration: {rl_decision['exploration']} | "
+                        f"Trades: {rl_status['total_trades']} | "
+                        f"Win-Rate: {rl_status['win_rate']*100:.1f}%")
+                    
+                    # Wenn RL-KI nicht kaufen will und nicht im Explorations-Modus
+                    if not rl_decision['should_buy'] and not rl_decision['exploration']:
+                        await self.db.log(user_id, "INFO", 
+                            f"[RL] ❌ {symbol}: RL-KI sagt NEIN - {rl_decision['reasoning']}")
+                        continue
+                    
+                except Exception as rl_err:
+                    logger.warning(f"RL Entry check error: {rl_err}")
+                # ============ END RL TRADING AI ============
+                
                 # Only BULLISH for manual mode
                 if not is_ai_mode and regime != "BULLISH":
                     continue
@@ -1626,6 +1669,16 @@ class MultiUserTradingWorker:
                 logger.warning(f"ML snapshot error: {ml_err}")
             # === END ML DATA COLLECTION ===
             
+            # === RL TRADING AI: Starte Episode ===
+            try:
+                ticker_data = await mexc.get_ticker_24h(symbol)
+                rl_state = await self.rl_ai.analyze_market(symbol, klines_4h, ticker_data, None)
+                await self.rl_ai.start_episode(symbol, rl_state, avg_price)
+                await self.db.log(user_id, "INFO", f"[RL] 🎮 Episode gestartet: {symbol}")
+            except Exception as rl_err:
+                logger.warning(f"RL episode start error: {rl_err}")
+            # === END RL TRADING AI ===
+            
             await self.db.log(user_id, "WARNING",
                 f"[LIVE] ✅ ORDER CONFIRMED: {symbol} | Qty: {executed_qty} | Price: ${avg_price:.4f} | Notional: ${actual_notional:.2f}")
             
@@ -1850,6 +1903,32 @@ class MultiUserTradingWorker:
             except Exception as ml_err:
                 logger.warning(f"ML learning error: {ml_err}")
             # ============ END ML MODEL ============
+            
+            # ============ RL TRADING AI: Beende Episode ============
+            try:
+                # Hole finale Marktdaten
+                klines = await mexc.get_klines(position.symbol, "4h", limit=50)
+                ticker = await mexc.get_ticker_24h(position.symbol)
+                final_state = await self.rl_ai.analyze_market(position.symbol, klines, ticker, None)
+                
+                # Beende Episode und lerne
+                await self.rl_ai.end_episode(
+                    symbol=position.symbol,
+                    final_state=final_state,
+                    exit_price=actual_exit_price,
+                    pnl_pct=pnl_pct
+                )
+                
+                rl_status = self.rl_ai.get_status()
+                emoji = "✅" if pnl > 0 else "❌"
+                await self.db.log(user_id, "INFO", 
+                    f"[RL] {emoji} Episode beendet: {position.symbol} | "
+                    f"Win-Rate: {rl_status['win_rate']*100:.1f}% | "
+                    f"Trades: {rl_status['total_trades']} | "
+                    f"Epsilon: {rl_status['epsilon']:.2f}")
+            except Exception as rl_err:
+                logger.warning(f"RL episode end error: {rl_err}")
+            # ============ END RL TRADING AI ============
             
             # Check consecutive losses
             if pnl < 0:

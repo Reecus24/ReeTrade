@@ -2218,3 +2218,25 @@ async def train_ml_model(current_user: dict = Depends(get_current_user)):
         }
 
 
+@app.get("/api/rl/status")
+async def get_rl_status(current_user: dict = Depends(get_current_user)):
+    """Get Reinforcement Learning AI Status"""
+    from rl_trading_ai import get_rl_trading_ai
+    
+    rl_ai = get_rl_trading_ai(db)
+    status = rl_ai.get_status()
+    
+    return {
+        "model_type": status['model_type'],
+        "total_trades": status['total_trades'],
+        "winning_trades": status['winning_trades'],
+        "win_rate": status['win_rate'],
+        "win_rate_pct": f"{status['win_rate']*100:.1f}%",
+        "exploration_pct": status['exploration_pct'],
+        "is_learning": status['is_learning'],
+        "memory_size": status['memory_size'],
+        "active_episodes": status['active_episodes'],
+        "message": f"RL-KI: {status['total_trades']} Trades, {status['win_rate']*100:.1f}% Win-Rate, {status['exploration_pct']:.0f}% Exploration"
+    }
+
+
