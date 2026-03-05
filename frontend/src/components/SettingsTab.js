@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, RefreshCw, Check, MessageCircle, Link, Unlink, Copy, Zap
+  Key, Search, Coins, TrendingUp, RefreshCw, Check, MessageCircle, Link, Unlink, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,8 +28,8 @@ const SettingsTab = () => {
   
   // Telegram Linking State
   const [telegramLinked, setTelegramLinked] = useState(false);
-  const [telegramLinkCode, setTelegramLinkCode] = useState(null);
-  const [generatingCode, setGeneratingCode] = useState(false);
+  const [telegramLinkCode, setTelegramLinkCode] = useState('');  // User input code from Telegram
+  const [linkingTelegram, setLinkingTelegram] = useState(false);
   
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
@@ -92,23 +92,24 @@ const SettingsTab = () => {
     } catch (error) {}
   };
 
-  const generateLinkCode = async () => {
-    setGeneratingCode(true);
-    try {
-      const response = await axios.get(`${BACKEND_URL}/api/telegram/link-code`, getAuthHeaders());
-      setTelegramLinkCode(response.data);
-      toast.success('CODE GENERIERT');
-    } catch (error) {
-      toast.error('FEHLER BEIM GENERIEREN');
-    } finally {
-      setGeneratingCode(false);
+  const linkTelegramWithCode = async () => {
+    if (!telegramLinkCode.trim()) {
+      toast.error('Bitte Code eingeben');
+      return;
     }
-  };
-
-  const copyCodeToClipboard = () => {
-    if (telegramLinkCode?.code) {
-      navigator.clipboard.writeText(`/link ${telegramLinkCode.code}`);
-      toast.success('KOPIERT');
+    
+    setLinkingTelegram(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/link-with-code`, {
+        code: telegramLinkCode.trim()
+      }, getAuthHeaders());
+      setTelegramLinked(true);
+      setTelegramLinkCode('');
+      toast.success('TELEGRAM VERKNÜPFT!');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'FEHLER BEIM VERKNÜPFEN');
+    } finally {
+      setLinkingTelegram(false);
     }
   };
 
@@ -316,62 +317,35 @@ const SettingsTab = () => {
           </div>
         ) : telegramStatus.bot_active ? (
           <div className="space-y-4">
-            <p className="text-xs text-zinc-500 font-mono-cyber">
-              Link your Telegram account for notifications.
+            <p className="text-sm text-zinc-400 font-mono-cyber">
+              1. Öffne <strong className="text-purple-400">@ReeTrade_Bot</strong> in Telegram
+            </p>
+            <p className="text-sm text-zinc-400 font-mono-cyber">
+              2. Sende <code className="text-cyan-400">/link</code> um einen Code zu erhalten
+            </p>
+            <p className="text-sm text-zinc-400 font-mono-cyber">
+              3. Gib den Code hier ein:
             </p>
             
-            {!telegramLinkCode ? (
+            <div className="flex gap-2">
+              <Input
+                value={telegramLinkCode}
+                onChange={(e) => setTelegramLinkCode(e.target.value.toUpperCase())}
+                placeholder="CODE EINGEBEN"
+                className="flex-1 bg-black/50 border-purple-500/30 text-purple-300 font-mono text-lg tracking-widest text-center"
+                maxLength={6}
+                data-testid="telegram-code-input"
+              />
               <Button 
-                onClick={generateLinkCode}
-                disabled={generatingCode}
-                className="w-full cyber-btn"
-                data-testid="generate-link-code-btn"
+                onClick={linkTelegramWithCode}
+                disabled={linkingTelegram || !telegramLinkCode.trim()}
+                className="cyber-btn bg-purple-500/20 border-purple-500 text-purple-400 hover:bg-purple-500/30"
+                data-testid="link-telegram-btn"
               >
                 <Link className="w-4 h-4 mr-2" />
-                {generatingCode ? 'GENERATING...' : 'LINK TELEGRAM'}
+                {linkingTelegram ? 'LINKING...' : 'VERBINDEN'}
               </Button>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-purple-500/5 border border-purple-500/30">
-                  <p className="text-xs text-zinc-500 font-mono-cyber mb-2">
-                    Send to <strong className="text-purple-400">@ReeTrade_Bot</strong>:
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-3 bg-black border border-purple-500/30 text-lg text-purple-300 font-mono">
-                      /link {telegramLinkCode.code}
-                    </code>
-                    <Button 
-                      onClick={copyCodeToClipboard}
-                      className="cyber-btn h-full"
-                      data-testid="copy-code-btn"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <p className="text-[10px] text-zinc-600 mt-2 font-mono-cyber">
-                    VALID FOR {telegramLinkCode.expires_in_minutes} MINUTES
-                  </p>
-                </div>
-                
-                <div className="flex gap-3">
-                  <Button 
-                    onClick={fetchTelegramLinkStatus}
-                    className="flex-1 cyber-btn"
-                    data-testid="check-link-status-btn"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    CHECK STATUS
-                  </Button>
-                  <Button 
-                    onClick={generateLinkCode}
-                    className="cyber-btn"
-                    data-testid="regenerate-code-btn"
-                  >
-                    NEW CODE
-                  </Button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         ) : (
           <p className="text-xs text-zinc-600 font-mono-cyber">

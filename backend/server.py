@@ -2214,6 +2214,59 @@ async def unlink_telegram(current_user: dict = Depends(get_current_user)):
     return {"message": "Telegram-Konto getrennt", "linked": False}
 
 
+@app.post("/api/telegram/link-with-code")
+async def link_telegram_with_code(
+    data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Link Telegram account using code from Telegram Bot"""
+    user_id = current_user['user_id']
+    code = data.get('code', '').upper().strip()
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="Code ist erforderlich")
+    
+    # Suche Code in DB (generiert von Telegram Bot)
+    link_doc = await db.db.telegram_link_codes.find_one({'code': code})
+    
+    if not link_doc:
+        raise HTTPException(status_code=400, detail="Ungültiger Code. Bitte /link in Telegram eingeben für neuen Code.")
+    
+    # Prüfe ob abgelaufen
+    expires_at = link_doc.get('expires_at')
+    if expires_at:
+        now = datetime.now(timezone.utc)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if now > expires_at:
+            await db.db.telegram_link_codes.delete_one({'code': code})
+            raise HTTPException(status_code=400, detail="Code ist abgelaufen. Bitte /link in Telegram für neuen Code.")
+    
+    chat_id = link_doc.get('chat_id')
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Ungültiger Code (keine Chat-ID)")
+    
+    # Verknüpfe User mit Telegram Chat
+    await db.users.update_one(
+        {"_id": __import__('bson').ObjectId(user_id)},
+        {"$set": {"telegram_chat_id": str(chat_id)}}
+    )
+    
+    # Lösche verwendeten Code
+    await db.db.telegram_link_codes.delete_one({'code': code})
+    
+    await db.log(user_id, "INFO", f"Telegram verknüpft (Chat: {chat_id})")
+    
+    # Sende Bestätigung an Telegram
+    if telegram_bot:
+        await telegram_bot.send_message(
+            int(chat_id),
+            "✅ <b>Erfolgreich verknüpft!</b>\n\nDein Telegram ist jetzt mit ReeTrade verbunden.\n\nTippe /help für alle Befehle."
+        )
+    
+    return {"message": "Telegram erfolgreich verknüpft!", "linked": True}
+
+
 
 # ============ ML MODEL STATUS ============
 

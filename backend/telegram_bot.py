@@ -221,6 +221,10 @@ class TelegramBot:
         if cmd == "/start" or cmd == "/help":
             return self._get_help_text()
         
+        # /link braucht keine user_id - generiert Code für diesen Chat
+        elif cmd == "/link":
+            return await self._generate_link_code(chat_id)
+        
         elif cmd == "/status":
             return await self._get_status(user_id)
         
@@ -254,11 +258,61 @@ class TelegramBot:
         else:
             return "❓ Unbekannter Befehl. Tippe /help für alle Befehle."
     
+    async def _generate_link_code(self, chat_id: int) -> str:
+        """Generiere einen Link-Code für diesen Telegram Chat"""
+        import random
+        import string
+        from datetime import datetime, timezone, timedelta
+        
+        if not self.db:
+            return "❌ Datenbank nicht verfügbar"
+        
+        # Prüfe ob dieser Chat bereits verknüpft ist
+        existing_user = await self.db.users.find_one({"telegram_chat_id": str(chat_id)})
+        if existing_user:
+            return f"""
+✅ <b>Bereits verknüpft!</b>
+
+Dein Telegram ist bereits mit deinem ReeTrade Account verbunden.
+
+Alle Befehle sind verfügbar. Tippe /help für die Liste.
+"""
+        
+        # Generiere 6-stelligen Code
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        
+        # Speichere in DB (gültig für 10 Minuten)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        
+        await self.db.db.telegram_link_codes.delete_many({"chat_id": str(chat_id)})  # Alte Codes löschen
+        await self.db.db.telegram_link_codes.insert_one({
+            "code": code,
+            "chat_id": str(chat_id),
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc)
+        })
+        
+        return f"""
+🔗 <b>VERKNÜPFUNGS-CODE</b>
+
+Dein Code: <code>{code}</code>
+
+<b>So gehts:</b>
+1. Öffne ReeTrade im Browser
+2. Gehe zu ⚙️ Settings
+3. Gib den Code bei "Telegram verbinden" ein
+
+⏱ Code gültig für 10 Minuten.
+"""
+    
     def _get_help_text(self) -> str:
         return """
 🤖 <b>ReeTrade Terminal Bot</b>
 
 <b>Verfügbare Befehle:</b>
+
+🔗 <b>Verknüpfung</b>
+/link - Code generieren für Website-Verknüpfung
 
 📊 <b>Status & Info</b>
 /status - Offene Positionen
