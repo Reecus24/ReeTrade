@@ -341,7 +341,7 @@ const DashboardPage = ({ onLogout }) => {
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
                       <div className="text-xs text-zinc-500">Positionen</div>
-                      <div className="text-sm font-mono">{balance.open_positions_count || 0} / {settings.max_positions}</div>
+                      <div className="text-sm font-mono">{balance.open_positions_count || 0} / {balance.ai_max_positions || settings.max_positions}</div>
                     </div>
                     <div className="p-2 bg-zinc-900 rounded-lg text-center">
                       <div className="text-xs text-zinc-500">AI Order Range</div>

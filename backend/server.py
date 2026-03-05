@@ -855,6 +855,8 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'remaining': round(daily_remaining, 2)
             },
             'open_positions_count': actual_positions_count,
+            # AI max positions based on profile
+            'ai_max_positions': get_ai_max_positions(settings),
             # AI Position Range based on available USDT
             'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value)
         }
@@ -865,6 +867,18 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             status_code=502,
             detail=f"Failed to fetch MEXC balance: {str(e)}"
         )
+
+def get_ai_max_positions(settings) -> int:
+    """Get max positions based on AI profile"""
+    from ai_engine_v2 import TradingMode, RISK_PROFILES_V2
+    
+    trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
+    
+    if trading_mode == TradingMode.MANUAL:
+        return settings.max_positions or 3
+    
+    profile = RISK_PROFILES_V2.get(trading_mode, {})
+    return profile.get('max_positions', settings.max_positions or 3)
 
 def calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:
     """Calculate AI position range based on available USDT and profile"""
