@@ -297,8 +297,16 @@ class QLearningBrain:
                 )
         
         # Decay Exploration
+        old_epsilon = self.epsilon
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
         self.training_episodes += 1
+        
+        # Log Lernfortschritt alle 10 Episoden
+        if self.training_episodes % 10 == 0:
+            logger.info(f"[RL] 🎓 LERNFORTSCHRITT:")
+            logger.info(f"[RL]    → Episoden: {self.training_episodes}")
+            logger.info(f"[RL]    → Exploration: {old_epsilon*100:.1f}% → {self.epsilon*100:.1f}%")
+            logger.info(f"[RL]    → Die KI verlässt sich jetzt zu {(1-self.epsilon)*100:.1f}% auf gelerntes Wissen")
     
     def record_trade_result(self, reward: float, was_profitable: bool):
         """Zeichne Trade-Ergebnis auf"""
@@ -577,6 +585,13 @@ class RLTradingAI:
         
         is_exploration = random.random() < self.brain.epsilon
         
+        # Log die Entscheidungsgrundlage
+        logger.info(f"[RL] 🔍 ENTRY-ANALYSE {symbol}:")
+        logger.info(f"[RL]    → Q-Werte: HOLD={q_values[0]:.3f}, BUY={q_values[1]:.3f}, SELL={q_values[2]:.3f}")
+        logger.info(f"[RL]    → Beste Action: {Action.to_string(action)} (Q={q_values[action]:.3f})")
+        logger.info(f"[RL]    → Exploration: {'JA (zufällig)' if is_exploration else 'NEIN (gelernt)'}")
+        logger.info(f"[RL]    → Bisherige Erfahrung: {self.brain.total_trades} Trades, {self.brain.win_rate*100:.1f}% Win-Rate")
+        
         return {
             'should_buy': action == Action.BUY,
             'confidence': confidence,
@@ -686,6 +701,15 @@ class RLTradingAI:
         
         emoji = "✅" if pnl_pct > 0 else "❌"
         logger.info(f"[RL] {emoji} Episode beendet: {symbol} | PnL: {pnl_pct:.2f}% | Reward: {reward:.2f} | Win-Rate: {self.brain.win_rate:.1%}")
+        
+        # Detailliertes Lern-Log
+        logger.info(f"[RL] 📊 LERNSTATUS nach {symbol}:")
+        logger.info(f"[RL]    → Gesamte Trades: {self.brain.total_trades}")
+        logger.info(f"[RL]    → Gewonnen: {self.brain.winning_trades} ({self.brain.win_rate*100:.1f}%)")
+        logger.info(f"[RL]    → Gesamt-Reward: {self.brain.total_reward:.2f}")
+        logger.info(f"[RL]    → Exploration: {self.brain.epsilon*100:.1f}% (sinkt mit Erfahrung)")
+        logger.info(f"[RL]    → Erfahrungen im Speicher: {len(self.brain.memory)}")
+        logger.info(f"[RL]    → Training-Episoden: {self.brain.training_episodes}")
     
     def get_status(self) -> Dict:
         """Hole KI-Status"""
