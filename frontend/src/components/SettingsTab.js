@@ -4,10 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, TrendingDown, RefreshCw, Check, X, MessageCircle, Link, Unlink, Copy
+  Key, Search, Coins, TrendingUp, RefreshCw, Check, MessageCircle, Link, Unlink, Copy, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,12 +21,9 @@ const SettingsTab = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mexcKeys, setMexcKeys] = useState({ api_key: '', api_secret: '' });
-  const [futuresKeys, setFuturesKeys] = useState({ api_key: '', api_secret: '' });
   const [keysConnected, setKeysConnected] = useState(false);
   const [spotConnected, setSpotConnected] = useState(false);
-  const [futuresConnected, setFuturesConnected] = useState(false);
   const [showKeysInput, setShowKeysInput] = useState(false);
-  const [showFuturesKeysInput, setShowFuturesKeysInput] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState({ configured: false, bot_active: false });
   
   // Telegram Linking State
@@ -37,13 +33,9 @@ const SettingsTab = () => {
   
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
-  const [availableFuturesCoins, setAvailableFuturesCoins] = useState([]);
   const [selectedSpotCoins, setSelectedSpotCoins] = useState([]);
-  const [selectedFuturesCoins, setSelectedFuturesCoins] = useState([]);
   const [spotSelectAll, setSpotSelectAll] = useState(true);
-  const [futuresSelectAll, setFuturesSelectAll] = useState(true);
   const [spotSearch, setSpotSearch] = useState('');
-  const [futuresSearch, setFuturesSearch] = useState('');
   const [loadingCoins, setLoadingCoins] = useState(false);
   
   // Settings
@@ -70,9 +62,7 @@ const SettingsTab = () => {
       const response = await axios.get(`${BACKEND_URL}/api/settings`, getAuthHeaders());
       setSettings(response.data);
       setSelectedSpotCoins(response.data.selected_spot_coins || []);
-      setSelectedFuturesCoins(response.data.selected_futures_coins || []);
       setSpotSelectAll(response.data.spot_trade_all !== false);
-      setFuturesSelectAll(response.data.futures_trade_all !== false);
     } catch (error) {
       console.error('Settings fetch error:', error);
     } finally {
@@ -85,7 +75,6 @@ const SettingsTab = () => {
       const response = await axios.get(`${BACKEND_URL}/api/keys/mexc/status`, getAuthHeaders());
       setKeysConnected(response.data.connected);
       setSpotConnected(response.data.spot_connected || response.data.connected);
-      setFuturesConnected(response.data.futures_connected || false);
     } catch (error) {}
   };
 
@@ -108,9 +97,9 @@ const SettingsTab = () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/telegram/link-code`, getAuthHeaders());
       setTelegramLinkCode(response.data);
-      toast.success('Code generiert! Gültig für 10 Minuten.');
+      toast.success('CODE GENERIERT');
     } catch (error) {
-      toast.error('Fehler beim Generieren des Codes');
+      toast.error('FEHLER BEIM GENERIEREN');
     } finally {
       setGeneratingCode(false);
     }
@@ -119,7 +108,7 @@ const SettingsTab = () => {
   const copyCodeToClipboard = () => {
     if (telegramLinkCode?.code) {
       navigator.clipboard.writeText(`/link ${telegramLinkCode.code}`);
-      toast.success('In Zwischenablage kopiert!');
+      toast.success('KOPIERT');
     }
   };
 
@@ -128,18 +117,18 @@ const SettingsTab = () => {
       await axios.post(`${BACKEND_URL}/api/telegram/unlink`, {}, getAuthHeaders());
       setTelegramLinked(false);
       setTelegramLinkCode(null);
-      toast.success('Telegram-Konto getrennt');
+      toast.success('TELEGRAM GETRENNT');
     } catch (error) {
-      toast.error('Fehler beim Trennen');
+      toast.error('FEHLER');
     }
   };
 
   const testTelegram = async () => {
     try {
       await axios.post(`${BACKEND_URL}/api/telegram/test`, {}, getAuthHeaders());
-      toast.success('Test-Nachricht gesendet! Prüfe Telegram.');
+      toast.success('TEST GESENDET');
     } catch (error) {
-      toast.error('Telegram-Test fehlgeschlagen');
+      toast.error('TEST FEHLGESCHLAGEN');
     }
   };
 
@@ -148,10 +137,8 @@ const SettingsTab = () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/coins/available`, getAuthHeaders());
       setAvailableSpotCoins(response.data.spot_coins || []);
-      setAvailableFuturesCoins(response.data.futures_coins || []);
     } catch (error) {
       console.error('Coins fetch error:', error);
-      toast.error('Fehler beim Laden der Coins');
     } finally {
       setLoadingCoins(false);
     }
@@ -159,37 +146,18 @@ const SettingsTab = () => {
 
   const handleSaveKeys = async () => {
     if (!mexcKeys.api_key || !mexcKeys.api_secret) {
-      toast.error('Bitte beide Keys eingeben');
+      toast.error('BEIDE KEYS ERFORDERLICH');
       return;
     }
     setSaving(true);
     try {
       await axios.post(`${BACKEND_URL}/api/keys/mexc`, mexcKeys, getAuthHeaders());
-      toast.success('MEXC SPOT Keys gespeichert');
+      toast.success('MEXC KEYS GESPEICHERT');
       setMexcKeys({ api_key: '', api_secret: '' });
       setShowKeysInput(false);
       fetchKeysStatus();
     } catch (error) {
-      toast.error('Fehler beim Speichern');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveFuturesKeys = async () => {
-    if (!futuresKeys.api_key || !futuresKeys.api_secret) {
-      toast.error('Bitte beide Futures Keys eingeben');
-      return;
-    }
-    setSaving(true);
-    try {
-      await axios.post(`${BACKEND_URL}/api/keys/mexc/futures`, futuresKeys, getAuthHeaders());
-      toast.success('MEXC FUTURES Keys gespeichert');
-      setFuturesKeys({ api_key: '', api_secret: '' });
-      setShowFuturesKeysInput(false);
-      fetchKeysStatus();
-    } catch (error) {
-      toast.error('Fehler beim Speichern der Futures Keys');
+      toast.error('SPEICHERFEHLER');
     } finally {
       setSaving(false);
     }
@@ -200,15 +168,13 @@ const SettingsTab = () => {
     try {
       await axios.put(`${BACKEND_URL}/api/settings`, {
         selected_spot_coins: spotSelectAll ? [] : selectedSpotCoins,
-        selected_futures_coins: futuresSelectAll ? [] : selectedFuturesCoins,
         spot_trade_all: spotSelectAll,
-        futures_trade_all: futuresSelectAll,
         min_notional_usdt: settings.min_notional_usdt,
         max_positions: settings.max_positions
       }, getAuthHeaders());
-      toast.success('Einstellungen gespeichert');
+      toast.success('EINSTELLUNGEN GESPEICHERT');
     } catch (error) {
-      toast.error('Fehler beim Speichern');
+      toast.error('SPEICHERFEHLER');
     } finally {
       setSaving(false);
     }
@@ -222,56 +188,54 @@ const SettingsTab = () => {
     );
   };
 
-  const toggleFuturesCoin = (coin) => {
-    setSelectedFuturesCoins(prev => 
-      prev.includes(coin) 
-        ? prev.filter(c => c !== coin)
-        : [...prev, coin]
-    );
-  };
-
   const filteredSpotCoins = availableSpotCoins.filter(coin => 
     coin.toLowerCase().includes(spotSearch.toLowerCase())
   );
 
-  const filteredFuturesCoins = availableFuturesCoins.filter(coin => 
-    coin.toLowerCase().includes(futuresSearch.toLowerCase())
-  );
-
   if (loading) {
-    return <div className="p-4 text-center text-zinc-500">Laden...</div>;
+    return (
+      <div className="p-8 text-center">
+        <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-zinc-500 font-mono-cyber text-sm">LOADING...</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6" data-testid="settings-tab">
+      
       {/* MEXC API Keys */}
-      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+      <div className="cyber-panel p-6 box-glow-cyan">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Key className="w-5 h-5 text-blue-500" />
-            MEXC SPOT API Keys
-          </h3>
-          <Badge className={spotConnected ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}>
-            {spotConnected ? 'Verbunden' : 'Nicht konfiguriert'}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
+              <Key className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-cyan-400 tracking-widest uppercase">MEXC API Keys</h3>
+              <p className="text-xs text-zinc-500 font-mono-cyber">SPOT TRADING ACCESS</p>
+            </div>
+          </div>
+          <Badge className={`cyber-badge ${spotConnected ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50'}`}>
+            {spotConnected ? 'CONNECTED' : 'OFFLINE'}
           </Badge>
         </div>
         
         {!showKeysInput ? (
           <Button 
             onClick={() => setShowKeysInput(true)} 
-            variant="outline" 
-            className="w-full"
+            className="w-full cyber-btn"
             data-testid="show-keys-btn"
           >
-            {spotConnected ? 'SPOT Keys aktualisieren' : 'SPOT Keys hinzufügen'}
+            {spotConnected ? 'UPDATE KEYS' : 'ADD KEYS'}
           </Button>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <Input
               placeholder="API Key"
               value={mexcKeys.api_key}
               onChange={(e) => setMexcKeys(prev => ({ ...prev, api_key: e.target.value }))}
-              className="bg-zinc-900 border-zinc-700"
+              className="cyber-input"
               data-testid="api-key-input"
             />
             <Input
@@ -279,262 +243,201 @@ const SettingsTab = () => {
               placeholder="API Secret"
               value={mexcKeys.api_secret}
               onChange={(e) => setMexcKeys(prev => ({ ...prev, api_secret: e.target.value }))}
-              className="bg-zinc-900 border-zinc-700"
+              className="cyber-input"
               data-testid="api-secret-input"
             />
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Button 
                 onClick={handleSaveKeys} 
                 disabled={saving} 
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                className="flex-1 cyber-btn bg-green-500/10 border-green-500 text-green-400 hover:bg-green-500/20"
                 data-testid="save-keys-btn"
               >
-                Speichern
+                SAVE
               </Button>
-              <Button onClick={() => setShowKeysInput(false)} variant="outline">
-                Abbrechen
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* MEXC FUTURES API Keys - Temporarily disabled
-      <div className="p-4 bg-zinc-950 border border-purple-900/50 rounded-lg">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Key className="w-5 h-5 text-purple-500" />
-            MEXC FUTURES API Keys
-            <span className="text-xs text-zinc-500">(separater Key)</span>
-          </h3>
-          <Badge className={futuresConnected ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}>
-            {futuresConnected ? 'Verbunden' : 'Nicht konfiguriert'}
-          </Badge>
-        </div>
-        
-        <p className="text-sm text-zinc-400 mb-3">
-          Für Futures-Trading benötigst du einen separaten API-Key mit <strong>Futures-Berechtigung</strong>.
-        </p>
-        
-        {!showFuturesKeysInput ? (
-          <Button 
-            onClick={() => setShowFuturesKeysInput(true)} 
-            variant="outline" 
-            className="w-full border-purple-800 hover:bg-purple-900/20"
-            data-testid="show-futures-keys-btn"
-          >
-            {futuresConnected ? 'FUTURES Keys aktualisieren' : 'FUTURES Keys hinzufügen'}
-          </Button>
-        ) : (
-          <div className="space-y-3">
-            <Input
-              placeholder="Futures API Key"
-              value={futuresKeys.api_key}
-              onChange={(e) => setFuturesKeys(prev => ({ ...prev, api_key: e.target.value }))}
-              className="bg-zinc-900 border-purple-800"
-              data-testid="futures-api-key-input"
-            />
-            <Input
-              type="password"
-              placeholder="Futures API Secret"
-              value={futuresKeys.api_secret}
-              onChange={(e) => setFuturesKeys(prev => ({ ...prev, api_secret: e.target.value }))}
-              className="bg-zinc-900 border-purple-800"
-              data-testid="futures-api-secret-input"
-            />
-            <div className="flex gap-2">
               <Button 
-                onClick={handleSaveFuturesKeys} 
-                disabled={saving} 
-                className="flex-1 bg-purple-600 hover:bg-purple-700"
-                data-testid="save-futures-keys-btn"
+                onClick={() => setShowKeysInput(false)} 
+                className="cyber-btn bg-red-500/10 border-red-500 text-red-400 hover:bg-red-500/20"
               >
-                Futures Keys speichern
-              </Button>
-              <Button onClick={() => setShowFuturesKeysInput(false)} variant="outline">
-                Abbrechen
+                CANCEL
               </Button>
             </div>
           </div>
         )}
       </div>
-      */}
 
       {/* Telegram Integration */}
-      <div className="p-4 bg-zinc-950 border border-blue-900/50 rounded-lg">
+      <div className="cyber-panel p-6 box-glow-purple">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-blue-400" />
-            Telegram Benachrichtigungen
-          </h3>
-          <Badge className={telegramLinked ? 'bg-green-500/10 text-green-500' : 'bg-zinc-500/10 text-zinc-500'}>
-            {telegramLinked ? 'Verknüpft' : 'Nicht verknüpft'}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+              <MessageCircle className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">Telegram</h3>
+              <p className="text-xs text-zinc-500 font-mono-cyber">NOTIFICATIONS</p>
+            </div>
+          </div>
+          <Badge className={`cyber-badge ${telegramLinked ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/50'}`}>
+            {telegramLinked ? 'LINKED' : 'OFFLINE'}
           </Badge>
         </div>
         
         {telegramLinked ? (
-          <div className="space-y-3">
-            <div className="p-3 bg-green-950/30 border border-green-900/30 rounded-lg">
-              <p className="text-sm text-green-400 flex items-center gap-2">
+          <div className="space-y-4">
+            <div className="p-4 bg-green-500/5 border border-green-500/30">
+              <p className="text-sm text-green-400 flex items-center gap-2 font-mono-cyber">
                 <Check className="w-4 h-4" />
-                Dein Telegram-Konto ist verknüpft!
+                TELEGRAM ACCOUNT LINKED
               </p>
             </div>
             
-            <p className="text-sm text-zinc-400">
-              Du erhältst Benachrichtigungen bei:
-            </p>
-            <ul className="text-sm text-zinc-500 space-y-1">
-              <li>• Trade geöffnet/geschlossen</li>
-              <li>• Stop-Loss / Take-Profit</li>
-              <li>• KI Smart Exit Entscheidungen</li>
-              <li>• Tägliche Zusammenfassung (21:00 Uhr)</li>
-            </ul>
-            <p className="text-sm text-zinc-400 mt-2">
-              <strong>Befehle:</strong> /status, /profit, /balance, /trades, /ki
-            </p>
+            <div className="text-xs text-zinc-500 font-mono-cyber space-y-1">
+              <p>COMMANDS: /status, /profit, /balance, /trades, /ki</p>
+              <p>NOTIFICATIONS: Trade Open/Close, SL/TP, AI Decisions</p>
+            </div>
             
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-3">
               <Button 
                 onClick={testTelegram}
-                variant="outline"
-                size="sm"
+                className="flex-1 cyber-btn"
                 data-testid="test-telegram-btn"
               >
-                Test-Nachricht senden
+                TEST MESSAGE
               </Button>
               <Button 
                 onClick={unlinkTelegram}
-                variant="outline"
-                size="sm"
-                className="text-red-400 border-red-800 hover:bg-red-950"
+                className="cyber-btn bg-red-500/10 border-red-500 text-red-400 hover:bg-red-500/20"
                 data-testid="unlink-telegram-btn"
               >
-                <Unlink className="w-4 h-4 mr-1" />
-                Trennen
+                <Unlink className="w-4 h-4" />
               </Button>
             </div>
           </div>
         ) : telegramStatus.bot_active ? (
           <div className="space-y-4">
-            <p className="text-sm text-zinc-400">
-              Verknüpfe dein Telegram-Konto, um Benachrichtigungen zu erhalten.
+            <p className="text-xs text-zinc-500 font-mono-cyber">
+              Link your Telegram account for notifications.
             </p>
             
             {!telegramLinkCode ? (
               <Button 
                 onClick={generateLinkCode}
                 disabled={generatingCode}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full cyber-btn"
                 data-testid="generate-link-code-btn"
               >
                 <Link className="w-4 h-4 mr-2" />
-                {generatingCode ? 'Generiere...' : 'Telegram verknüpfen'}
+                {generatingCode ? 'GENERATING...' : 'LINK TELEGRAM'}
               </Button>
             ) : (
-              <div className="space-y-3">
-                <div className="p-4 bg-blue-950/50 border border-blue-800 rounded-lg">
-                  <p className="text-sm text-zinc-400 mb-2">
-                    Sende diesen Befehl an <strong>@ReeTrade_Bot</strong> in Telegram:
+              <div className="space-y-4">
+                <div className="p-4 bg-purple-500/5 border border-purple-500/30">
+                  <p className="text-xs text-zinc-500 font-mono-cyber mb-2">
+                    Send to <strong className="text-purple-400">@ReeTrade_Bot</strong>:
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 p-3 bg-zinc-900 rounded font-mono text-lg text-blue-300">
+                    <code className="flex-1 p-3 bg-black border border-purple-500/30 text-lg text-purple-300 font-mono">
                       /link {telegramLinkCode.code}
                     </code>
                     <Button 
                       onClick={copyCodeToClipboard}
-                      variant="outline"
-                      size="sm"
+                      className="cyber-btn h-full"
                       data-testid="copy-code-btn"
                     >
                       <Copy className="w-4 h-4" />
                     </Button>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-2">
-                    Code gültig für {telegramLinkCode.expires_in_minutes} Minuten
+                  <p className="text-[10px] text-zinc-600 mt-2 font-mono-cyber">
+                    VALID FOR {telegramLinkCode.expires_in_minutes} MINUTES
                   </p>
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <Button 
                     onClick={fetchTelegramLinkStatus}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
+                    className="flex-1 cyber-btn"
                     data-testid="check-link-status-btn"
                   >
-                    <RefreshCw className="w-4 h-4 mr-1" />
-                    Status prüfen
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    CHECK STATUS
                   </Button>
                   <Button 
                     onClick={generateLinkCode}
-                    variant="outline"
-                    size="sm"
+                    className="cyber-btn"
                     data-testid="regenerate-code-btn"
                   >
-                    Neuer Code
+                    NEW CODE
                   </Button>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <p className="text-sm text-zinc-500">
-            Telegram ist auf dem Server nicht konfiguriert. 
-            Kontaktiere den Administrator.
+          <p className="text-xs text-zinc-600 font-mono-cyber">
+            TELEGRAM NOT CONFIGURED ON SERVER
           </p>
         )}
       </div>
 
-      {/* Basic Settings */}
-      <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
-        <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Coins className="w-5 h-5 text-yellow-500" />
-          Trading Einstellungen
-        </h3>
-        
-        <div className="grid grid-cols-2 gap-4">
+      {/* Trading Settings */}
+      <div className="cyber-panel p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 flex items-center justify-center bg-yellow-500/20 border border-yellow-500/50">
+            <Coins className="w-5 h-5 text-yellow-400" />
+          </div>
           <div>
-            <label className="text-sm text-zinc-400 mb-1 block">Min Order (USDT)</label>
+            <h3 className="font-cyber text-sm text-yellow-400 tracking-widest uppercase">Trading Config</h3>
+            <p className="text-xs text-zinc-500 font-mono-cyber">SYSTEM PARAMETERS</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MIN ORDER (USDT)</label>
             <Input
               type="number"
               value={settings.min_notional_usdt || 10}
               onChange={(e) => setSettings(prev => ({ ...prev, min_notional_usdt: parseFloat(e.target.value) || 10 }))}
-              className="bg-zinc-800 border-zinc-700 font-mono"
+              className="cyber-input"
               data-testid="min-order-input"
             />
-            <p className="text-xs text-zinc-500 mt-1">Minimale Order-Größe</p>
           </div>
           
           <div>
-            <label className="text-sm text-zinc-400 mb-1 block">Max Positionen</label>
+            <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MAX POSITIONS</label>
             <Input
               type="number"
               value={settings.max_positions || 5}
               onChange={(e) => setSettings(prev => ({ ...prev, max_positions: parseInt(e.target.value) || 5 }))}
-              className="bg-zinc-800 border-zinc-700 font-mono"
+              className="cyber-input"
               data-testid="max-positions-input"
             />
-            <p className="text-xs text-zinc-500 mt-1">Gleichzeitig offene Positionen</p>
           </div>
         </div>
         
-        <div className="mt-4 p-3 bg-blue-950/30 border border-blue-900/30 rounded-lg">
-          <p className="text-sm text-blue-300">
-            💡 <strong>Position Sizing:</strong> Die KI berechnet automatisch die optimale Position als % deines <strong>Gesamt-Portfolios</strong> (nicht mehr vom Budget).
+        <div className="p-4 bg-cyan-500/5 border border-cyan-500/20">
+          <p className="text-xs text-cyan-400 font-mono-cyber">
+            <Zap className="w-3 h-3 inline mr-1" />
+            RL-KI berechnet Position Size automatisch basierend auf Portfolio und Market State
           </p>
         </div>
       </div>
 
       {/* SPOT Coin Selection */}
-      <div className="p-4 bg-zinc-950 border border-green-900/30 rounded-lg">
+      <div className="cyber-panel p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-green-500" />
-            SPOT Coins
-          </h3>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-400">Alle handeln</span>
+            <div className="w-10 h-10 flex items-center justify-center bg-green-500/20 border border-green-500/50">
+              <TrendingUp className="w-5 h-5 text-green-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-green-400 tracking-widest uppercase">SPOT Coins</h3>
+              <p className="text-xs text-zinc-500 font-mono-cyber">TRADABLE ASSETS</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-zinc-500 font-mono-cyber">TRADE ALL</span>
             <Switch
               checked={spotSelectAll}
               onCheckedChange={setSpotSelectAll}
@@ -545,20 +448,19 @@ const SettingsTab = () => {
         
         {!spotSelectAll && (
           <>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-600" />
                 <Input
-                  placeholder="Coin suchen..."
+                  placeholder="SEARCH COIN..."
                   value={spotSearch}
                   onChange={(e) => setSpotSearch(e.target.value)}
-                  className="pl-9 bg-zinc-900 border-zinc-700"
+                  className="cyber-input pl-10"
                   data-testid="spot-search-input"
                 />
               </div>
               <Button 
-                variant="outline" 
-                size="sm"
+                className="cyber-btn"
                 onClick={fetchAvailableCoins}
                 disabled={loadingCoins}
               >
@@ -566,12 +468,12 @@ const SettingsTab = () => {
               </Button>
             </div>
             
-            <ScrollArea className="h-48 border border-zinc-800 rounded-lg p-2">
+            <ScrollArea className="h-48 border border-cyan-500/20 bg-black/50 p-2">
               {loadingCoins ? (
-                <div className="text-center text-zinc-500 py-8">Lade Coins...</div>
+                <div className="text-center text-zinc-600 py-8 font-mono-cyber">LOADING...</div>
               ) : filteredSpotCoins.length === 0 ? (
-                <div className="text-center text-zinc-500 py-8">
-                  {keysConnected ? 'Keine Coins gefunden' : 'Bitte erst API Keys verbinden'}
+                <div className="text-center text-zinc-600 py-8 font-mono-cyber">
+                  {keysConnected ? 'NO COINS FOUND' : 'CONNECT API KEYS FIRST'}
                 </div>
               ) : (
                 <div className="grid grid-cols-4 gap-2">
@@ -579,10 +481,10 @@ const SettingsTab = () => {
                     <div
                       key={coin}
                       onClick={() => toggleSpotCoin(coin)}
-                      className={`p-2 rounded cursor-pointer text-sm font-mono transition-all ${
+                      className={`p-2 cursor-pointer text-xs font-mono transition-all ${
                         selectedSpotCoins.includes(coin)
-                          ? 'bg-green-900/50 border border-green-500 text-green-400'
-                          : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:border-zinc-600'
+                          ? 'bg-green-500/20 border border-green-500 text-green-400'
+                          : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:border-cyan-500/50'
                       }`}
                       data-testid={`spot-coin-${coin}`}
                     >
@@ -596,101 +498,16 @@ const SettingsTab = () => {
               )}
             </ScrollArea>
             
-            <div className="mt-2 text-sm text-zinc-500">
-              {selectedSpotCoins.length} von {availableSpotCoins.length} Coins ausgewählt
-            </div>
+            <p className="mt-2 text-xs text-zinc-600 font-mono-cyber">
+              {selectedSpotCoins.length} / {availableSpotCoins.length} SELECTED
+            </p>
           </>
         )}
         
         {spotSelectAll && (
-          <div className="p-3 bg-green-950/30 rounded-lg text-center">
-            <p className="text-green-400">
-              ✅ Bot handelt mit <strong>ALLEN</strong> verfügbaren SPOT Coins ({availableSpotCoins.length || '~100'})
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* FUTURES Coin Selection */}
-      <div className="p-4 bg-zinc-950 border border-orange-900/30 rounded-lg">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <TrendingDown className="w-5 h-5 text-orange-500" />
-            FUTURES Coins (Hebel)
-          </h3>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-400">Alle handeln</span>
-            <Switch
-              checked={futuresSelectAll}
-              onCheckedChange={setFuturesSelectAll}
-              data-testid="futures-select-all-toggle"
-            />
-          </div>
-        </div>
-        
-        {!futuresSelectAll && (
-          <>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                <Input
-                  placeholder="Coin suchen..."
-                  value={futuresSearch}
-                  onChange={(e) => setFuturesSearch(e.target.value)}
-                  className="pl-9 bg-zinc-900 border-zinc-700"
-                  data-testid="futures-search-input"
-                />
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={fetchAvailableCoins}
-                disabled={loadingCoins}
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingCoins ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-            
-            <ScrollArea className="h-48 border border-zinc-800 rounded-lg p-2">
-              {loadingCoins ? (
-                <div className="text-center text-zinc-500 py-8">Lade Coins...</div>
-              ) : filteredFuturesCoins.length === 0 ? (
-                <div className="text-center text-zinc-500 py-8">
-                  {keysConnected ? 'Keine Futures Coins gefunden' : 'Bitte erst API Keys verbinden'}
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-2">
-                  {filteredFuturesCoins.map(coin => (
-                    <div
-                      key={coin}
-                      onClick={() => toggleFuturesCoin(coin)}
-                      className={`p-2 rounded cursor-pointer text-sm font-mono transition-all ${
-                        selectedFuturesCoins.includes(coin)
-                          ? 'bg-orange-900/50 border border-orange-500 text-orange-400'
-                          : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:border-zinc-600'
-                      }`}
-                      data-testid={`futures-coin-${coin}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span>{coin.replace('_USDT', '')}</span>
-                        {selectedFuturesCoins.includes(coin) && <Check className="w-3 h-3" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-            
-            <div className="mt-2 text-sm text-zinc-500">
-              {selectedFuturesCoins.length} von {availableFuturesCoins.length} Coins ausgewählt
-            </div>
-          </>
-        )}
-        
-        {futuresSelectAll && (
-          <div className="p-3 bg-orange-950/30 rounded-lg text-center">
-            <p className="text-orange-400">
-              ✅ Bot handelt mit <strong>ALLEN</strong> verfügbaren FUTURES Coins ({availableFuturesCoins.length || '~50'})
+          <div className="p-4 bg-green-500/5 border border-green-500/20 text-center">
+            <p className="text-green-400 font-mono-cyber text-sm">
+              RL-KI TRADES ALL AVAILABLE SPOT COINS ({availableSpotCoins.length || '~100'})
             </p>
           </div>
         )}
@@ -700,10 +517,10 @@ const SettingsTab = () => {
       <Button 
         onClick={handleSaveSettings} 
         disabled={saving} 
-        className="w-full bg-blue-600 hover:bg-blue-700"
+        className="w-full cyber-btn bg-cyan-500/10 border-cyan-500 text-cyan-400 hover:bg-cyan-500/20 py-4"
         data-testid="save-settings-btn"
       >
-        {saving ? 'Speichern...' : 'Einstellungen speichern'}
+        {saving ? 'SAVING...' : 'SAVE CONFIGURATION'}
       </Button>
     </div>
   );

@@ -3,14 +3,32 @@
 ## Originale Anforderung
 KI-gesteuerter Trading Bot für MEXC mit:
 - **Vollautomatischer SPOT Trading**
-- **Learning by Doing AI**
-- **Smart Exit Engine**
+- **Reinforcement Learning AI** (Echte Lern-KI)
 - **Telegram Benachrichtigungen**
+- **Cyberpunk UI Design**
 
-## Implementierte Features (05.03.2026)
+## Implementierte Features
+
+### Reinforcement Learning AI (NEU - 2025-12)
+- **Q-Learning basierte KI** die aus jedem Trade lernt
+- **Exploration/Exploitation Balance** - startet mit 100% Exploration
+- **22 Market Features** werden analysiert (RSI, EMA, Volume, etc.)
+- **Aktionen:** BUY, SELL, HOLD
+- **Reward System:** Profit = positive Belohnung, Verlust = negative
+- **Memory System:** Speichert vergangene Trades für Training
+- **Status Endpoint:** `/api/rl/status` zeigt Lernfortschritt
+
+### Cyberpunk UI Design (NEU - 2025-12)
+- **Neon-Farbschema:** Cyan, Magenta, Gelb
+- **Orbitron Font** für Überschriften
+- **Share Tech Mono** für Terminal-Stil
+- **Glow-Effekte** für aktive Elemente
+- **Scanlines** und Grid-Hintergrund
+- **Terminal-Style Logs**
+- **Cyberpunk-Panels** mit Neon-Borders
 
 ### Telegram Integration (Komplett)
-**Bot:** @reetrade_trading_bot
+**Bot:** @ReeTrade_Bot
 
 **Automatische Benachrichtigungen:**
 - 🟢 Trade geöffnet
@@ -18,59 +36,101 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - 🛑 Stop-Loss ausgelöst
 - 🎯 Take-Profit erreicht
 - 🧠 KI Smart Exit Entscheidung
-- 📊 **Tägliche Zusammenfassung um 21:00 Uhr** (NEU)
+- 📊 Tägliche Zusammenfassung um 21:00 Uhr
 
 **Befehle:**
 - `/status` - Offene Positionen
 - `/profit` - Heutiger Profit
-- `/profit_week` - Wochenprofit
-- `/profit_month` - Monatsprofit
 - `/balance` - Wallet-Stand
 - `/trades` - Letzte 5 Trades
 - `/ki` - KI Status & Lernfortschritt
-- `/summary` - Tages-Zusammenfassung jetzt (NEU)
-- `/stop` - Bot pausieren
-- `/resume` - Bot fortsetzen
+- `/link` - Telegram Account verknüpfen
 - `/help` - Hilfe
 
-### Smart Exit Engine
-- Intelligente Verkaufsentscheidungen ohne starre TP/SL
-- Analysiert RSI, Momentum, EMA20, Candlestick-Patterns
-- Kann früher verkaufen bei Trendumkehr
-- Kann länger halten wenn Trade gut läuft
-- Lernfähig
+### Smart Exit Engine (Aktiv)
+- Intelligente Verkaufsentscheidungen
+- Analysiert RSI, Momentum, EMA, Candlestick-Patterns
+- Dient jetzt als **Data Provider** für die RL-KI
 
-### FUTURES deaktiviert
-- Tab und Keys ausgeblendet (kommt später)
+### Deaktivierte Features
+- **FUTURES Trading** - deaktiviert wegen MEXC IP-Block
+- **Alte KI-Modi** (KI Explorer, KI Hyper) - ersetzt durch RL-KI
+
+## Technischer Stack
+- **Frontend:** React + TailwindCSS + shadcn/ui
+- **Backend:** FastAPI + Python
+- **Datenbank:** MongoDB
+- **ML:** scikit-learn (GradientBoostingClassifier)
+- **Deployment:** Hetzner VPS + systemd
+
+## API Endpoints
+
+**Auth:**
+- `POST /api/auth/login`
+- `POST /api/auth/register`
+
+**RL-AI:**
+- `GET /api/rl/status` - RL-KI Status & Metriken
+- `GET /api/ki/stats` - Gelernte Parameter
+
+**Trading:**
+- `GET /api/status` - Bot Status
+- `POST /api/live/start` - Trading starten
+- `POST /api/live/stop` - Trading stoppen
+- `GET /api/account/balance` - Wallet
+- `POST /api/positions/sell` - Position verkaufen
+- `POST /api/positions/sync` - Mit MEXC sync
+
+**Telegram:**
+- `GET /api/telegram/link-code` - Link Code generieren
+- `GET /api/telegram/link-status` - Link Status
+- `POST /api/telegram/test` - Test Nachricht
 
 ## Deployment auf Hetzner
 
 ```bash
-cd /opt/reetrade && git pull
-cd frontend && npm run build && cd ..
-sudo systemctl restart reetrade-backend reetrade-worker
+# Wichtig: Nur reetrade-backend verwenden!
+sudo systemctl stop reetrade-worker && sudo systemctl disable reetrade-worker
+
+cd /opt/reetrade
+git pull
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+sudo systemctl restart reetrade-backend
 ```
 
-**.env Datei:**
-```
-TELEGRAM_BOT_TOKEN=8791012984:AAHWj1EF0YqAZwpH2Cle-H-UwdVq7OaSpyU
-TELEGRAM_CHAT_ID=5642445106
-```
+## Bekannte Issues
 
-## API Endpoints
+### P0 - Kritisch
+- **`_buying_positions` AttributeError** - Bug im Worker, muss auf Server verifiziert werden
+- **Dueling Worker Services** - User muss `reetrade-worker` deaktivieren
 
-**Telegram:**
-- `GET /api/telegram/status` - Status
-- `POST /api/telegram/test` - Test senden
-- `POST /api/telegram/summary` - Zusammenfassung jetzt
+### P1 - Wichtig
+- Telegram Befehle (`/balance`, `/status`) zeigen manchmal falsche Daten
 
 ## Offene Aufgaben
 
 ### P1
-- [x] Tägliche Zusammenfassung um 21:00 Uhr ✅
-- [ ] Smart Exit mit echten Trades verifizieren
+- [ ] `_buying_positions` Bug beheben und verifizieren
+- [ ] RL-KI mit echten Trades testen
+- [ ] Telegram Befehle verifizieren
 
 ### P2 (Zukunft)
+- [ ] Paper Trading Modus für risikofreies KI-Training
+- [ ] RL-Modelle pro User in DB speichern
 - [ ] FUTURES Trading wieder aktivieren
-- [ ] Email-Benachrichtigungen
-- [ ] User Management Admin Tab
+- [ ] History Reset Script ausführen
+
+## Changelog
+
+### 2025-12 - Cyberpunk & RL-KI Update
+- ✅ Reinforcement Learning KI implementiert
+- ✅ Alte KI-Modi deaktiviert und versteckt
+- ✅ Cyberpunk UI Design für alle Komponenten
+- ✅ Login/Register Pages im Cyberpunk-Stil
+- ✅ Dashboard mit Neon-Glow Effekten
+- ✅ Terminal-Style Logs
+- ✅ RL-Status Panel mit Lernfortschritt
+- ✅ Deutsche UI-Texte

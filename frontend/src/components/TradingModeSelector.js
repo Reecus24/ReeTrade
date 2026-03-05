@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Brain, Activity, TrendingUp, Zap, RefreshCw } from 'lucide-react';
+import { Brain, RefreshCw, Zap, TrendingUp, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -13,7 +13,7 @@ const getAuthHeaders = () => {
 };
 
 /**
- * RL-KI Status Panel - Zeigt den Lernstatus der KI an
+ * RL-KI Status Panel - Zeigt den Lernstatus der KI an (Cyberpunk Style)
  */
 const RLStatusPanel = () => {
   const [rlStatus, setRlStatus] = useState(null);
@@ -32,14 +32,14 @@ const RLStatusPanel = () => {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 10000); // Alle 10 Sekunden
+    const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
   }, []);
 
   if (loading || !rlStatus) {
     return (
-      <div className="p-4 bg-zinc-950 border border-purple-900/50 rounded-lg animate-pulse">
-        <div className="h-20 bg-zinc-800 rounded"></div>
+      <div className="cyber-panel p-6 animate-pulse">
+        <div className="h-32 bg-zinc-900/50"></div>
       </div>
     );
   }
@@ -47,90 +47,97 @@ const RLStatusPanel = () => {
   const explorationPct = rlStatus.exploration_pct || 100;
   const learningPct = 100 - explorationPct;
   const winRate = (rlStatus.win_rate || 0) * 100;
+  const totalTrades = rlStatus.total_trades || 0;
 
   return (
-    <div className="p-4 bg-zinc-950 border border-purple-900/50 rounded-lg" data-testid="rl-status-panel">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Brain className="w-5 h-5 text-purple-400" />
-          RL Trading KI
-        </h3>
-        <Badge className={rlStatus.is_learning ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-400'}>
-          {rlStatus.is_learning ? '🧠 Lernt...' : '✅ Trainiert'}
+    <div className="cyber-panel p-6 box-glow-purple" data-testid="rl-status-panel">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+            <Brain className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">
+              Neural Network
+            </h3>
+            <p className="text-xs text-zinc-500 font-mono-cyber">RL TRADING AI</p>
+          </div>
+        </div>
+        <Badge className={`cyber-badge ${rlStatus.is_learning ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-green-500/20 text-green-400 border border-green-500/50'}`}>
+          {rlStatus.is_learning ? 'LEARNING' : 'TRAINED'}
         </Badge>
       </div>
 
-      {/* Lernfortschritt */}
-      <div className="mb-4">
-        <div className="flex justify-between text-sm mb-1">
-          <span className="text-zinc-400">Lernfortschritt</span>
-          <span className="text-purple-400">{learningPct.toFixed(0)}% gelernt</span>
+      {/* Learning Progress */}
+      <div className="mb-6">
+        <div className="flex justify-between text-xs mb-2">
+          <span className="text-zinc-500 font-mono-cyber">NEURAL TRAINING</span>
+          <span className="text-cyan-400 font-mono-cyber">{learningPct.toFixed(0)}%</span>
         </div>
-        <div className="w-full bg-zinc-800 rounded-full h-3">
+        <div className="cyber-progress">
           <div 
-            className="bg-gradient-to-r from-purple-600 to-purple-400 h-3 rounded-full transition-all duration-500"
+            className="cyber-progress-bar"
             style={{ width: `${learningPct}%` }}
-          ></div>
+          />
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
-          {explorationPct.toFixed(0)}% Exploration (probiert neue Strategien)
-        </p>
+        <div className="flex justify-between text-xs mt-2 text-zinc-600">
+          <span>EXPLORATION: {explorationPct.toFixed(0)}%</span>
+          <span>EXPLOITATION: {learningPct.toFixed(0)}%</span>
+        </div>
       </div>
 
-      {/* Statistiken */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="bg-zinc-900 p-3 rounded-lg text-center">
-          <p className="text-2xl font-bold text-white">{rlStatus.total_trades || 0}</p>
-          <p className="text-xs text-zinc-500">Trades</p>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+          <p className="text-2xl font-cyber text-white">{totalTrades}</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">TRADES</p>
         </div>
-        <div className="bg-zinc-900 p-3 rounded-lg text-center">
-          <p className={`text-2xl font-bold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+          <p className={`text-2xl font-cyber ${winRate >= 50 ? 'text-green-400 glow-green' : 'text-red-400'}`}>
             {winRate.toFixed(1)}%
           </p>
-          <p className="text-xs text-zinc-500">Win-Rate</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">WIN RATE</p>
         </div>
-        <div className="bg-zinc-900 p-3 rounded-lg text-center">
-          <p className="text-2xl font-bold text-purple-400">{rlStatus.memory_size || 0}</p>
-          <p className="text-xs text-zinc-500">Erfahrungen</p>
+        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+          <p className="text-2xl font-cyber text-purple-400">{rlStatus.memory_size || 0}</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">MEMORY</p>
         </div>
       </div>
 
-      {/* Aktive Trades */}
+      {/* Active Episodes */}
       {rlStatus.active_episodes && rlStatus.active_episodes.length > 0 && (
-        <div className="bg-zinc-900/50 p-3 rounded-lg">
-          <p className="text-sm text-zinc-400 mb-2">Aktive Positionen:</p>
+        <div className="mt-4 p-3 bg-purple-500/5 border border-purple-500/20">
+          <p className="text-xs text-purple-400 mb-2 font-mono-cyber">ACTIVE POSITIONS:</p>
           <div className="flex flex-wrap gap-2">
             {rlStatus.active_episodes.map(symbol => (
-              <Badge key={symbol} className="bg-purple-900/30 text-purple-300">
+              <span key={symbol} className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs font-mono">
                 {symbol}
-              </Badge>
+              </span>
             ))}
           </div>
         </div>
       )}
 
-      {/* Erklärung */}
-      <div className="mt-4 p-3 bg-purple-950/30 border border-purple-900/30 rounded-lg">
-        <p className="text-xs text-purple-300">
-          <strong>So lernt die KI:</strong> Sie analysiert Marktdaten, trifft Entscheidungen, 
-          und lernt aus dem Ergebnis. Mit jedem Trade wird sie schlauer.
-          {rlStatus.total_trades < 20 && (
-            <span className="block mt-1 text-yellow-400">
-              ⚠️ Noch in der Lernphase ({20 - rlStatus.total_trades} Trades bis zum ersten Training)
-            </span>
-          )}
-        </p>
-      </div>
+      {/* Boot Phase Warning */}
+      {totalTrades < 20 && (
+        <div className="mt-4 p-3 border border-yellow-500/30 bg-yellow-500/5">
+          <p className="text-xs text-yellow-400 font-mono-cyber">
+            <Zap className="w-3 h-3 inline mr-1" />
+            BOOT PHASE: {20 - totalTrades} Trades bis Neural Training aktiviert
+          </p>
+        </div>
+      )}
 
       <Button 
         onClick={fetchStatus} 
         variant="ghost" 
         size="sm" 
-        className="w-full mt-3 text-zinc-500"
+        className="w-full mt-4 text-zinc-600 hover:text-cyan-400 font-mono-cyber text-xs"
         data-testid="refresh-rl-status"
       >
-        <RefreshCw className="w-4 h-4 mr-2" />
-        Aktualisieren
+        <RefreshCw className="w-3 h-3 mr-2" />
+        REFRESH STATUS
       </Button>
     </div>
   );
@@ -138,26 +145,24 @@ const RLStatusPanel = () => {
 
 
 /**
- * Einfacher Trading Mode Selector - Nur RL-KI
+ * Einfacher Trading Mode Selector - Nur RL-KI aktiv, alte Modi deaktiviert
  */
 const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
-  const [rlEnabled, setRlEnabled] = useState(true);
-
   return (
     <div className="space-y-4">
       {/* RL-KI ist immer aktiv */}
-      <div className="p-4 bg-gradient-to-r from-purple-950/50 to-zinc-950 border border-purple-800/50 rounded-lg">
+      <div className="cyber-panel p-4 box-glow-purple">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-900/50 rounded-lg">
-              <Brain className="w-6 h-6 text-purple-400" />
+            <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+              <Brain className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-white">Reinforcement Learning KI</h3>
-              <p className="text-sm text-zinc-400">Lernt selbstständig aus jedem Trade</p>
+              <h3 className="font-cyber text-sm text-white tracking-wider">Reinforcement Learning KI</h3>
+              <p className="text-xs text-zinc-500 font-mono-cyber">Lernt selbstständig aus jedem Trade</p>
             </div>
           </div>
-          <Badge className="bg-green-500/20 text-green-400 text-sm px-3 py-1">
+          <Badge className="cyber-badge bg-green-500/20 text-green-400 border border-green-500/50">
             AKTIV
           </Badge>
         </div>
@@ -165,11 +170,20 @@ const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {
 
       {/* RL Status Panel */}
       <RLStatusPanel />
+
+      {/* Info about disabled modes */}
+      <div className="p-3 border border-zinc-800 bg-zinc-900/30">
+        <p className="text-xs text-zinc-600 font-mono-cyber">
+          <Activity className="w-3 h-3 inline mr-1" />
+          Alte KI-Modi (KI Explorer, KI Hyper) wurden deaktiviert. 
+          Die neue RL-KI lernt durch echte Trades und verbessert sich kontinuierlich.
+        </p>
+      </div>
     </div>
   );
 };
 
-// Leere Komponenten für Kompatibilität
+// Legacy exports for compatibility
 const AIStatusPanel = () => null;
 const AIStatusPanelV2 = () => null;
 

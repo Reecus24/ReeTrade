@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Progress } from './ui/progress';
 import { ScrollArea } from './ui/scroll-area';
-import { Alert, AlertDescription } from './ui/alert';
 import { 
   Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, 
-  BookOpen, Target, Activity, Zap, Clock
+  BookOpen, Target, Activity, Zap, Clock, RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -22,18 +19,23 @@ const getAuthHeaders = () => {
 export default function KILogTab() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [rlStatus, setRlStatus] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchKIStats();
-    const interval = setInterval(fetchKIStats, 30000); // Refresh alle 30s
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchKIStats = async () => {
+  const fetchData = async () => {
     try {
-      const res = await axios.get(`${API}/api/ki/stats`, getAuthHeaders());
-      setStats(res.data);
+      const [kiRes, rlRes] = await Promise.all([
+        axios.get(`${API}/api/ki/stats`, getAuthHeaders()),
+        axios.get(`${API}/api/rl/status`, getAuthHeaders())
+      ]);
+      setStats(kiRes.data);
+      setRlStatus(rlRes.data);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Laden');
@@ -45,259 +47,266 @@ export default function KILogTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-zinc-400">Laden...</div>
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto mb-4" />
+          <p className="text-zinc-500 font-mono-cyber">LOADING AI DATA...</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <Alert variant="destructive" className="bg-red-900/50 border-red-700">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
+      <div className="p-4 border border-red-500/30 bg-red-500/5">
+        <AlertTriangle className="w-5 h-5 text-red-400 inline mr-2" />
+        <span className="text-red-400 font-mono-cyber">{error}</span>
+      </div>
     );
   }
 
-  const tradesUntilTakeover = stats?.trades_until_takeover || 10;
-  const progress = Math.min(100, ((10 - tradesUntilTakeover) / 10) * 100);
+  const explorationPct = rlStatus?.exploration_pct || 100;
+  const learningPct = 100 - explorationPct;
+  const winRate = (rlStatus?.win_rate || 0) * 100;
 
   return (
     <div className="space-y-6" data-testid="ki-log-tab">
-      {/* KI Status Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Brain className="w-6 h-6 text-purple-500" />
-            KI Learning Engine
-          </h2>
-          <p className="text-gray-400 text-sm mt-1">
-            Learning by Doing - KI lernt aus jedem Trade
+      {/* RL Status Header */}
+      <div className="cyber-panel p-6 box-glow-purple">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+              <Brain className="w-6 h-6 text-purple-400" />
+            </div>
+            <div>
+              <h2 className="font-cyber text-xl text-white tracking-wider">
+                NEURAL <span className="text-purple-400">NETWORK</span>
+              </h2>
+              <p className="text-xs text-zinc-500 font-mono-cyber">REINFORCEMENT LEARNING ENGINE</p>
+            </div>
+          </div>
+          <Badge className={`cyber-badge ${rlStatus?.is_learning ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 animate-pulse' : 'bg-green-500/20 text-green-400 border border-green-500/50'}`}>
+            {rlStatus?.is_learning ? 'LEARNING' : 'TRAINED'}
+          </Badge>
+        </div>
+
+        {/* Learning Progress */}
+        <div className="mb-6">
+          <div className="flex justify-between text-xs mb-2 font-mono-cyber">
+            <span className="text-zinc-500">NEURAL TRAINING PROGRESS</span>
+            <span className="text-cyan-400">{learningPct.toFixed(0)}%</span>
+          </div>
+          <div className="cyber-progress h-3">
+            <div 
+              className="h-full"
+              style={{ 
+                width: `${learningPct}%`,
+                background: 'linear-gradient(90deg, #bf00ff, #00f0ff)'
+              }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] mt-2 text-zinc-600 font-mono-cyber">
+            <span>EXPLORATION: {explorationPct.toFixed(0)}%</span>
+            <span>EXPLOITATION: {learningPct.toFixed(0)}%</span>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="bg-black/50 border border-cyan-500/20 p-4 text-center">
+            <Activity className="w-5 h-5 text-cyan-400 mx-auto mb-2" />
+            <p className="text-2xl font-cyber text-white">{rlStatus?.total_trades || 0}</p>
+            <p className="text-[10px] text-zinc-600 font-mono-cyber">TOTAL TRADES</p>
+          </div>
+          <div className="bg-black/50 border border-purple-500/20 p-4 text-center">
+            <Brain className="w-5 h-5 text-purple-400 mx-auto mb-2" />
+            <p className="text-2xl font-cyber text-purple-400">{rlStatus?.memory_size || 0}</p>
+            <p className="text-[10px] text-zinc-600 font-mono-cyber">MEMORY</p>
+          </div>
+          <div className="bg-black/50 border border-green-500/20 p-4 text-center">
+            <Target className="w-5 h-5 text-green-400 mx-auto mb-2" />
+            <p className={`text-2xl font-cyber ${winRate >= 50 ? 'text-green-400 glow-green' : 'text-red-400'}`}>
+              {winRate.toFixed(1)}%
+            </p>
+            <p className="text-[10px] text-zinc-600 font-mono-cyber">WIN RATE</p>
+          </div>
+          <div className="bg-black/50 border border-yellow-500/20 p-4 text-center">
+            <Zap className="w-5 h-5 text-yellow-400 mx-auto mb-2" />
+            <p className="text-2xl font-cyber text-yellow-400">
+              {rlStatus?.winning_trades || 0}
+            </p>
+            <p className="text-[10px] text-zinc-600 font-mono-cyber">WINS</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Episodes */}
+      {rlStatus?.active_episodes && rlStatus.active_episodes.length > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
+              <Activity className="w-5 h-5 text-cyan-400" />
+            </div>
+            <h3 className="font-cyber text-sm text-cyan-400 tracking-widest uppercase">ACTIVE EPISODES</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {rlStatus.active_episodes.map(symbol => (
+              <span key={symbol} className="px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono-cyber text-sm">
+                {symbol}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Learned Parameters */}
+      {stats?.learned_params && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
+              <BookOpen className="w-5 h-5 text-blue-400" />
+            </div>
+            <h3 className="font-cyber text-sm text-blue-400 tracking-widest uppercase">LEARNED PARAMETERS</h3>
+          </div>
+          
+          <div className="grid grid-cols-5 gap-3">
+            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">RSI MIN</p>
+              <p className="text-xl font-cyber text-cyan-400">
+                {stats.learned_params.rsi_min?.toFixed(0) || 45}
+              </p>
+            </div>
+            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">RSI MAX</p>
+              <p className="text-xl font-cyber text-cyan-400">
+                {stats.learned_params.rsi_max?.toFixed(0) || 70}
+              </p>
+            </div>
+            <div className="bg-black/50 border border-green-500/20 p-3 text-center">
+              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">ADX MIN</p>
+              <p className="text-xl font-cyber text-green-400">
+                {stats.learned_params.adx_min?.toFixed(0) || 20}
+              </p>
+            </div>
+            <div className="bg-black/50 border border-yellow-500/20 p-3 text-center">
+              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">VOL MIN</p>
+              <p className="text-lg font-cyber text-yellow-400">
+                ${(stats.learned_params.volume_threshold / 1000)?.toFixed(0) || 500}k
+              </p>
+            </div>
+            <div className="bg-black/50 border border-orange-500/20 p-3 text-center">
+              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">ATR MULT</p>
+              <p className="text-xl font-cyber text-orange-400">
+                {stats.learned_params.atr_multiplier?.toFixed(1) || 2.0}x
+              </p>
+            </div>
+          </div>
+          <p className="text-[10px] text-zinc-600 mt-3 text-center font-mono-cyber">
+            VALUES AUTO-ADJUSTED BY REINFORCEMENT LEARNING
           </p>
         </div>
-        <Badge 
-          className={stats?.ki_active 
-            ? "bg-purple-600 text-white text-lg px-4 py-1" 
-            : "bg-zinc-700 text-zinc-300 text-lg px-4 py-1"
-          }
-        >
-          {stats?.ki_active ? '🧠 KI AKTIV' : '📊 DATENSAMMLUNG'}
-        </Badge>
-      </div>
-
-      {/* Takeover Progress */}
-      {!stats?.ki_active && (
-        <Card className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border-purple-700">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white">KI Übernahme Progress</h3>
-                <p className="text-zinc-400 text-sm">
-                  Noch {tradesUntilTakeover} Trades bis die KI übernimmt
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="text-3xl font-bold text-purple-400">
-                  {10 - tradesUntilTakeover}/10
-                </span>
-                <p className="text-xs text-zinc-500">Trades</p>
-              </div>
-            </div>
-            <Progress value={progress} className="h-3" />
-            <p className="text-xs text-zinc-500 mt-2">
-              Die KI sammelt Daten und lernt aus den ersten 10 Trades, bevor sie selbst handelt.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* KI Active Card */}
-      {stats?.ki_active && (
-        <Card className="bg-gradient-to-r from-green-900/30 to-purple-900/30 border-green-700">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-4 bg-green-500/20 rounded-full">
-                <CheckCircle className="w-8 h-8 text-green-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white">KI hat übernommen!</h3>
-                <p className="text-zinc-400 text-sm">
-                  Seit {stats.ki_takeover_time ? format(new Date(stats.ki_takeover_time), 'dd.MM.yyyy HH:mm', { locale: de }) : '-'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="p-4 text-center">
-            <Activity className="w-6 h-6 text-blue-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">{stats?.total_trades || 0}</p>
-            <p className="text-xs text-zinc-500">Gesamt Trades</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="p-4 text-center">
-            <Brain className="w-6 h-6 text-purple-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">{stats?.ki_trades || 0}</p>
-            <p className="text-xs text-zinc-500">KI Trades</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="p-4 text-center">
-            <Target className="w-6 h-6 text-green-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">{stats?.ki_win_rate?.toFixed(1) || 0}%</p>
-            <p className="text-xs text-zinc-500">KI Win Rate</p>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardContent className="p-4 text-center">
-            <Zap className="w-6 h-6 text-yellow-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">{stats?.ki_confidence?.toFixed(0) || 50}%</p>
-            <p className="text-xs text-zinc-500">KI Confidence</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Gelernte Parameter */}
-      {stats?.learned_params && (
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-lg text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-400" />
-              Gelernte Parameter
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="bg-zinc-800/50 p-3 rounded-lg text-center">
-                <p className="text-xs text-zinc-500 mb-1">RSI Min</p>
-                <p className="text-xl font-mono text-blue-400">
-                  {stats.learned_params.rsi_min?.toFixed(0) || 45}
-                </p>
-              </div>
-              <div className="bg-zinc-800/50 p-3 rounded-lg text-center">
-                <p className="text-xs text-zinc-500 mb-1">RSI Max</p>
-                <p className="text-xl font-mono text-blue-400">
-                  {stats.learned_params.rsi_max?.toFixed(0) || 70}
-                </p>
-              </div>
-              <div className="bg-zinc-800/50 p-3 rounded-lg text-center">
-                <p className="text-xs text-zinc-500 mb-1">ADX Min</p>
-                <p className="text-xl font-mono text-green-400">
-                  {stats.learned_params.adx_min?.toFixed(0) || 20}
-                </p>
-              </div>
-              <div className="bg-zinc-800/50 p-3 rounded-lg text-center">
-                <p className="text-xs text-zinc-500 mb-1">Volume Min</p>
-                <p className="text-lg font-mono text-yellow-400">
-                  ${(stats.learned_params.volume_threshold / 1000)?.toFixed(0) || 500}k
-                </p>
-              </div>
-              <div className="bg-zinc-800/50 p-3 rounded-lg text-center">
-                <p className="text-xs text-zinc-500 mb-1">ATR Mult</p>
-                <p className="text-xl font-mono text-orange-400">
-                  {stats.learned_params.atr_multiplier?.toFixed(1) || 2.0}x
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-zinc-500 mt-3 text-center">
-              Diese Werte werden automatisch angepasst basierend auf Trade-Ergebnissen
-            </p>
-          </CardContent>
-        </Card>
       )}
 
       {/* Learning Log */}
-      <Card className="bg-zinc-900 border-zinc-800">
-        <CardHeader>
-          <CardTitle className="text-lg text-white flex items-center gap-2">
+      <div className="cyber-panel p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
             <Clock className="w-5 h-5 text-purple-400" />
-            KI Learning Log
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-64">
-            {stats?.recent_lessons && stats.recent_lessons.length > 0 ? (
-              <div className="space-y-3">
-                {stats.recent_lessons.slice().reverse().map((lesson, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`p-3 rounded-lg border ${
-                      lesson.type === 'KI_TAKEOVER' 
-                        ? 'bg-purple-900/30 border-purple-700'
-                        : lesson.type === 'MISTAKE_LEARNING'
-                        ? 'bg-red-900/30 border-red-700'
-                        : 'bg-zinc-800/50 border-zinc-700'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        {lesson.type === 'KI_TAKEOVER' && <Brain className="w-4 h-4 text-purple-400" />}
-                        {lesson.type === 'MISTAKE_LEARNING' && <AlertTriangle className="w-4 h-4 text-red-400" />}
-                        {lesson.type === 'INITIAL_LEARNING' && <BookOpen className="w-4 h-4 text-blue-400" />}
-                        <span className="text-sm font-medium text-white">
-                          {lesson.message || lesson.type}
-                        </span>
-                      </div>
-                      <span className="text-xs text-zinc-500">
-                        {lesson.time ? format(new Date(lesson.time), 'HH:mm', { locale: de }) : ''}
+          </div>
+          <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">AI LEARNING LOG</h3>
+        </div>
+        
+        <ScrollArea className="h-64">
+          {stats?.recent_lessons && stats.recent_lessons.length > 0 ? (
+            <div className="space-y-2">
+              {stats.recent_lessons.slice().reverse().map((lesson, idx) => (
+                <div 
+                  key={idx} 
+                  className={`p-3 border ${
+                    lesson.type === 'KI_TAKEOVER' 
+                      ? 'bg-purple-500/10 border-purple-500/30'
+                      : lesson.type === 'MISTAKE_LEARNING'
+                      ? 'bg-red-500/10 border-red-500/30'
+                      : 'bg-black/50 border-cyan-500/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      {lesson.type === 'KI_TAKEOVER' && <Brain className="w-4 h-4 text-purple-400" />}
+                      {lesson.type === 'MISTAKE_LEARNING' && <AlertTriangle className="w-4 h-4 text-red-400" />}
+                      {lesson.type === 'INITIAL_LEARNING' && <BookOpen className="w-4 h-4 text-cyan-400" />}
+                      <span className="text-sm font-mono-cyber text-zinc-300">
+                        {lesson.message || lesson.type}
                       </span>
                     </div>
-                    {lesson.adjustments && lesson.adjustments.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {lesson.adjustments.map((adj, i) => (
-                          <Badge key={i} variant="outline" className="text-xs bg-zinc-800">
-                            {adj}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                    <span className="text-[10px] text-zinc-600 font-mono-cyber">
+                      {lesson.time ? format(new Date(lesson.time), 'HH:mm', { locale: de }) : ''}
+                    </span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center text-zinc-500 py-8">
-                <Brain className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Noch keine Lerneinträge</p>
-                <p className="text-sm">Die KI beginnt nach den ersten Trades zu lernen</p>
-              </div>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
-
-      {/* Recent Mistakes */}
-      {stats?.recent_mistakes && stats.recent_mistakes.length > 0 && (
-        <Card className="bg-zinc-900 border-red-900/50">
-          <CardHeader>
-            <CardTitle className="text-lg text-white flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-red-400" />
-              Letzte Fehler & Lektionen
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {stats.recent_mistakes.map((mistake, idx) => (
-                <div key={idx} className="p-3 bg-red-950/30 rounded-lg border border-red-900/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-red-400">{mistake.symbol}</span>
-                    <span className="text-sm text-red-300">{mistake.pnl_percent?.toFixed(1)}%</span>
-                  </div>
-                  <p className="text-sm text-zinc-400">
-                    📚 <span className="text-zinc-300">{mistake.lesson_learned}</span>
-                  </p>
+                  {lesson.adjustments && lesson.adjustments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {lesson.adjustments.map((adj, i) => (
+                        <Badge key={i} className="cyber-badge bg-zinc-900 text-zinc-500 border border-zinc-700 text-[10px]">
+                          {adj}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="text-center py-12">
+              <Brain className="w-12 h-12 mx-auto mb-4 text-purple-500/30" />
+              <p className="text-zinc-600 font-mono-cyber">NO LEARNING ENTRIES YET</p>
+              <p className="text-[10px] text-zinc-700 mt-1 font-mono-cyber">
+                AI starts learning after first trades
+              </p>
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      {/* Recent Mistakes */}
+      {stats?.recent_mistakes && stats.recent_mistakes.length > 0 && (
+        <div className="cyber-panel p-6" style={{borderColor: 'rgba(255,0,68,0.3)'}}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-red-500/20 border border-red-500/50">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+            </div>
+            <h3 className="font-cyber text-sm text-red-400 tracking-widest uppercase">RECENT MISTAKES</h3>
+          </div>
+          
+          <div className="space-y-3">
+            {stats.recent_mistakes.map((mistake, idx) => (
+              <div key={idx} className="p-3 bg-red-500/5 border border-red-500/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-cyber text-red-400">{mistake.symbol}</span>
+                  <span className="text-sm text-red-300 font-mono-cyber">
+                    {mistake.pnl_percent?.toFixed(1)}%
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 font-mono-cyber">
+                  <span className="text-zinc-400">LESSON:</span> {mistake.lesson_learned}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Boot Phase Warning */}
+      {(rlStatus?.total_trades || 0) < 20 && (
+        <div className="p-4 border border-yellow-500/30 bg-yellow-500/5">
+          <div className="flex items-center gap-3">
+            <Zap className="w-5 h-5 text-yellow-400" />
+            <div>
+              <p className="text-sm text-yellow-400 font-mono-cyber">BOOT PHASE ACTIVE</p>
+              <p className="text-xs text-zinc-600 font-mono-cyber">
+                {20 - (rlStatus?.total_trades || 0)} trades remaining until full neural training
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
