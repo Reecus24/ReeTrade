@@ -116,19 +116,19 @@ async def telegram_polling_loop():
                     chat_id = update['message']['chat']['id']
                     text = update['message']['text'].strip()
                     
-                    # Handle /link command separately (no user_id needed)
+                    # Handle /link command - generate code OR link with existing code
                     if text.lower().startswith('/link'):
                         parts = text.split()
                         if len(parts) >= 2:
+                            # User hat einen Code eingegeben (alter Flow - von Website generiert)
                             code = parts[1].upper()
                             response = await handle_telegram_link(chat_id, code)
                             await telegram_bot.send_message(chat_id, response)
                             continue
                         else:
-                            await telegram_bot.send_message(
-                                chat_id, 
-                                "❌ Bitte gib den Code an: <code>/link DEIN_CODE</code>"
-                            )
+                            # Nur "/link" ohne Code - generiere neuen Code (neuer Flow)
+                            response = await telegram_bot.handle_command(chat_id, "/link", None)
+                            await telegram_bot.send_message(chat_id, response)
                             continue
                     
                     # Finde user_id basierend auf chat_id
