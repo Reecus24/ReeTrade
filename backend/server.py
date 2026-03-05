@@ -688,16 +688,37 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
         
+        # First test connectivity (public endpoint)
+        connectivity = await futures_client.test_connectivity()
+        if not connectivity.get("reachable"):
+            logger.warning(f"[FUTURES] Connectivity test failed: {connectivity.get('error')}")
+            return {
+                "futures_enabled": settings.futures_enabled,
+                "error": f"MEXC Futures API nicht erreichbar: {connectivity.get('error')}",
+                "account": None,
+                "positions": [],
+                "settings": {
+                    "default_leverage": settings.futures_default_leverage,
+                    "max_leverage": settings.futures_max_leverage,
+                    "risk_per_trade": settings.futures_risk_per_trade,
+                    "margin_mode": settings.futures_margin_mode,
+                    "allow_shorts": settings.futures_allow_shorts
+                }
+            }
+        
         # Get futures account assets
         assets = await futures_client.get_account_asset("USDT")
         
         # Check for API errors in the response
         if isinstance(assets, dict) and assets.get('error'):
+            error_msg = assets.get('error')
+            logger.warning(f"[FUTURES] Account asset error: {error_msg}")
             return {
                 "futures_enabled": settings.futures_enabled,
-                "error": f"Futures API Fehler: {assets.get('error')}",
+                "error": f"Futures API Fehler: {error_msg}",
                 "account": None,
                 "positions": [],
+                "connectivity": connectivity,
                 "settings": {
                     "default_leverage": settings.futures_default_leverage,
                     "max_leverage": settings.futures_max_leverage,
@@ -736,6 +757,7 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
                 }
                 for p in positions
             ],
+            "connectivity": connectivity,
             "settings": {
                 "default_leverage": settings.futures_default_leverage,
                 "max_leverage": settings.futures_max_leverage,
@@ -759,6 +781,46 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
                 "allow_shorts": settings.futures_allow_shorts
             }
         }
+
+
+@app.get("/api/futures/test")
+async def test_futures_connectivity(current_user: dict = Depends(get_current_user)):
+    """Test MEXC Futures API connectivity and authentication"""
+    user_id = current_user['user_id']
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        return {"error": "MEXC API keys nicht konfiguriert", "tests": {}}
+    
+    futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+    
+    tests = {}
+    
+    # Test 1: Public connectivity (ping)
+    try:
+        connectivity = await futures_client.test_connectivity()
+        tests["ping"] = {"success": connectivity.get("reachable", False), "data": connectivity}
+    except Exception as e:
+        tests["ping"] = {"success": False, "error": str(e)}
+    
+    # Test 2: Get contracts (public)
+    try:
+        contracts = await futures_client.get_all_contracts()
+        tests["contracts"] = {"success": len(contracts) > 0, "count": len(contracts)}
+    except Exception as e:
+        tests["contracts"] = {"success": False, "error": str(e)}
+    
+    # Test 3: Authenticated - Get account asset
+    try:
+        assets = await futures_client.get_account_asset("USDT")
+        if isinstance(assets, dict) and assets.get('error'):
+            tests["auth"] = {"success": False, "error": assets.get('error')}
+        else:
+            tests["auth"] = {"success": True, "available": assets.get("availableBalance", 0)}
+    except Exception as e:
+        tests["auth"] = {"success": False, "error": str(e)}
+    
+    return {"tests": tests, "all_passed": all(t.get("success") for t in tests.values())}
 
 
 @app.post("/api/futures/enable")

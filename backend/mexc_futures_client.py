@@ -120,6 +120,13 @@ class MexcFuturesClient:
                 raise ValueError("API keys not configured for signed requests")
             headers = self._prepare_headers(timestamp, params_str)
         
+        # DEBUG: Log full request details
+        logger.info(f"[FUTURES API] {method} {endpoint}")
+        logger.info(f"[FUTURES API] URL: {url}")
+        logger.info(f"[FUTURES API] Params string: '{params_str[:100] if params_str else ''}'")
+        if signed:
+            logger.info(f"[FUTURES API] Headers: ApiKey={self.api_key[:8]}..., Request-Time={timestamp}")
+        
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 if method == "GET":
@@ -133,25 +140,32 @@ class MexcFuturesClient:
                 else:
                     raise ValueError(f"Unsupported method: {method}")
                 
-                # Log response for debugging
-                logger.debug(f"MEXC Futures {method} {endpoint}: {response.status_code}")
+                # DEBUG: Log full response
+                logger.info(f"[FUTURES API] Status: {response.status_code}")
+                logger.info(f"[FUTURES API] Response: {response.text[:500] if response.text else 'EMPTY'}")
                 
                 # Check if response is empty
                 if not response.text or response.text.strip() == "":
-                    logger.error(f"Empty response from MEXC Futures API: {endpoint}")
-                    return {"error": "Empty response from API"}
+                    logger.error(f"[FUTURES API] EMPTY response from: {endpoint}")
+                    return {"error": "Leere Antwort von MEXC Futures API - prüfe API-Key Futures Berechtigung"}
                 
                 try:
                     result = response.json()
                 except Exception as json_err:
-                    logger.error(f"JSON parse error: {json_err}, response: {response.text[:200]}")
+                    logger.error(f"[FUTURES API] JSON parse error: {json_err}")
+                    # Check for common HTML error responses
+                    if "Access Denied" in response.text or "403" in response.text:
+                        return {"error": "Access Denied - API Key hat keine Futures Berechtigung oder IP nicht whitelisted"}
+                    if "<html" in response.text.lower():
+                        return {"error": "MEXC returned HTML error page - Server möglicherweise nicht erreichbar"}
                     return {"error": f"Invalid JSON: {response.text[:100]}"}
                 
                 # Check for API errors
                 if isinstance(result, dict):
-                    if result.get("success") == False:
+                    if result.get("success") is False:
                         error_code = result.get("code", "unknown")
                         error_msg = result.get("message", result.get("msg", "Unknown error"))
+                        logger.error(f"[FUTURES API] Error: [{error_code}] {error_msg}")
                         return {"error": f"[{error_code}]: {error_msg}"}
                     
                     # Return data field if exists
@@ -160,13 +174,26 @@ class MexcFuturesClient:
                 return result
                 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            logger.error(f"[FUTURES API] HTTP error {e.response.status_code}: {e.response.text}")
             return {"error": f"HTTP {e.response.status_code}"}
+        except httpx.ConnectError as e:
+            logger.error(f"[FUTURES API] Connection error: {e}")
+            return {"error": "Verbindung zu MEXC Futures fehlgeschlagen - Server nicht erreichbar"}
         except Exception as e:
-            logger.error(f"Request error: {e}")
+            logger.error(f"[FUTURES API] Request error: {e}")
             return {"error": str(e)}
     
     # ============ PUBLIC ENDPOINTS ============
+    
+    async def test_connectivity(self) -> Dict[str, Any]:
+        """Test if MEXC Futures API is reachable (no authentication needed)"""
+        try:
+            result = await self._request("GET", "/api/v1/contract/ping")
+            if isinstance(result, dict) and result.get("error"):
+                return {"reachable": False, "error": result.get("error")}
+            return {"reachable": True, "server_time": result.get("serverTime")}
+        except Exception as e:
+            return {"reachable": False, "error": str(e)}
     
     async def get_server_time(self) -> int:
         """Get MEXC server time"""
@@ -175,7 +202,7 @@ class MexcFuturesClient:
     
     async def get_contract_detail(self, symbol: str) -> Dict[str, Any]:
         """Get contract details for a symbol"""
-        result = await self._request("GET", f"/api/v1/contract/detail", {"symbol": symbol})
+        result = await self._request("GET", "/api/v1/contract/detail", {"symbol": symbol})
         return result
     
     async def get_all_contracts(self) -> List[Dict]:
@@ -194,7 +221,7 @@ class MexcFuturesClient:
     
     async def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get ticker data for a symbol"""
-        result = await self._request("GET", f"/api/v1/contract/ticker", {"symbol": symbol})
+        result = await self._request("GET", "/api/v1/contract/ticker", {"symbol": symbol})
         return result
     
     async def get_index_price(self, symbol: str) -> Dict[str, Any]:

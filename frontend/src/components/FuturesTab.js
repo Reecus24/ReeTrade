@@ -21,6 +21,7 @@ export default function FuturesTab({ token, settings, onSettingsUpdate }) {
   const [futuresStatus, setFuturesStatus] = useState(null);
   const [futuresTrades, setFuturesTrades] = useState([]);
   const [error, setError] = useState(null);
+  const [testResults, setTestResults] = useState(null);
   const [localSettings, setLocalSettings] = useState({
     futures_enabled: settings?.futures_enabled || false,
     futures_default_leverage: settings?.futures_default_leverage || 5,
@@ -135,6 +136,24 @@ export default function FuturesTab({ token, settings, onSettingsUpdate }) {
     }
   };
 
+  const handleTestFutures = async () => {
+    try {
+      setLoading(true);
+      setTestResults(null);
+      const res = await axios.get(`${API}/api/futures/test`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTestResults(res.data);
+      if (res.data.all_passed) {
+        setError(null);
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Test fehlgeschlagen');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatCurrency = (val) => {
     if (val === undefined || val === null) return '$0.00';
     return `$${parseFloat(val).toFixed(2)}`;
@@ -157,6 +176,15 @@ export default function FuturesTab({ token, settings, onSettingsUpdate }) {
           <Button 
             variant="outline" 
             size="sm" 
+            onClick={handleTestFutures}
+            disabled={loading}
+            className="bg-purple-900/30 border-purple-700 hover:bg-purple-800"
+          >
+            🔬 API Test
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
             onClick={() => { fetchFuturesStatus(); fetchFuturesTrades(); }}
             disabled={loading}
           >
@@ -174,8 +202,50 @@ export default function FuturesTab({ token, settings, onSettingsUpdate }) {
       {error && (
         <Alert variant="destructive" className="bg-red-900/50 border-red-700">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <p className="font-medium">{error}</p>
+            {error.includes('Access Denied') || error.includes('Berechtigung') || error.includes('whitelisted') ? (
+              <div className="mt-2 text-xs space-y-1">
+                <p>🔧 <strong>Lösung:</strong></p>
+                <ol className="list-decimal list-inside space-y-1 text-red-200">
+                  <li>Gehe zu <a href="https://www.mexc.com/user/security/api" target="_blank" rel="noopener noreferrer" className="underline">MEXC API Einstellungen</a></li>
+                  <li>Stelle sicher, dass "Futures Trading" aktiviert ist</li>
+                  <li>Prüfe die IP-Whitelist (oder deaktiviere sie zum Testen)</li>
+                  <li>Erstelle ggf. einen neuen API-Key mit Futures Berechtigung</li>
+                </ol>
+              </div>
+            ) : null}
+          </AlertDescription>
         </Alert>
+      )}
+
+      {/* Test Results */}
+      {testResults && (
+        <Card className={`border-2 ${testResults.all_passed ? 'border-green-600 bg-green-900/20' : 'border-red-600 bg-red-900/20'}`}>
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              {testResults.all_passed ? '✅' : '❌'} API-Test Ergebnisse
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm">
+              {Object.entries(testResults.tests || {}).map(([name, result]) => (
+                <div key={name} className="flex items-center justify-between p-2 bg-zinc-900 rounded">
+                  <span className="text-white">{name.toUpperCase()}</span>
+                  <div className="flex items-center gap-2">
+                    {result.success ? (
+                      <Badge className="bg-green-600">✓ OK</Badge>
+                    ) : (
+                      <Badge className="bg-red-600">✗ Fehler</Badge>
+                    )}
+                    {result.error && <span className="text-red-400 text-xs">{result.error.substring(0, 50)}</span>}
+                    {result.count !== undefined && <span className="text-zinc-400 text-xs">({result.count} Contracts)</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Enable/Disable & Settings */}

@@ -1,77 +1,115 @@
 <analysis>**original_problem_statement:**
-The user's goal is to create a sophisticated, fully automated SPOT trading bot for the MEXC exchange. The project started with basic features and has evolved into a complex system with a dual-mode (Manual/AI) trading engine.
-
-The latest and most significant request is a complete overhaul of the AI system (referred to as AI V2). The user wants to move away from static percentage-based rules to a fully dynamic and adaptive engine.
-
-**PRODUCT REQUIREMENTS (AI V2 Overhaul):**
-1.  **High-Frequency Exits:** The sell-check loop must run every **1 second** (down from 30 seconds) to react instantly to market dumps.
-2.  **Dynamic SL/TP Engine:**
-    *   **Stop Loss:** Must be ATR-based (e.g., 1.5x-2.5x ATR depending on the profile) or structure-based (below the last swing low), not a fixed percentage. It should tighten in high volatility.
-    *   **Take Profit:** Must target a minimum Risk:Reward ratio per profile and extend during strong momentum (high ADX).
-3.  **Adaptive Risk Scaling:** The risk per trade should adapt based on performance.
-    *   Global Rules: Halve risk after 2 consecutive losses, increase risk after 3 wins, reduce risk on >15% account drawdown.
-4.  **New Position Sizing Logic:**
-    *   Positions must be sized as a **percentage of the total available USDT in the wallet**, not based on the fixed Trading Budget setting.
-    *   The Trading Budget will only act as a maximum total exposure cap.
-    *   The UI should no longer show a Min-Max Order range but instead display the calculated percentage and resulting order size (e.g., Position Size: 25% of Available USDT, Calculated Order: 47.80).
-5.  **New AI Profile Definitions:**
-    *   **Aggressive:** 4-6% risk, 20-35% of available USDT per position, max 3 positions, 2.0-2.5x ATR for SL, min 1:2.5 R:R.
-    *   **Moderate:** 1.5-2.5% risk, 10-20% of available USDT per position, max 2 positions, 1.8x ATR for SL, min 1:2 R:R.
-    *   **Conservative:** 0.5-1% risk, 5-10% of available USDT per position, max 1-2 positions, 1.5x ATR for SL, min 1:1.5 R:R.
-6.  **Confidence Score Integration:** The position size should be scaled based on a confidence score of the trade signal.
-7.  **Performance Safety:** Trading should pause for 1 hour after 3 consecutive losing trades.
+The user's initial goal was to enhance a MEXC SPOT trading bot's AI engine. This quickly expanded to include:
+- A complete migration and deployment of the application to a user-managed Hetzner Cloud VPS.
+- The full integration of MEXC Futures (leveraged) trading, allowing the bot to take long and short positions.
+- The removal of a fixed Budget system in favor of dynamic position sizing based on a percentage of the total available wallet balance.
+- The implementation of a Learning by Doing AI () that starts with rule-based trades and then takes over, learning and adapting from the results of its own live trades.
+- A major UI overhaul to support these features, including:
+    - A new Settings tab for API keys and granular coin selection for both SPOT and FUTURES.
+    - A new Info tab to explain the bot's functionality and AI concept.
+    - A new KI Log tab to provide transparency into the AI's decisions and learning process.
+    - Splitting the main dashboard, portfolio overview, and trade history pages to show SPOT and FUTURES data separately.
 
 **User's preferred language**: The user's primary language is **German**. The next agent MUST respond in German only.
 
 **what currently exists?**
-The ReeTrade Terminal is a full-stack (FastAPI, React, MongoDB) live-only trading bot for the MEXC exchange. It features a dual-mode system allowing users to switch between Manual and AI trading. The codebase has undergone significant iteration, with fixes for coin scanning, diversification, entry/exit logic, and major UI/UX improvements.
-
-The agent has just begun a massive overhaul to create an AI V2 engine based on the user's detailed new requirements. This involves creating a new  file and beginning to refactor the core , , and frontend components. The application is currently in a transitional and likely non-functional state due to this partial implementation.
+The ReeTrade Terminal is a full-stack application (React, FastAPI, MongoDB) deployed on the user's private Hetzner server, managed by  and . The codebase includes a significant amount of new, but not fully functional, code for Futures trading and a real-time learning AI. Major UI refactoring has been done to create separate views for SPOT and FUTURES, and a new settings page allows for individual coin selection. However, the user's live server is running outdated code, and the new Futures functionality is blocked by a persistent API connection error.
 
 **Last working item**:
--   **Last item agent was working:** Implementing the complete overhaul of the AI trading engine (AI V2) as specified by the user. This is a large, multi-faceted task that touches the entire application logic. The agent started by creating a new  file to house the new dynamic logic and began modifying , , and  to integrate this new engine.
+-   **Last item agent was working:** The agent was simultaneously working on two critical issues raised by the user:
+    1.  **Fixing a persistent Futures API error:** The user's server gets an Access Denied or empty response from the MEXC Futures API. The agent attempted a fix by changing the API endpoint URL in .
+    2.  **Refactoring the UI:** Implementing the user's request to separate SPOT and FUTURES data on the dashboard, in the portfolio overview, and in the trade history tabs. This involved changes to , , and backend endpoints.
 -   **Status:** IN PROGRESS
--   **Agent Testing Done:** N
--   **Which testing method agent to use?** both. This is a full-system overhaul.
-    *   **Backend testing agent:** Must verify the new AI V2 logic: 1-second exit loop, ATR-based SL/TP calculations, position sizing as a % of available USDT, adaptive risk scaling, and performance safety pauses.
-    *   **Frontend testing agent:** Must verify the completely new UI for AI profile selection, which should now show the calculated position size based on wallet percentage instead of a min-max range.
--   **User Testing Done:** N
+-   **Agent Testing Done:** N (Agent performed local tests that did not replicate the live environment issue).
+-   **Which testing method agent to use?** Manual testing by the user on their Hetzner server. The agent MUST provide clear, step-by-step instructions for the user to update their server environment.
+-   **User Testing Done:** Y (User provided a screenshot confirming the Futures API is still failing and the UI is outdated on their server).
 
 **All Pending/In progress Issue list**:
--   There are no pending bugs. The only pending item is the completion of the large AI V2 feature request.
+-   **Issue 1: Futures API Connection Failure (P0 - BLOCKER)**
+    -   **Description:** The application fails to connect to the MEXC Futures API on the user's live Hetzner server, resulting in Access Denied or empty JSON response errors. This renders the entire Futures trading feature unusable.
+    -   **Attempted fixes:** The agent changed the API URL in  from  to . This did not solve the problem.
+    -   **Next debug checklist:**
+        1.  **Instruct User to Deploy:** First, guide the user to pull the latest code and restart services on their Hetzner server to ensure they are testing the most recent fixes.
+        2.  **Verify Signature & URL:** Use  to find the absolute latest MEXC Futures API v3 documentation. Double-check the required URL, headers, and the exact string-to-sign format for authenticated endpoints. The error points to an authentication failure.
+        3.  **Add Logging:** Add detailed logging in  to print the exact request URL, headers, and parameters being sent, as well as the raw text of the API response *before* it's parsed as JSON. This will reveal what MEXC is actually returning.
+        4.  **Check API Key Permissions:** Ask the user to re-verify that their MEXC API key has Futures Trading permissions enabled and check if IP whitelisting is required and correctly configured for their server's IP.
+    -   **Why fix this issue and what will be achieved with the fix?** This is a hard blocker. Fixing it will enable all Futures-related functionality, which is the user's main current requirement.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** Backend first with , then verify on the full frontend.
+
+-   **Issue 2: UI/Data Mismatch on Live Server (P1)**
+    -   **Description:** The user's screenshots show old UI elements (e.g., Budget, Daily Cap) that have been removed in the agent's codebase. This is because the user's server is running outdated code.
+    -   **Attempted fixes:** The code has already been corrected by the previous agent.
+    -   **Next debug checklist:** This is a process issue, not a code bug. The agent's first action should be to provide clear, simple commands for the user to run on their Hetzner server:
+        1.  
+        2.  
+        3.  yarn install v1.22.22
+[1/4] Resolving packages...
+success Already up-to-date.
+Done in 0.89s.
+yarn run v1.22.22
+$ craco build
+Creating an optimized production build...
+Compiled with warnings.
+
+[eslint] 
+src/components/FuturesTab.js
+  Line 36:6:  React Hook useEffect has missing dependencies: 'fetchFuturesStatus' and 'fetchFuturesTrades'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+File sizes after gzip:
+
+  271.11 kB  build/static/js/main.685d09e7.js
+  12.05 kB   build/static/css/main.174949dd.css
+
+The project was built assuming it is hosted at /.
+You can control this with the homepage field in your package.json.
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  yarn global add serve
+  serve -s build
+
+Find out more about deployment here:
+
+  https://cra.link/deployment
+
+Done in 52.64s.
+        4.  
+    -   **Why fix this issue and what will be achieved with the fix?** To resolve user confusion and align the live application with the current state of development, enabling proper testing of new features.
+    -   **Status:** BLOCKED (on user performing deployment steps)
+    -   **Is recurring issue?** Y (due to manual deployment process)
 
 **In progress Task List**:
--   **Task 1: Complete AI Engine V2 Implementation (P0)**
-    -   **Where to resume:** The agent has created  and has begun making changes in , , , and . The next agent must continue this work by fully implementing all aspects of the user's AI V2 specification. The current implementation is partial and incomplete. Key files to review are  (the new core),  (to integrate the 1-second loop and new trade logic),  (for the new preview API), and  (for the new UI).
-    -   **What will be achieved with this?** The application will feature a professional-grade, dynamic, and adaptive trading AI that manages risk and position size based on real-time market conditions and wallet state, fulfilling the user's detailed requirements.
+-   **Task 1: Complete UI Refactoring for SPOT/FUTURES Separation (P1)**
+    -   **Where to resume:** Finalize the changes in  to correctly display separate portfolio balances for SPOT and FUTURES. Ensure that the  is correctly used to create two distinct history views (SPOT History, FUTURES History) and that the  displays open positions and other relevant data once the API is working.
+    -   **What will be achieved with this?** A clean, intuitive UI that separates the two different trading modes, as requested by the user.
     -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** Both
-    -   **Blocked on something:** None.
+    -   **Should Test frontend/backend/both after fix?** Both.
+    -   **Blocked on something:** Issue 1 (Futures API Connection Failure).
 
 **Upcoming and Future Tasks**
-- **Upcoming Tasks:**
-  - **P1: User Management Tab:** Implement a dashboard view for an admin role to see and manage all registered users.
-- **Future Tasks:**
-  - **P2: Email Verification:** Add an email verification step during registration.
-  - **P2: Password Reset:** Implement a Forgot Password flow.
-  - **P2: Performance Dashboard:** Create more advanced charts to visualize performance metrics like Sharpe Ratio, Win Rate, and Equity Curve.
-  - **P3: Notifications:** Integrate Telegram or Email notifications for trade executions and critical bot events.
+-   **Upcoming Tasks:**
+    -   **P0: Verify Learning by Doing AI:** Once the API is working, verify that the  correctly logs events to the , records trade outcomes, and influences future trading decisions.
+    -   **P1: Verify Coin Selection Logic:** Confirm that the  correctly uses the user's selected coin lists from the new Settings page for both SPOT and FUTURES trading, rather than a hardcoded list.
+-   **Future Tasks:**
+    -   **P2:** Train a true offline ML model (e.g., RandomForest) using the collected data.
+    -   **P2:** Add a User Management admin tab.
+    -   **P2:** Implement Email Verification & Password Reset.
+    -   **P3:** Integrate Telegram/Email notifications.
 
 **Completed work in this session**
-- **Intelligent Coin Scanning & Rotation:** Implemented a system to scan ~100 coins, filter them by price, and automatically rotate to a new batch of 20 coins if no signals are found in the current one.
-- **AI Logic & Bug Fixes:**
-    - **Diversification:** AI now skips buying coins already present in the portfolio.
-    - **Stop Loss Engine:** Fixed a critical bug causing an unbounded SL (e.g., 8% instead of 3.5%) by capping the volatility multiplier.
-    - **Risk/Reward Ratio:** Improved the R:R for the Aggressive profile to 2.5:1 (3% SL / 7.5% TP).
-    - **Position Sizing:** Fixed logic to ensure the AI uses the correct budget for calculations and can place smaller trades if available funds are low.
-- **Critical Sell Bug Fix:** Fixed a major bug where selling one position would incorrectly delete all other open positions of the same symbol from the database. A unique  was added to each trade to resolve this.
-- **Accurate Pricing:** Fixed a bug to ensure the app uses the **actual execution price** from the MEXC order confirmation, not the signal price, and recalculates SL/TP accordingly.
-- **Robust MEXC Sync:** The trade synchronization logic was improved to check actual wallet balances on MEXC, and a manual MEXC Sync button was added to the UI.
-- **Major UI/UX Enhancements:**
-    - Implemented a clear, new **Wallet Overview** showing Free USDT, Invested, and Total Portfolio with live PnL.
-    - Added **live, real-time PnL ($ and %)**, current price, total USDT value, and fee calculations to each position in the list.
-    - The  status is now accurate, performing a real API check and showing Keys ungültig (Invalid Keys) when appropriate.
-- **Improved Logging:** Added detailed logs to explain exactly why each coin is being skipped during a scan (e.g., bearish, low ADX, RSI overbought).
+-   **Futures Trading Foundation:** Created the backend client (), data models, AI logic, API endpoints, and worker logic for Futures trading.
+-   **Learning by Doing AI:** Implemented the core logic (), UI tab (), and backend endpoints for the real-time learning system.
+-   **UI Overhaul (Code complete, not deployed):**
+    -   Removed the Budget concept from the entire application.
+    -   Created a new  with coin selection lists.
+    -   Created an  explaining the bot's concept.
+    -   Refactored the dashboard, portfolio, and history views to prepare for SPOT/FUTURES separation.
 
 **Earlier issues found/mentioned but not fixed**
 -   None.
@@ -83,80 +121,65 @@ The agent has just begun a massive overhaul to create an AI V2 engine based on t
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, Motor (async MongoDB driver), Pydantic, .
-- **Frontend:** React, Tailwind CSS, Axios.
-- **AI Strategy (V2 - In Progress):** Dynamic, adaptive engine using ATR for risk, sizing based on available capital, and scaling based on performance.
-- **Database:** MongoDB.
-- **Authentication:** JWT stored in HttpOnly cookies.
+-   **Deployment:** The application is self-managed on a Hetzner Cloud VPS. The development-to-deployment workflow ( -> build -> restart) is manual and must be communicated clearly to the user.
+-   **AI Strategy:** A hybrid approach combining a rule-based engine (AI V2), a data-gathering Explorer mode, and a new real-time Learning by Doing online model.
+-   **Trading:** Supports both SPOT and FUTURES (leveraged) trading on the MEXC exchange.
 
 **key DB schema**
--   **users:** 
--   **settings:** 
--   **live_accounts:** Stores open positions. Documents now include a unique .
--   **trades:** Stores completed trade history.
-
-**changes in tech stack**
--   None.
+-   **trades:** A  ('SPOT' or 'FUTURES') field has been added to distinguish trade types.
+-   **users:** The  object was updated to include , , and flags for trading all coins, while removing the  field.
+-   **ki_log:** A new collection to store log entries from the .
 
 **All files of reference**
--   : **NEW & CRITICAL.** This file contains the foundation for the new AI overhaul.
--   : **CRITICAL.** Heavily modified to fix numerous bugs and is currently being refactored to use  and a 1-second exit loop.
--   : **CRITICAL.** Contains API endpoints, especially the  endpoint which is being rewritten for V2.
--   : The UI component for AI selection, currently being modified to support the new V2 display logic.
--   : Significantly enhanced with live PnL, fee calculation, and other UX improvements.
--   : A new component providing a clear summary of the user's funds.
--   : Defines the Pydantic models, which are being updated for AI V2.
+-   : **CRITICAL & BROKEN.** The source of the main blocker.
+-   : **CRITICAL.** Contains the core trading loop integrating all new logic.
+-   : **CRITICAL.** The main UI entry point, undergoing heavy refactoring.
+-   : The new settings UI.
+-   : The new online learning AI module.
 
 **Areas that need refactoring**:
--   The implementation of the **1-second exit loop** in  needs careful review. Such a high frequency can lead to performance bottlenecks or API rate-limiting issues. The next agent should monitor this and consider alternative, more event-driven approaches if problems arise.
--   The refactoring of logic from  into  should be completed to improve modularity and maintainability.
+-   The manual deployment process is error-prone. Creating a simple  script on the server for the user to run would significantly reduce errors.
 
 **key api endpoints**
--    & 
--   : Returns bot and user state.
--   : **(Being rewritten for V2)** Returns calculated parameters for the selected AI profile based on available wallet balance.
--   : Sells a specific position by its unique ID.
--   : **(New)** Manually triggers a sync with the MEXC exchange.
+-   : **CRITICAL & FAILING.** Needs to be fixed.
+-   : Handles fetching coin lists for the settings page.
+-   : Fetches data for the AI Log tab.
+-   : Modified to return both SPOT and FUTURES wallet balances.
+-   : Modified to support filtering by .
 
 **Critical Info for New Agent**
--   **Top Priority:** You must complete the **AI V2 overhaul**. This is a large, complex task that the previous agent has only started. The application is currently in a broken, transitional state. Refer to the user's detailed requirements in the original_problem_statement.
--   **New Position Sizing:** The most fundamental change is that position size is now a percentage of **available wallet USDT**, not the old Trading Budget. This changes the entire capital management strategy.
--   **High-Frequency Loop:** The user has explicitly requested a 1-second exit-check loop. Be mindful of the performance implications.
--   **Deprecation:** The old AI logic in  and the old profile structures are now deprecated. All new logic should be built within or integrated with .
+-   **HETZNER DEPLOYMENT IS MANUAL:** This is the most critical point. The user's server does **not** update automatically. Your first step for almost any issue is to provide the user with the , yarn run v1.22.22
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command., and  commands to run on their server. Previous agent's failure to do this caused major user frustration.
+-   **FUTURES API IS THE BLOCKER:** You cannot proceed with any Futures-related feature testing or development until the Access Denied API error is resolved. Focus all initial efforts here.
+-   **The user is technically proficient** and capable of running commands on their server, but requires clear and precise instructions.
 
 **documents and test reports created in this job**
--   
--   
+-    has been extensively updated throughout the session.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User Request:** Request for a comprehensive AI system overhaul (AI V2) with dynamic, ATR-based SL/TP, adaptive risk, 1-second exit checks, and a new position sizing model based on available wallet funds. (IN PROGRESS)
-2.  **User Concern:** The USDT value of a position shown in the app doesn't match the EUR value on MEXC. (Resolved: Explained it's due to USD vs. EUR and different exchange rates).
-3.  **User Concern:** The quantity display for large numbers is confusing (e.g., 222.308 for 222,308 tokens). (Resolved: Agent clarified the formatting and added Stk for clarity).
-4.  **User Request:** Implement automatic coin rotation, so if there are no signals in the current batch of 20 coins, the bot scans a new batch. (Completed).
-5.  **User Request:** Add more detailed logs to explain why the bot isn't buying any of the 20 scanned coins. (Completed).
-6.  **User Concern:** Asks if a coin is available for repurchase immediately after being sold. (Resolved: Agent confirmed this is the current behavior and asked if a cooldown is desired).
-7.  **User Request:** Redesign the wallet overview to be clearer, showing Free, Invested, and Total portfolio values. (Completed).
-8.  **User Request:** Add the total USDT value invested across all positions to the UI. (Completed).
-9.  **User Request:** Show the current market price for each open position. (Completed).
-10. **User Concern:** The ADX minimum of 15 seems too strict, as no trades are happening. (Resolved: Agent lowered the ADX minimum for the Aggressive profile to 5).
+1.  **User (pending):** Sent a screenshot from their server showing the Futures API still failing (Access Denied) and the UI being outdated (still shows Budget). Asks why it's still not working and why the UI looks wrong. (Status: PENDING, needs a fix and deployment instructions).
+2.  **User:** Requested a major UI change: default to Info tab, move Settings up, split History into SPOT/FUTURES, and make the bot fully automatic. (Status: IN PROGRESS).
+3.  **User:** Sent a screenshot of a Futures API error . (Status: IN PROGRESS).
+4.  **User:** Pointed out multiple issues: SPOT coin list was empty, FUTURES list was incomplete, Budget was still in the UI, and the Futures API was inaccessible. (Status: IN PROGRESS).
+5.  **User:** Asked for an Info tab to be created and to proceed with P1 tasks. (Status: DONE, but needs deployment).
+6.  **User:** Clarified AI learning requirements, wanting a log and for the AI to take over completely after 10 trades. (Status: Implemented, awaiting verification).
+7.  **User:** Requested a massive change: remove Budget concept, use % of portfolio, add coin selection, and start the Learning by Doing AI feature immediately. (Status: Implemented, awaiting verification).
+8.  **User:** Confirmed all requirements for Futures integration. (Status: Requirements gathered).
+9.  **User:** Approved starting the Futures integration immediately. (Status: Requirements gathered).
+10. **User:** Asked a clarifying question about whether the AI learns about Futures. (Status: Answered).
 
 **Project Health Check:**
--   **Broken:** Yes. The application is in a broken state due to the partial, in-progress implementation of the AI V2 overhaul.
--   **Mocked:** None.
+-   **Broken:** Yes. The primary new feature (Futures Trading) is non-functional due to a persistent API authentication error. The UI on the user's live server is out of sync with the current codebase, causing confusion.
 
 **3rd Party Integrations**
--   **MEXC Exchange API:** Used for fetching market data, account information, and executing live trades.
+-   **MEXC Exchange API:** Used for both SPOT and FUTURES trading. The Futures integration is currently broken.
+-   **Hetzner Cloud:** The application's hosting provider.
 
 **Testing status**
--   **Testing agent used after significant changes:** YES (but this was *before* the AI V2 overhaul began).
+-   **Testing agent used after significant changes:** NO
 -   **Troubleshoot agent used after agent stuck in loop:** NO
 -   **Test files created:** None
--   **Known regressions:** The entire application's trading logic is currently in a regressed/broken state due to the ongoing AI V2 refactoring.
-
-**Credentials to test flow:**
--   **Email:** 
--   **Password:** 
--   **Note:** This user account has **invalid** MEXC API keys, which is useful for testing error handling in the UI.
+-   **Known regressions:** The Futures API connection.
 
 **What agent forgot to execute**
-The agent did not forget anything. It was actively working on the user's largest and most complex feature request (the AI V2 overhaul) when the session ended. The entire AI V2 feature set is the primary unfinished task.</analysis>
+-   The agent repeatedly forgot to provide the user with clear instructions to deploy the latest code to their Hetzner server. This is the direct cause of the UI mismatch issues and user frustration. The agent must prioritize closing this loop in every interaction that involves code changes.</analysis>
