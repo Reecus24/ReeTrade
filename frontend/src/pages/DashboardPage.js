@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot
+  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot, Brain
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -16,6 +16,7 @@ import LiveModeConfirm from '@/components/LiveModeConfirm';
 import BotStatusPanel from '@/components/BotStatusPanel';
 import PositionsPanel from '@/components/PositionsPanel';
 import TradingModeSelector from '@/components/TradingModeSelector';
+import MLStatsTab from '@/components/MLStatsTab';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -446,6 +447,9 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
                   <FileText className="w-4 h-4 mr-2" />Logs
                 </TabsTrigger>
+                <TabsTrigger value="ml" className="data-[state=active]:text-purple-500">
+                  <Brain className="w-4 h-4 mr-2" />KI Training
+                </TabsTrigger>
               </>
             )}
             <TabsTrigger value="settings" className="data-[state=active]:text-red-500">
@@ -457,6 +461,7 @@ const DashboardPage = ({ onLogout }) => {
               <>
                 <TabsContent value="history"><TradesTab /></TabsContent>
                 <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
+                <TabsContent value="ml"><MLStatsTab /></TabsContent>
               </>
             )}
             <TabsContent value="settings"><SettingsTab /></TabsContent>
