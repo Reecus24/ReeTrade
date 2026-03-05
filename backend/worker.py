@@ -13,6 +13,7 @@ from ai_engine_v2 import (
     AITradingEngineV2, TradingMode, MarketConditions, AccountState, MarketRegime,
     RISK_PROFILES_V2, ai_engine_v2
 )
+from ml_data_collector import get_ml_collector
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class MultiUserTradingWorker:
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
         self.ai_engine = ai_engine_v2  # AI Trading Engine V2
+        self.ml_collector = get_ml_collector(db)  # ML Data Collector für Training
         # Coin rotation: track which batch of coins to scan next
         self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
@@ -1249,6 +1251,44 @@ class MultiUserTradingWorker:
             )
             await self.db.add_trade(trade)
             
+            # === ML DATA COLLECTION: Speichere Snapshot für Training ===
+            try:
+                market_data = {
+                    'price_change_1h': candidate.get('price_change_1h', 0),
+                    'price_change_24h': candidate.get('price_change_24h', 0),
+                    'rsi': candidate.get('rsi', 50),
+                    'adx': candidate.get('adx', 0),
+                    'atr_percent': candidate.get('atr_percent', 0),
+                    'ema_fast': candidate.get('ema_fast', 0),
+                    'ema_slow': candidate.get('ema_slow', 0),
+                    'ema_distance': candidate.get('ema_distance', 0),
+                    'volume_24h': candidate.get('volume_24h', 0),
+                    'volume_change': candidate.get('volume_change', 0),
+                    'regime': candidate.get('regime', 'UNKNOWN'),
+                    'volatility_percentile': candidate.get('volatility_percentile', 50),
+                    'momentum_score': candidate.get('momentum', 0),
+                    'position_percent': (actual_notional / live_usdt_free * 100) if live_usdt_free > 0 else 0,
+                    'open_positions': len(account.open_positions) if account else 0
+                }
+                ai_data = {
+                    'confidence': candidate.get('ai_confidence'),
+                    'profile': settings.trading_mode
+                }
+                await self.ml_collector.save_entry_snapshot(
+                    user_id=user_id,
+                    symbol=symbol,
+                    entry_price=avg_price,
+                    position_size_usdt=actual_notional,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    market_data=market_data,
+                    ai_data=ai_data
+                )
+                await self.db.log(user_id, "INFO", f"[ML] 📊 Training-Snapshot gespeichert für {symbol}")
+            except Exception as ml_err:
+                logger.warning(f"ML snapshot error: {ml_err}")
+            # === END ML DATA COLLECTION ===
+            
             await self.db.log(user_id, "WARNING",
                 f"[LIVE] ✅ ORDER CONFIRMED: {symbol} | Qty: {executed_qty} | Price: ${avg_price:.4f} | Notional: ${actual_notional:.2f}")
             
@@ -1318,6 +1358,37 @@ class MultiUserTradingWorker:
                 notional=position.entry_price * executed_qty
             )
             await self.db.add_trade(trade)
+            
+            # === ML DATA COLLECTION: Update Snapshot mit Exit-Ergebnis ===
+            try:
+                exit_reason_ml = "UNKNOWN"
+                if "STOP" in reason.upper():
+                    exit_reason_ml = "STOP_LOSS"
+                elif "PROFIT" in reason.upper() or "TP" in reason.upper():
+                    exit_reason_ml = "TAKE_PROFIT"
+                elif "PARTIAL" in reason.upper():
+                    exit_reason_ml = "PARTIAL"
+                elif "MANUAL" in reason.upper():
+                    exit_reason_ml = "MANUAL"
+                elif "BREAK" in reason.upper() or "EVEN" in reason.upper():
+                    exit_reason_ml = "BREAK_EVEN"
+                
+                await self.ml_collector.update_exit_result(
+                    user_id=user_id,
+                    symbol=position.symbol,
+                    exit_price=actual_exit_price,
+                    pnl_percent=pnl_pct,
+                    pnl_usdt=pnl,
+                    exit_reason=exit_reason_ml
+                )
+                
+                # Log ML stats periodically
+                stats = await self.ml_collector.get_training_stats(user_id)
+                await self.db.log(user_id, "INFO", 
+                    f"[ML] 🧠 Training Data: {stats['completed_trades']} Trades | Win Rate: {stats['win_rate']:.1f}%")
+            except Exception as ml_err:
+                logger.warning(f"ML exit update error: {ml_err}")
+            # === END ML DATA COLLECTION ===
             
             await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
                 f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")

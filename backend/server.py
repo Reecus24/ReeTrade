@@ -28,6 +28,7 @@ from worker import MultiUserTradingWorker
 from mexc_client import MexcClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
+from ml_data_collector import get_ml_collector
 from models import PaperAccount, Position
 
 # Logging
@@ -634,6 +635,30 @@ async def update_settings(updates: SettingsUpdate, current_user: dict = Depends(
     # Get updated settings
     settings = await db.get_settings(user_id)
     return {"message": "Settings updated", "settings": settings}
+
+# ============ ML TRAINING DATA ENDPOINTS ============
+
+@app.get("/api/ml/stats")
+async def get_ml_stats(current_user: dict = Depends(get_current_user)):
+    """Get ML training data statistics"""
+    user_id = current_user['user_id']
+    ml_collector = get_ml_collector(db)
+    stats = await ml_collector.get_training_stats(user_id)
+    return stats
+
+@app.get("/api/ml/training-data")
+async def get_ml_training_data(current_user: dict = Depends(get_current_user)):
+    """Get all completed trades for ML training export"""
+    user_id = current_user['user_id']
+    ml_collector = get_ml_collector(db)
+    data = await ml_collector.get_training_data(user_id, min_trades=10)
+    return {
+        "count": len(data),
+        "data": data,
+        "ready_for_training": len(data) >= 100
+    }
+
+
 
 # ============ MEXC KEYS ENDPOINTS ============
 
