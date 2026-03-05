@@ -113,63 +113,115 @@ class Database:
     
     # ========== MEXC KEYS OPERATIONS ==========
     
-    async def set_mexc_keys(self, user_id: str, api_key: str, api_secret: str):
+    async def set_mexc_keys(self, user_id: str, api_key: str, api_secret: str, key_type: str = 'spot'):
+        """Set MEXC API keys. key_type can be 'spot' or 'futures'"""
         encrypted_key = crypto_manager.encrypt(api_key)
         encrypted_secret = crypto_manager.encrypt(api_secret)
         
-        await self.user_keys.update_one(
-            {'user_id': user_id},
-            {'$set': {
+        if key_type == 'futures':
+            update_fields = {
+                'futures_api_key_encrypted': encrypted_key,
+                'futures_api_secret_encrypted': encrypted_secret,
+                'futures_updated_at': datetime.now(timezone.utc)
+            }
+        else:
+            update_fields = {
                 'api_key_encrypted': encrypted_key,
                 'api_secret_encrypted': encrypted_secret,
                 'updated_at': datetime.now(timezone.utc)
-            }},
+            }
+        
+        await self.user_keys.update_one(
+            {'user_id': user_id},
+            {'$set': update_fields},
             upsert=True
         )
-        logger.info(f"MEXC keys updated for user {user_id}")
+        logger.info(f"MEXC {key_type} keys updated for user {user_id}")
     
-    async def get_mexc_keys(self, user_id: str) -> Optional[Dict[str, str]]:
+    async def get_mexc_keys(self, user_id: str, key_type: str = 'spot') -> Optional[Dict[str, str]]:
+        """Get MEXC API keys. key_type can be 'spot' or 'futures'"""
         doc = await self.user_keys.find_one({'user_id': user_id})
         if not doc:
             return None
         
+        if key_type == 'futures':
+            key_field = 'futures_api_key_encrypted'
+            secret_field = 'futures_api_secret_encrypted'
+        else:
+            key_field = 'api_key_encrypted'
+            secret_field = 'api_secret_encrypted'
+        
+        # Check if this key type exists
+        if key_field not in doc:
+            # Fallback to spot keys for futures if no separate futures keys
+            if key_type == 'futures' and 'api_key_encrypted' in doc:
+                key_field = 'api_key_encrypted'
+                secret_field = 'api_secret_encrypted'
+            else:
+                return None
+        
         try:
-            api_key = crypto_manager.decrypt(doc['api_key_encrypted'])
-            api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
+            api_key = crypto_manager.decrypt(doc[key_field])
+            api_secret = crypto_manager.decrypt(doc[secret_field])
             if not api_key or not api_secret:
-                logger.warning(f"Keys decrypted but empty for user {user_id}")
+                logger.warning(f"{key_type} keys decrypted but empty for user {user_id}")
                 return None
             return {'api_key': api_key, 'api_secret': api_secret}
         except Exception as e:
-            logger.error(f"Failed to decrypt keys for user {user_id}: {e}")
-            # Delete corrupted keys
-            await self.user_keys.delete_one({'user_id': user_id})
-            logger.info(f"Deleted corrupted keys for user {user_id}")
+            logger.error(f"Failed to decrypt {key_type} keys for user {user_id}: {e}")
             return None
     
-    async def has_mexc_keys(self, user_id: str) -> bool:
-        doc = await self.user_keys.find_one({'user_id': user_id})
-        return doc is not None and 'api_key_encrypted' in doc
-    
-    async def get_mexc_keys_status(self, user_id: str) -> Dict:
-        # First check if keys exist
+    async def has_mexc_keys(self, user_id: str, key_type: str = 'spot') -> bool:
         doc = await self.user_keys.find_one({'user_id': user_id})
         if not doc:
-            return {'connected': False, 'last_updated': None, 'error': None}
-        
-        # Try to decrypt to verify keys are valid
-        try:
-            api_key = crypto_manager.decrypt(doc['api_key_encrypted'])
-            api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
-            if not api_key or not api_secret:
-                return {'connected': False, 'last_updated': None, 'error': 'Keys sind leer'}
+            return False
+        if key_type == 'futures':
+            return 'futures_api_key_encrypted' in doc or 'api_key_encrypted' in doc
+        return 'api_key_encrypted' in doc
+    
+    async def get_mexc_keys_status(self, user_id: str) -> Dict:
+        """Get status for both SPOT and FUTURES keys"""
+        doc = await self.user_keys.find_one({'user_id': user_id})
+        if not doc:
             return {
-                'connected': True,
-                'last_updated': doc.get('updated_at'),
+                'spot_connected': False, 
+                'futures_connected': False,
+                'connected': False,  # Backward compatibility
+                'last_updated': None, 
                 'error': None
             }
-        except Exception as e:
-            return {'connected': False, 'last_updated': None, 'error': 'Keys ungültig'}
+        
+        result = {
+            'spot_connected': False,
+            'futures_connected': False,
+            'connected': False,
+            'last_updated': doc.get('updated_at'),
+            'error': None
+        }
+        
+        # Check SPOT keys
+        try:
+            if 'api_key_encrypted' in doc:
+                api_key = crypto_manager.decrypt(doc['api_key_encrypted'])
+                api_secret = crypto_manager.decrypt(doc['api_secret_encrypted'])
+                if api_key and api_secret:
+                    result['spot_connected'] = True
+                    result['connected'] = True
+        except:
+            pass
+        
+        # Check FUTURES keys
+        try:
+            if 'futures_api_key_encrypted' in doc:
+                api_key = crypto_manager.decrypt(doc['futures_api_key_encrypted'])
+                api_secret = crypto_manager.decrypt(doc['futures_api_secret_encrypted'])
+                if api_key and api_secret:
+                    result['futures_connected'] = True
+                    result['futures_updated_at'] = doc.get('futures_updated_at')
+        except:
+            pass
+        
+        return result
     
     # ========== LOG OPERATIONS ==========
     

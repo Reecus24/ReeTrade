@@ -22,8 +22,12 @@ const SettingsTab = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mexcKeys, setMexcKeys] = useState({ api_key: '', api_secret: '' });
+  const [futuresKeys, setFuturesKeys] = useState({ api_key: '', api_secret: '' });
   const [keysConnected, setKeysConnected] = useState(false);
+  const [spotConnected, setSpotConnected] = useState(false);
+  const [futuresConnected, setFuturesConnected] = useState(false);
   const [showKeysInput, setShowKeysInput] = useState(false);
+  const [showFuturesKeysInput, setShowFuturesKeysInput] = useState(false);
   
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
@@ -48,10 +52,10 @@ const SettingsTab = () => {
   }, []);
 
   useEffect(() => {
-    if (keysConnected) {
+    if (keysConnected || spotConnected) {
       fetchAvailableCoins();
     }
-  }, [keysConnected]);
+  }, [keysConnected, spotConnected]);
 
   const fetchSettings = async () => {
     try {
@@ -72,6 +76,8 @@ const SettingsTab = () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/keys/mexc/status`, getAuthHeaders());
       setKeysConnected(response.data.connected);
+      setSpotConnected(response.data.spot_connected || response.data.connected);
+      setFuturesConnected(response.data.futures_connected || false);
     } catch (error) {}
   };
 
@@ -97,12 +103,31 @@ const SettingsTab = () => {
     setSaving(true);
     try {
       await axios.post(`${BACKEND_URL}/api/keys/mexc`, mexcKeys, getAuthHeaders());
-      toast.success('MEXC Keys gespeichert');
+      toast.success('MEXC SPOT Keys gespeichert');
       setMexcKeys({ api_key: '', api_secret: '' });
       setShowKeysInput(false);
       fetchKeysStatus();
     } catch (error) {
       toast.error('Fehler beim Speichern');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveFuturesKeys = async () => {
+    if (!futuresKeys.api_key || !futuresKeys.api_secret) {
+      toast.error('Bitte beide Futures Keys eingeben');
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/keys/mexc/futures`, futuresKeys, getAuthHeaders());
+      toast.success('MEXC FUTURES Keys gespeichert');
+      setFuturesKeys({ api_key: '', api_secret: '' });
+      setShowFuturesKeysInput(false);
+      fetchKeysStatus();
+    } catch (error) {
+      toast.error('Fehler beim Speichern der Futures Keys');
     } finally {
       setSaving(false);
     }
@@ -162,10 +187,10 @@ const SettingsTab = () => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Key className="w-5 h-5 text-blue-500" />
-            MEXC API Keys
+            MEXC SPOT API Keys
           </h3>
-          <Badge className={keysConnected ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}>
-            {keysConnected ? 'Verbunden' : 'Nicht konfiguriert'}
+          <Badge className={spotConnected ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}>
+            {spotConnected ? 'Verbunden' : 'Nicht konfiguriert'}
           </Badge>
         </div>
         
@@ -176,7 +201,7 @@ const SettingsTab = () => {
             className="w-full"
             data-testid="show-keys-btn"
           >
-            {keysConnected ? 'Keys aktualisieren' : 'Keys hinzufügen'}
+            {spotConnected ? 'SPOT Keys aktualisieren' : 'SPOT Keys hinzufügen'}
           </Button>
         ) : (
           <div className="space-y-3">
@@ -205,6 +230,66 @@ const SettingsTab = () => {
                 Speichern
               </Button>
               <Button onClick={() => setShowKeysInput(false)} variant="outline">
+                Abbrechen
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* MEXC FUTURES API Keys - Separate */}
+      <div className="p-4 bg-zinc-950 border border-purple-900/50 rounded-lg">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Key className="w-5 h-5 text-purple-500" />
+            MEXC FUTURES API Keys
+            <span className="text-xs text-zinc-500">(separater Key)</span>
+          </h3>
+          <Badge className={futuresConnected ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}>
+            {futuresConnected ? 'Verbunden' : 'Nicht konfiguriert'}
+          </Badge>
+        </div>
+        
+        <p className="text-sm text-zinc-400 mb-3">
+          Für Futures-Trading benötigst du einen separaten API-Key mit <strong>Futures-Berechtigung</strong>.
+        </p>
+        
+        {!showFuturesKeysInput ? (
+          <Button 
+            onClick={() => setShowFuturesKeysInput(true)} 
+            variant="outline" 
+            className="w-full border-purple-800 hover:bg-purple-900/20"
+            data-testid="show-futures-keys-btn"
+          >
+            {futuresConnected ? 'FUTURES Keys aktualisieren' : 'FUTURES Keys hinzufügen'}
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            <Input
+              placeholder="Futures API Key"
+              value={futuresKeys.api_key}
+              onChange={(e) => setFuturesKeys(prev => ({ ...prev, api_key: e.target.value }))}
+              className="bg-zinc-900 border-purple-800"
+              data-testid="futures-api-key-input"
+            />
+            <Input
+              type="password"
+              placeholder="Futures API Secret"
+              value={futuresKeys.api_secret}
+              onChange={(e) => setFuturesKeys(prev => ({ ...prev, api_secret: e.target.value }))}
+              className="bg-zinc-900 border-purple-800"
+              data-testid="futures-api-secret-input"
+            />
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleSaveFuturesKeys} 
+                disabled={saving} 
+                className="flex-1 bg-purple-600 hover:bg-purple-700"
+                data-testid="save-futures-keys-btn"
+              >
+                Futures Keys speichern
+              </Button>
+              <Button onClick={() => setShowFuturesKeysInput(false)} variant="outline">
                 Abbrechen
               </Button>
             </div>

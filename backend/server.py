@@ -676,11 +676,12 @@ async def get_futures_status(current_user: dict = Depends(get_current_user)):
     user_id = current_user['user_id']
     settings = await db.get_settings(user_id)
     
-    keys = await db.get_mexc_keys(user_id)
+    # Try to get separate futures keys first, fallback to spot keys
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
         return {
             "futures_enabled": settings.futures_enabled,
-            "error": "MEXC API keys nicht konfiguriert",
+            "error": "MEXC Futures API keys nicht konfiguriert. Bitte separate Futures-Keys im Settings Tab eingeben.",
             "account": None,
             "positions": []
         }
@@ -788,9 +789,9 @@ async def test_futures_connectivity(current_user: dict = Depends(get_current_use
     """Test MEXC Futures API connectivity and authentication"""
     user_id = current_user['user_id']
     
-    keys = await db.get_mexc_keys(user_id)
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
-        return {"error": "MEXC API keys nicht konfiguriert", "tests": {}}
+        return {"error": "MEXC Futures API keys nicht konfiguriert. Bitte separate Futures-Keys eingeben.", "tests": {}}
     
     futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
     
@@ -829,9 +830,9 @@ async def enable_futures(current_user: dict = Depends(get_current_user)):
     user_id = current_user['user_id']
     
     # Verify API keys work with futures
-    keys = await db.get_mexc_keys(user_id)
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
-        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+        raise HTTPException(status_code=400, detail="MEXC Futures API keys nicht konfiguriert. Bitte separate Futures-Keys eingeben.")
     
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
@@ -839,7 +840,7 @@ async def enable_futures(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=400, 
-            detail=f"Futures API nicht verfügbar. Stelle sicher, dass Futures für deinen API-Key aktiviert ist: {str(e)}"
+            detail=f"Futures API nicht verfügbar: {str(e)}"
         )
     
     await db.update_settings(user_id, {'futures_enabled': True})
@@ -864,9 +865,9 @@ async def get_futures_pairs(current_user: dict = Depends(get_current_user)):
     """Get available futures trading pairs"""
     user_id = current_user['user_id']
     
-    keys = await db.get_mexc_keys(user_id)
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
-        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+        raise HTTPException(status_code=400, detail="MEXC Futures API keys nicht konfiguriert")
     
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
@@ -889,9 +890,9 @@ async def close_futures_position(
     """Manually close a futures position"""
     user_id = current_user['user_id']
     
-    keys = await db.get_mexc_keys(user_id)
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
-        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+        raise HTTPException(status_code=400, detail="MEXC Futures API keys nicht konfiguriert")
     
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
@@ -933,9 +934,9 @@ async def close_all_futures_positions(current_user: dict = Depends(get_current_u
     """Close all open futures positions"""
     user_id = current_user['user_id']
     
-    keys = await db.get_mexc_keys(user_id)
+    keys = await db.get_mexc_keys(user_id, key_type='futures')
     if not keys:
-        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+        raise HTTPException(status_code=400, detail="MEXC Futures API keys nicht konfiguriert")
     
     try:
         futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
@@ -1073,64 +1074,86 @@ async def get_available_coins(current_user: dict = Depends(get_current_user)):
 
 @app.post("/api/keys/mexc")
 async def set_mexc_keys(keys: MexcKeysInput, current_user: dict = Depends(get_current_user)):
-    """Set MEXC API keys (encrypted storage)"""
+    """Set MEXC SPOT API keys (encrypted storage)"""
     user_id = current_user['user_id']
     
     if not keys.api_key or not keys.api_secret:
         raise HTTPException(status_code=400, detail="Both API key and secret required")
     
-    await db.set_mexc_keys(user_id, keys.api_key, keys.api_secret)    
+    await db.set_mexc_keys(user_id, keys.api_key, keys.api_secret, key_type='spot')    
     # Audit log
     await db.audit_log(
         user_id=user_id,
         action="KEYS_UPDATE",
-        details={'keys_configured': True}
+        details={'keys_configured': True, 'type': 'spot'}
     )
-    await db.log(user_id, "INFO", "MEXC API keys updated")
+    await db.log(user_id, "INFO", "MEXC SPOT API keys updated")
     
-    return {"message": "MEXC keys saved securely", "connected": True}
+    return {"message": "MEXC SPOT keys saved securely", "connected": True}
 
-@app.get("/api/keys/mexc/status", response_model=MexcKeysStatus)
-async def get_mexc_keys_status(current_user: dict = Depends(get_current_user)):
-    """Get MEXC keys connection status with REAL API verification"""
+
+@app.post("/api/keys/mexc/futures")
+async def set_mexc_futures_keys(keys: MexcKeysInput, current_user: dict = Depends(get_current_user)):
+    """Set MEXC FUTURES API keys (separate from SPOT)"""
     user_id = current_user['user_id']
     
-    # First check basic status from DB
+    if not keys.api_key or not keys.api_secret:
+        raise HTTPException(status_code=400, detail="Both API key and secret required")
+    
+    await db.set_mexc_keys(user_id, keys.api_key, keys.api_secret, key_type='futures')    
+    # Audit log
+    await db.audit_log(
+        user_id=user_id,
+        action="KEYS_UPDATE",
+        details={'keys_configured': True, 'type': 'futures'}
+    )
+    await db.log(user_id, "INFO", "MEXC FUTURES API keys updated")
+    
+    return {"message": "MEXC FUTURES keys saved securely", "futures_connected": True}
+
+@app.get("/api/keys/mexc/status")
+async def get_mexc_keys_status(current_user: dict = Depends(get_current_user)):
+    """Get MEXC keys connection status for both SPOT and FUTURES"""
+    user_id = current_user['user_id']
+    
+    # Get status from DB (includes both spot and futures)
     basic_status = await db.get_mexc_keys_status(user_id)
     
-    if not basic_status.get('connected'):
-        return MexcKeysStatus(**basic_status)
+    result = {
+        'connected': basic_status.get('spot_connected', False),
+        'spot_connected': basic_status.get('spot_connected', False),
+        'futures_connected': basic_status.get('futures_connected', False),
+        'last_updated': basic_status.get('last_updated'),
+        'error': None
+    }
     
-    # Keys exist and decrypt - now verify with real MEXC API call
-    try:
-        keys = await db.get_mexc_keys(user_id)
-        if not keys:
-            return MexcKeysStatus(connected=False, last_updated=None, error='Keys nicht verfügbar')
-        
-        # Make a real authenticated API call to verify keys work
-        mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-        await mexc.get_account()  # Will throw if keys invalid
-        
-        # If we get here, keys are valid and working
-        return MexcKeysStatus(
-            connected=True, 
-            last_updated=basic_status.get('last_updated'),
-            error=None
-        )
-    except Exception as e:
-        error_msg = str(e)
-        # Parse common MEXC errors
-        if '10072' in error_msg or 'invalid' in error_msg.lower():
-            error_msg = 'API Keys ungültig oder abgelaufen'
-        elif 'signature' in error_msg.lower():
-            error_msg = 'API Secret ist falsch'
-        elif 'timeout' in error_msg.lower():
-            error_msg = 'MEXC nicht erreichbar'
-        else:
-            error_msg = f'Verbindungsfehler: {error_msg[:50]}'
-        
-        logger.warning(f"MEXC key verification failed for user {user_id}: {error_msg}")
-        return MexcKeysStatus(connected=False, last_updated=basic_status.get('last_updated'), error=error_msg)
+    # Verify SPOT keys with real API call
+    if result['spot_connected']:
+        try:
+            keys = await db.get_mexc_keys(user_id, key_type='spot')
+            if keys:
+                mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+                await mexc.get_account()
+        except Exception as e:
+            result['spot_connected'] = False
+            result['connected'] = False
+            result['error'] = f'SPOT: {str(e)[:50]}'
+    
+    # Verify FUTURES keys with real API call  
+    if result['futures_connected']:
+        try:
+            keys = await db.get_mexc_keys(user_id, key_type='futures')
+            if keys:
+                futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+                await futures_client.get_account_asset('USDT')
+        except Exception as e:
+            result['futures_connected'] = False
+            if result['error']:
+                result['error'] += f' | FUTURES: {str(e)[:30]}'
+            else:
+                result['error'] = f'FUTURES: {str(e)[:50]}'
+    
+    return result
 
 @app.delete("/api/keys/mexc")
 async def delete_mexc_keys(current_user: dict = Depends(get_current_user)):
