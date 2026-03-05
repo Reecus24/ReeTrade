@@ -255,7 +255,16 @@ class MultiUserTradingWorker:
         trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
         profile = RISK_PROFILES_V2.get(trading_mode, {}) if trading_mode != TradingMode.MANUAL else {}
         
+        # Track positions being sold to prevent duplicates
+        if not hasattr(self, '_selling_positions'):
+            self._selling_positions = set()
+        
         for position in account.open_positions[:]:
+            # Skip if already being sold (prevent duplicate sells)
+            position_key = f"{user_id}_{position.symbol}_{position.id}"
+            if position_key in self._selling_positions:
+                continue
+            
             try:
                 ticker = await mexc.get_ticker_24h(position.symbol)
                 current_price = float(ticker['lastPrice'])
@@ -273,15 +282,24 @@ class MultiUserTradingWorker:
                 move_sl_to_entry = profile.get('partial_profit_move_sl_to_entry', True)
                 
                 if partial_enabled and not position.partial_profit_taken and pnl_pct >= partial_trigger:
+                    # Mark as selling to prevent duplicates
+                    partial_key = f"{position_key}_partial"
+                    if partial_key in self._selling_positions:
+                        continue
+                    self._selling_positions.add(partial_key)
+                    
                     # Time for partial profit!
                     await self.db.log(user_id, "WARNING", 
                         f"[PARTIAL] 🎯 {position.symbol} +{pnl_pct:.1f}% >= {partial_trigger}% → Teilgewinn {partial_close_pct}%!")
                     
-                    await self.take_partial_profit(
-                        user_id, position, current_price, account, settings, mexc,
-                        partial_close_pct, move_sl_to_entry
-                    )
-                    await self.db.update_live_account(account)
+                    try:
+                        await self.take_partial_profit(
+                            user_id, position, current_price, account, settings, mexc,
+                            partial_close_pct, move_sl_to_entry
+                        )
+                        await self.db.update_live_account(account)
+                    finally:
+                        self._selling_positions.discard(partial_key)
                     continue  # Skip full exit check this iteration
                 
                 # ============ STOP LOSS CHECK ============
@@ -301,9 +319,16 @@ class MultiUserTradingWorker:
                         exit_reason = f"🎯 TAKE PROFIT @ {current_price:.4f}"
                 
                 if should_exit:
+                    # Mark position as being sold BEFORE attempting sell
+                    self._selling_positions.add(position_key)
+                    
                     await self.db.log(user_id, "WARNING", f"[EXIT] {position.symbol} - {exit_reason} | PnL: {pnl_pct:.1f}%")
-                    await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
-                    await self.db.update_live_account(account)
+                    try:
+                        await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
+                        await self.db.update_live_account(account)
+                    finally:
+                        # Remove from selling set after done (success or fail)
+                        self._selling_positions.discard(position_key)
                 else:
                     # Log check every 5 minutes (10 checks)
                     if not hasattr(self, '_exit_log_counter'):
