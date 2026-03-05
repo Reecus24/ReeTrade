@@ -404,6 +404,16 @@ class MultiUserTradingWorker:
                     continue  # Skip full exit check this iteration
                 
                 # ============ SMART EXIT ANALYSIS (KI-gesteuert) ============
+                # WICHTIG: Mindest-Haltezeit von 5 Minuten nach Kauf!
+                min_hold_time_minutes = 5
+                if hasattr(position, 'entry_time') and position.entry_time:
+                    time_held = datetime.now(timezone.utc) - position.entry_time
+                    if time_held.total_seconds() < min_hold_time_minutes * 60:
+                        # Position ist zu neu - kein Smart Exit
+                        await self.db.log(user_id, "DEBUG", 
+                            f"[EXIT CHECK] {position.symbol}: Haltezeit {time_held.total_seconds():.0f}s < {min_hold_time_minutes}min - Smart Exit übersprungen")
+                        continue
+                
                 # Hole erweiterte Marktdaten für intelligente Analyse
                 try:
                     # Hole KI-Lernzustand für diesen User

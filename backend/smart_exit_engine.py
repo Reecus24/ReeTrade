@@ -89,6 +89,10 @@ class SmartExitEngine:
         
         time_in_trade = datetime.now(timezone.utc) - ctx.entry_time
         hours_in_trade = time_in_trade.total_seconds() / 3600
+        minutes_in_trade = time_in_trade.total_seconds() / 60
+        
+        # ========== MINDEST-HALTEZEIT (außer Stop Loss) ==========
+        MIN_HOLD_MINUTES = 10  # Mindestens 10 Minuten halten
         
         # ========== KRITISCHE EXITS (sofort) ==========
         
@@ -116,6 +120,17 @@ class SmartExitEngine:
         
         # ========== INTELLIGENTE FRÜHE EXITS ==========
         
+        # WICHTIG: Erst nach Mindest-Haltezeit prüfen (außer SL/TP)
+        if minutes_in_trade < MIN_HOLD_MINUTES:
+            reasons.append(f"Trade erst {minutes_in_trade:.0f} Minuten alt - Smart Exit pausiert")
+            return ExitSignal(
+                should_exit=False,
+                exit_type="hold",
+                confidence=30,
+                reasoning=reasons,
+                urgency="low"
+            )
+        
         # 3. Trend-Umkehr erkannt
         trend_reversal = self._detect_trend_reversal(ctx)
         if trend_reversal['detected']:
@@ -137,13 +152,13 @@ class SmartExitEngine:
                 urgency = "normal"
         
         # 5. Volumen-Warnung (Liquidität sinkt)
-        if ctx.volume_ratio < 0.3:
+        # NUR bei signifikantem Gewinn (+2%+) und niedrigem Volumen verkaufen
+        if ctx.volume_ratio < 0.3 and ctx.unrealized_pnl_pct > 2.0:
             reasons.append(f"Volumen stark gefallen ({ctx.volume_ratio:.1%} vom Durchschnitt)")
-            if ctx.unrealized_pnl_pct > 0:
-                reasons.append("Empfehle Gewinnmitnahme bei niedriger Liquidität")
-                should_exit = True
-                exit_type = "early_exit"
-                confidence = 60
+            reasons.append("Empfehle Gewinnmitnahme bei niedriger Liquidität")
+            should_exit = True
+            exit_type = "early_exit"
+            confidence = 60
         
         # 6. Lange Zeit ohne Bewegung + negative Entwicklung
         if hours_in_trade > 12 and abs(ctx.unrealized_pnl_pct) < 1:
