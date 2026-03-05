@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 from db_operations import Database
 from mexc_client import MexcClient
+from mexc_futures_client import MexcFuturesClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
 from regime_detector import RegimeDetector
@@ -914,10 +915,18 @@ class MultiUserTradingWorker:
                         today_trades_count=today_trades
                     )
                     
-                    # Get AI decision from V2 engine
-                    ai_decision = self.ai_engine.make_decision(
-                        user_id, trading_mode, market_conditions, account_state, trading_budget_remaining
-                    )
+                    # Get AI decision - use futures-aware method if enabled
+                    if settings.futures_enabled:
+                        ai_decision = self.ai_engine.make_futures_decision(
+                            user_id, trading_mode, market_conditions, account_state, 
+                            trading_budget_remaining, 
+                            user_futures_enabled=True,
+                            max_leverage=settings.futures_max_leverage
+                        )
+                    else:
+                        ai_decision = self.ai_engine.make_decision(
+                            user_id, trading_mode, market_conditions, account_state, trading_budget_remaining
+                        )
                     
                     if not ai_decision.should_trade:
                         reason = ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'
@@ -1022,16 +1031,32 @@ class MultiUserTradingWorker:
                 # Use AI position size if available
                 position_budget = candidate_ai.position_size_usdt if candidate_ai else available_budget
                 
-                trade_success = await self.open_live_position(
-                    user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
-                    position_budget, is_ai_mode, candidate_ai
-                )
+                # Determine if we should use FUTURES (AI mode with futures enabled)
+                use_futures = False
+                if is_ai_mode and candidate_ai and settings.futures_enabled:
+                    market_type = getattr(candidate_ai, 'market_type', 'spot')
+                    use_futures = market_type == 'futures'
+                
+                if use_futures:
+                    # Execute FUTURES trade
+                    trade_success = await self.open_futures_position(
+                        user_id, symbol, candidate, account, settings, 
+                        position_budget, candidate_ai
+                    )
+                    trade_type = f"FUTURES {candidate_ai.direction.upper()} {candidate_ai.leverage}x"
+                else:
+                    # Execute SPOT trade (existing logic)
+                    trade_success = await self.open_live_position(
+                        user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
+                        position_budget, is_ai_mode, candidate_ai
+                    )
+                    trade_type = "SPOT"
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
-                    decision_text = f'TRADE: {symbol} (Score: {candidate["score"]:.1f})'
+                    decision_text = f'TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     if is_ai_mode and candidate_ai:
-                        decision_text = f'🤖 AI TRADE: {symbol} (Score: {candidate["score"]:.1f})'
+                        decision_text = f'🤖 AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     await self.db.update_settings(user_id, {
                         'live_last_decision': decision_text,
@@ -1249,6 +1274,10 @@ class MultiUserTradingWorker:
             
             # === ML DATA COLLECTION: Speichere Snapshot für Training ===
             try:
+                # Calculate SL/TP percentages for ML data
+                calc_sl_pct = ai_decision.stop_loss_pct if (is_ai_mode and ai_decision) else ((current_price - stop_loss) / current_price * 100 if current_price > 0 else 3.0)
+                calc_tp_pct = ai_decision.take_profit_pct if (is_ai_mode and ai_decision) else ((take_profit - current_price) / current_price * 100 if current_price > 0 else 7.5)
+                
                 market_data = {
                     'price_change_1h': candidate.get('price_change_1h', 0),
                     'price_change_24h': candidate.get('price_change_24h', 0),
@@ -1263,7 +1292,7 @@ class MultiUserTradingWorker:
                     'regime': candidate.get('regime', 'UNKNOWN'),
                     'volatility_percentile': candidate.get('volatility_percentile', 50),
                     'momentum_score': candidate.get('momentum', 0),
-                    'position_percent': (actual_notional / live_usdt_free * 100) if live_usdt_free > 0 else 0,
+                    'position_percent': (actual_notional / available_budget * 100) if available_budget > 0 else 0,
                     'open_positions': len(account.open_positions) if account else 0
                 }
                 ai_data = {
@@ -1275,8 +1304,8 @@ class MultiUserTradingWorker:
                     symbol=symbol,
                     entry_price=avg_price,
                     position_size_usdt=actual_notional,
-                    stop_loss_pct=stop_loss_pct,
-                    take_profit_pct=take_profit_pct,
+                    stop_loss_pct=calc_sl_pct,
+                    take_profit_pct=calc_tp_pct,
                     market_data=market_data,
                     ai_data=ai_data
                 )
@@ -1301,7 +1330,27 @@ class MultiUserTradingWorker:
         self, user_id: str, position: Position, exit_price: float,
         account: PaperAccount, settings: UserSettings, reason: str, mexc: MexcClient
     ):
-        """Close a position with real SELL order"""
+        """Close a SPOT or FUTURES position with real SELL order"""
+        try:
+            # Check if this is a Futures position
+            is_futures = getattr(position, 'market_type', 'spot') == 'futures'
+            
+            if is_futures:
+                # Close FUTURES position
+                await self.close_futures_position(user_id, position, exit_price, account, settings, reason)
+            else:
+                # Close SPOT position (existing logic)
+                await self._close_spot_position(user_id, position, exit_price, account, settings, reason, mexc)
+                
+        except Exception as e:
+            logger.error(f"Close position error: {e}")
+            await self.db.log(user_id, "ERROR", f"[LIVE] ❌ CLOSE FAILED: {position.symbol} - {str(e)}")
+    
+    async def _close_spot_position(
+        self, user_id: str, position: Position, exit_price: float,
+        account: PaperAccount, settings: UserSettings, reason: str, mexc: MexcClient
+    ):
+        """Close a SPOT position with real SELL order"""
         try:
             # Place REAL SELL order
             await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {position.qty}")
@@ -1394,6 +1443,184 @@ class MultiUserTradingWorker:
                 recent_losses = await self.db.get_recent_symbol_losses(user_id, position.symbol, hours=12)
                 if recent_losses >= 3:
                     await self.db.set_symbol_pause(user_id, position.symbol, 24, "3 losses in 12h", recent_losses)
+                    
+        except Exception as e:
+            await self.db.log(user_id, "ERROR", f"[LIVE] ❌ SELL FAILED: {position.symbol} - {str(e)}")
+    
+    async def close_futures_position(
+        self, user_id: str, position: Position, exit_price: float,
+        account: PaperAccount, settings: UserSettings, reason: str
+    ):
+        """Close a FUTURES position"""
+        try:
+            keys = await self.db.get_mexc_keys(user_id)
+            if not keys:
+                raise Exception("MEXC API keys nicht konfiguriert")
+            
+            futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            
+            # Convert symbol format if needed
+            futures_symbol = futures_client.convert_spot_symbol_to_futures(position.symbol)
+            is_long = position.side == "LONG"
+            
+            await self.db.log(user_id, "WARNING", 
+                f"[FUTURES] ⚡ CLOSING {position.side}: {futures_symbol} | Qty: {position.qty}")
+            
+            # Close the position
+            if is_long:
+                result = await futures_client.close_long(futures_symbol, position.qty)
+            else:
+                result = await futures_client.close_short(futures_symbol, position.qty)
+            
+            # Calculate PnL
+            if is_long:
+                pnl = (exit_price - position.entry_price) * position.qty
+                pnl_pct = ((exit_price - position.entry_price) / position.entry_price) * 100
+            else:
+                pnl = (position.entry_price - exit_price) * position.qty
+                pnl_pct = ((position.entry_price - exit_price) / position.entry_price) * 100
+            
+            # Factor in leverage for ROE
+            leverage = getattr(position, 'leverage', 1) or 1
+            roe = pnl_pct * leverage
+            
+            # Remove from account
+            account.open_positions.remove(position)
+            
+            # Record trade
+            trade = Trade(
+                user_id=user_id,
+                ts=datetime.now(timezone.utc),
+                symbol=position.symbol,
+                side="SELL" if is_long else "BUY",
+                qty=position.qty,
+                entry=position.entry_price,
+                exit=exit_price,
+                pnl=pnl,
+                pnl_pct=pnl_pct,
+                mode='live',
+                reason=f"[FUTURES {leverage}x {position.side}] {reason}",
+                notional=position.entry_price * position.qty
+            )
+            await self.db.add_trade(trade)
+            
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
+                f"[FUTURES] {emoji} CLOSED: {futures_symbol} {position.side} | Exit: ${exit_price:.4f} | PnL: ${pnl:.2f} | ROE: {roe:.1f}%")
+            
+        except Exception as e:
+            logger.error(f"Futures close error: {e}")
+            await self.db.log(user_id, "ERROR", f"[FUTURES] ❌ CLOSE FAILED: {position.symbol} - {str(e)}")
+    
+    async def open_futures_position(
+        self, user_id: str, symbol: str, candidate: dict,
+        account: PaperAccount, settings: UserSettings,
+        available_budget: float, ai_decision
+    ) -> bool:
+        """Open a FUTURES position on MEXC"""
+        try:
+            keys = await self.db.get_mexc_keys(user_id)
+            if not keys:
+                raise Exception("MEXC API keys nicht konfiguriert")
+            
+            futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            
+            # Get decision parameters
+            direction = ai_decision.direction  # "long" or "short"
+            leverage = ai_decision.leverage
+            position_size = ai_decision.position_size_usdt
+            current_price = candidate['current_price']
+            
+            # Convert symbol format
+            futures_symbol = futures_client.convert_spot_symbol_to_futures(symbol)
+            
+            # Apply risk reduction for futures
+            profile = RISK_PROFILES_V2.get(TradingMode(settings.trading_mode), {})
+            risk_reduction = profile.get('futures_risk_reduction', 0.5)
+            actual_position = position_size * risk_reduction
+            
+            # Clamp to available budget
+            actual_position = min(actual_position, available_budget * 0.9)
+            
+            if actual_position < settings.live_min_notional_usdt:
+                await self.db.log(user_id, "INFO", 
+                    f"[FUTURES] ⚠️ Position ${actual_position:.2f} < Min ${settings.live_min_notional_usdt} → Skip")
+                return False
+            
+            # Calculate quantity in contracts
+            quantity = futures_client.calculate_position_size(actual_position, current_price, 1)  # No extra leverage in qty
+            
+            # Set leverage
+            await futures_client.set_leverage(futures_symbol, leverage)
+            
+            await self.db.log(user_id, "WARNING", 
+                f"[FUTURES] ⚡ OPENING {direction.upper()} {leverage}x: {futures_symbol} | Size: ${actual_position:.2f}")
+            
+            # Open position
+            if direction == "long":
+                result = await futures_client.open_long(
+                    symbol=futures_symbol,
+                    quantity=quantity,
+                    leverage=leverage,
+                    stop_loss_price=ai_decision.stop_loss_price,
+                    take_profit_price=ai_decision.take_profit_price
+                )
+            else:
+                result = await futures_client.open_short(
+                    symbol=futures_symbol,
+                    quantity=quantity,
+                    leverage=leverage,
+                    stop_loss_price=ai_decision.stop_loss_price,
+                    take_profit_price=ai_decision.take_profit_price
+                )
+            
+            # Create position record
+            position = Position(
+                symbol=symbol,
+                side=direction.upper(),
+                entry_price=current_price,
+                qty=quantity,
+                stop_loss=ai_decision.stop_loss_price,
+                take_profit=ai_decision.take_profit_price,
+                entry_time=datetime.now(timezone.utc),
+                market_type="futures",
+                leverage=leverage,
+                margin_mode="isolated",
+                liquidation_price=ai_decision.liquidation_price,
+                margin_used=actual_position
+            )
+            
+            # Update account
+            if not account:
+                account = PaperAccount(user_id=user_id, equity=0, cash=0, open_positions=[])
+            
+            account.open_positions.append(position)
+            await self.db.update_live_account(account)
+            
+            # Record trade
+            trade = Trade(
+                user_id=user_id,
+                ts=datetime.now(timezone.utc),
+                symbol=symbol,
+                side="BUY" if direction == "long" else "SELL",
+                qty=quantity,
+                entry=current_price,
+                mode='live',
+                reason=f"[FUTURES {leverage}x {direction.upper()}] Score={candidate['score']:.1f}",
+                notional=actual_position * leverage
+            )
+            await self.db.add_trade(trade)
+            
+            emoji = "📈" if direction == "long" else "📉"
+            await self.db.log(user_id, "WARNING",
+                f"[FUTURES] {emoji} OPENED: {futures_symbol} {direction.upper()} {leverage}x | Margin: ${actual_position:.2f} | Liq: ${ai_decision.liquidation_price:.4f}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Futures open error: {e}")
+            await self.db.log(user_id, "ERROR", f"[FUTURES] ❌ OPEN FAILED: {symbol} - {str(e)}")
+            return False
                     
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"[LIVE] ❌ SELL FAILED: {position.symbol} - {str(e)}")

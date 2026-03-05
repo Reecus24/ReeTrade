@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, User, Shield, TrendingUp, Zap, AlertTriangle, Info, Wallet, Target, Activity } from 'lucide-react';
+import { Bot, User, Shield, TrendingUp, Zap, AlertTriangle, Info, Wallet, Target, Activity, FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -22,14 +22,16 @@ const PROFILE_ICONS = {
   manual: User,
   ai_conservative: Shield,
   ai_moderate: TrendingUp,
-  ai_aggressive: Zap
+  ai_aggressive: Zap,
+  ki_explorer: FlaskConical
 };
 
 const PROFILE_COLORS = {
   manual: 'text-blue-500',
   ai_conservative: 'text-green-500',
   ai_moderate: 'text-yellow-500',
-  ai_aggressive: 'text-red-500'
+  ai_aggressive: 'text-red-500',
+  ki_explorer: 'text-purple-500'
 };
 
 const TradingModeSelector = ({ currentMode, onModeChange, aiStatus }) => {

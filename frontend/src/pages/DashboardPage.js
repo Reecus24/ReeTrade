@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText, History,
-  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot, Brain
+  Wifi, WifiOff, RefreshCw, LogOut, Wallet, DollarSign, Clock, Bot, Brain, Zap
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -17,6 +17,7 @@ import BotStatusPanel from '@/components/BotStatusPanel';
 import PositionsPanel from '@/components/PositionsPanel';
 import TradingModeSelector from '@/components/TradingModeSelector';
 import MLStatsTab from '@/components/MLStatsTab';
+import FuturesTab from '@/components/FuturesTab';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -444,6 +445,9 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsTrigger value="history" className="data-[state=active]:text-red-500">
                   <History className="w-4 h-4 mr-2" />History
                 </TabsTrigger>
+                <TabsTrigger value="futures" className="data-[state=active]:text-yellow-500">
+                  <Zap className="w-4 h-4 mr-2" />Futures
+                </TabsTrigger>
                 <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
                   <FileText className="w-4 h-4 mr-2" />Logs
                 </TabsTrigger>
@@ -460,6 +464,13 @@ const DashboardPage = ({ onLogout }) => {
             {settings.live_confirmed && (
               <>
                 <TabsContent value="history"><TradesTab /></TabsContent>
+                <TabsContent value="futures">
+                  <FuturesTab 
+                    token={localStorage.getItem('auth_token')}
+                    settings={settings}
+                    onSettingsUpdate={() => fetchStatus()}
+                  />
+                </TabsContent>
                 <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
                 <TabsContent value="ml"><MLStatsTab /></TabsContent>
               </>

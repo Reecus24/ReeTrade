@@ -26,6 +26,7 @@ from models import (
 from db_operations import Database
 from worker import MultiUserTradingWorker
 from mexc_client import MexcClient
+from mexc_futures_client import MexcFuturesClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
 from ml_data_collector import get_ml_collector
@@ -425,7 +426,7 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
     })
     
     # AI Profiles with NEW position sizing logic
-    for mode in [TradingMode.AI_CONSERVATIVE, TradingMode.AI_MODERATE, TradingMode.AI_AGGRESSIVE]:
+    for mode in [TradingMode.AI_CONSERVATIVE, TradingMode.AI_MODERATE, TradingMode.AI_AGGRESSIVE, TradingMode.KI_EXPLORER]:
         profile = RISK_PROFILES_V2.get(mode, {})
         
         # Calculate position sizes based on AVAILABLE USDT (not trading budget!)
@@ -440,7 +441,7 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
         position_usd_min = min(position_usd_min, trading_budget_remaining)
         position_usd_max = min(position_usd_max, trading_budget_remaining)
         
-        profiles.append({
+        profile_data = {
             'mode': mode.value,
             'name': profile.get('name', mode.value),
             'emoji': profile.get('emoji', '🤖'),
@@ -457,7 +458,14 @@ async def get_ai_profiles(current_user: dict = Depends(get_current_user)):
             'min_adx': profile.get('min_adx', 15),
             'usdt_free': round(usdt_free, 2),
             'trading_budget_remaining': round(trading_budget_remaining, 2)
-        })
+        }
+        
+        # Add explorer-specific info
+        if mode == TradingMode.KI_EXPLORER:
+            profile_data['is_explorer'] = True
+            profile_data['description'] = '🔬 Experimentiert mit verschiedenen Parametern für optimales KI-Lernen. Nur mit kleinen Beträgen nutzen!'
+        
+        profiles.append(profile_data)
     
     return {
         'profiles': profiles,
@@ -657,6 +665,230 @@ async def get_ml_training_data(current_user: dict = Depends(get_current_user)):
         "data": data,
         "ready_for_training": len(data) >= 100
     }
+
+
+# ============ FUTURES ENDPOINTS ============
+
+@app.get("/api/futures/status")
+async def get_futures_status(current_user: dict = Depends(get_current_user)):
+    """Get Futures account status and balance"""
+    user_id = current_user['user_id']
+    settings = await db.get_settings(user_id)
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        
+        # Get futures account assets
+        assets = await futures_client.get_account_asset("USDT")
+        
+        # Get open futures positions
+        positions = await futures_client.get_open_positions()
+        
+        return {
+            "futures_enabled": settings.futures_enabled,
+            "account": {
+                "available_balance": float(assets.get("availableBalance", 0)),
+                "frozen_balance": float(assets.get("frozenBalance", 0)),
+                "equity": float(assets.get("equity", 0)),
+                "unrealized_pnl": float(assets.get("unrealisedPnl", 0))
+            },
+            "open_positions": len(positions),
+            "positions": [
+                {
+                    "symbol": p.get("symbol"),
+                    "position_type": "LONG" if p.get("positionType") == 1 else "SHORT",
+                    "quantity": float(p.get("holdVol", 0)),
+                    "entry_price": float(p.get("openAvgPrice", 0)),
+                    "leverage": int(p.get("leverage", 1)),
+                    "unrealized_pnl": float(p.get("unrealisedPnl", 0)),
+                    "liquidation_price": float(p.get("liquidatePrice", 0)),
+                    "margin": float(p.get("im", 0))
+                }
+                for p in positions
+            ],
+            "settings": {
+                "default_leverage": settings.futures_default_leverage,
+                "max_leverage": settings.futures_max_leverage,
+                "risk_per_trade": settings.futures_risk_per_trade,
+                "margin_mode": settings.futures_margin_mode,
+                "allow_shorts": settings.futures_allow_shorts
+            }
+        }
+    except Exception as e:
+        logger.error(f"Futures status error: {e}")
+        raise HTTPException(status_code=502, detail=f"Futures API Fehler: {str(e)}")
+
+
+@app.post("/api/futures/enable")
+async def enable_futures(current_user: dict = Depends(get_current_user)):
+    """Enable futures trading"""
+    user_id = current_user['user_id']
+    
+    # Verify API keys work with futures
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        await futures_client.get_account_asset("USDT")
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Futures API nicht verfügbar. Stelle sicher, dass Futures für deinen API-Key aktiviert ist: {str(e)}"
+        )
+    
+    await db.update_settings(user_id, {'futures_enabled': True})
+    await db.log(user_id, "WARNING", "[FUTURES] ⚡ Futures Trading aktiviert!")
+    
+    return {"message": "Futures Trading aktiviert", "futures_enabled": True}
+
+
+@app.post("/api/futures/disable")
+async def disable_futures(current_user: dict = Depends(get_current_user)):
+    """Disable futures trading"""
+    user_id = current_user['user_id']
+    
+    await db.update_settings(user_id, {'futures_enabled': False})
+    await db.log(user_id, "INFO", "[FUTURES] Futures Trading deaktiviert")
+    
+    return {"message": "Futures Trading deaktiviert", "futures_enabled": False}
+
+
+@app.get("/api/futures/pairs")
+async def get_futures_pairs(current_user: dict = Depends(get_current_user)):
+    """Get available futures trading pairs"""
+    user_id = current_user['user_id']
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        pairs = await futures_client.get_available_futures_pairs("USDT")
+        
+        return {
+            "pairs": pairs,
+            "count": len(pairs)
+        }
+    except Exception as e:
+        logger.error(f"Futures pairs error: {e}")
+        raise HTTPException(status_code=502, detail=f"Fehler beim Laden der Futures-Paare: {str(e)}")
+
+
+@app.post("/api/futures/close-position")
+async def close_futures_position(
+    symbol: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually close a futures position"""
+    user_id = current_user['user_id']
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        
+        # Find the position
+        positions = await futures_client.get_open_positions(symbol)
+        if not positions:
+            raise HTTPException(status_code=404, detail=f"Keine offene Position für {symbol}")
+        
+        pos = positions[0]
+        pos_type = pos.get("positionType")
+        quantity = float(pos.get("holdVol", 0))
+        
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="Position hat keine Menge")
+        
+        # Close the position
+        if pos_type == 1:  # Long
+            result = await futures_client.close_long(symbol, quantity)
+        else:  # Short
+            result = await futures_client.close_short(symbol, quantity)
+        
+        await db.log(user_id, "WARNING", f"[FUTURES] 🔴 Position geschlossen: {symbol}")
+        
+        return {
+            "success": True,
+            "message": f"Position {symbol} geschlossen",
+            "result": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Close futures position error: {e}")
+        raise HTTPException(status_code=500, detail=f"Fehler beim Schließen: {str(e)}")
+
+
+@app.post("/api/futures/close-all")
+async def close_all_futures_positions(current_user: dict = Depends(get_current_user)):
+    """Close all open futures positions"""
+    user_id = current_user['user_id']
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        raise HTTPException(status_code=400, detail="MEXC API keys nicht konfiguriert")
+    
+    try:
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        results = await futures_client.close_all_positions()
+        
+        closed_count = sum(1 for r in results if r.get("success"))
+        await db.log(user_id, "WARNING", f"[FUTURES] 🔴 Alle Positionen geschlossen ({closed_count})")
+        
+        return {
+            "success": True,
+            "message": f"{closed_count} Positionen geschlossen",
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Close all futures positions error: {e}")
+        raise HTTPException(status_code=500, detail=f"Fehler beim Schließen: {str(e)}")
+
+
+@app.put("/api/futures/settings")
+async def update_futures_settings(
+    default_leverage: Optional[int] = None,
+    max_leverage: Optional[int] = None,
+    risk_per_trade: Optional[float] = None,
+    allow_shorts: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update futures-specific settings"""
+    user_id = current_user['user_id']
+    
+    updates = {}
+    if default_leverage is not None:
+        if default_leverage < 2 or default_leverage > 20:
+            raise HTTPException(status_code=400, detail="Leverage muss zwischen 2 und 20 sein")
+        updates['futures_default_leverage'] = default_leverage
+    
+    if max_leverage is not None:
+        if max_leverage < 2 or max_leverage > 20:
+            raise HTTPException(status_code=400, detail="Max Leverage muss zwischen 2 und 20 sein")
+        updates['futures_max_leverage'] = max_leverage
+    
+    if risk_per_trade is not None:
+        if risk_per_trade < 0.005 or risk_per_trade > 0.05:
+            raise HTTPException(status_code=400, detail="Risiko pro Trade muss zwischen 0.5% und 5% sein")
+        updates['futures_risk_per_trade'] = risk_per_trade
+    
+    if allow_shorts is not None:
+        updates['futures_allow_shorts'] = allow_shorts
+    
+    if updates:
+        await db.update_settings(user_id, updates)
+        await db.log(user_id, "INFO", f"[FUTURES] Einstellungen aktualisiert: {updates}")
+    
+    return {"message": "Futures-Einstellungen aktualisiert", "updates": updates}
 
 
 

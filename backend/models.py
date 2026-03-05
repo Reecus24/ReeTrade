@@ -29,8 +29,19 @@ class User(BaseModel):
 class UserSettings(BaseModel):
     user_id: str
     
-    # ========== TRADING MODE (NEW) ==========
-    trading_mode: Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive"] = "manual"
+    # ========== TRADING MODE ==========
+    trading_mode: Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"] = "manual"
+    
+    # ========== MARKET TYPE (SPOT vs FUTURES) ==========
+    market_type: Literal["spot", "futures", "auto"] = "spot"  # auto = AI decides
+    
+    # ========== FUTURES SETTINGS ==========
+    futures_enabled: bool = False
+    futures_default_leverage: int = 5  # Default leverage (2-20)
+    futures_max_leverage: int = 10  # Maximum allowed leverage
+    futures_risk_per_trade: float = 0.02  # 2% risk per trade for futures
+    futures_margin_mode: Literal["isolated", "cross"] = "isolated"
+    futures_allow_shorts: bool = True  # Allow short positions
     
     # AI Override Tracking (for UI display)
     ai_last_override: Optional[dict] = None  # Last AI decision details
@@ -117,8 +128,19 @@ class UserSettings(BaseModel):
     live_positions_count: Optional[int] = None
 
 class SettingsUpdate(BaseModel):
-    # Trading Mode (NEW)
-    trading_mode: Optional[Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive"]] = None
+    # Trading Mode
+    trading_mode: Optional[Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"]] = None
+    
+    # Market Type (SPOT vs FUTURES)
+    market_type: Optional[Literal["spot", "futures", "auto"]] = None
+    
+    # Futures Settings
+    futures_enabled: Optional[bool] = None
+    futures_default_leverage: Optional[int] = None
+    futures_max_leverage: Optional[int] = None
+    futures_risk_per_trade: Optional[float] = None
+    futures_margin_mode: Optional[Literal["isolated", "cross"]] = None
+    futures_allow_shorts: Optional[bool] = None
     
     # Strategy (shared)
     ema_fast: Optional[int] = None
@@ -185,7 +207,18 @@ class Position(BaseModel):
     take_profit: float
     entry_time: datetime
     
-    # Partial Profit Tracking (NEW)
+    # Market Type
+    market_type: Literal["spot", "futures"] = "spot"
+    
+    # Futures-specific fields
+    leverage: Optional[int] = None  # Only for futures
+    margin_mode: Optional[Literal["isolated", "cross"]] = None
+    liquidation_price: Optional[float] = None
+    margin_used: Optional[float] = None  # USDT margin locked
+    unrealized_pnl: Optional[float] = None
+    roe_pct: Optional[float] = None  # Return on Equity %
+    
+    # Partial Profit Tracking
     original_qty: Optional[float] = None  # Original quantity before partial sell
     partial_profit_taken: bool = False  # Has partial profit been taken?
     partial_profit_time: Optional[datetime] = None  # When partial was taken

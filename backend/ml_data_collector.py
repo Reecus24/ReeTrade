@@ -31,7 +31,7 @@ class TradeSnapshot:
     price_change_1h: float  # % Änderung letzte Stunde
     price_change_24h: float  # % Änderung letzte 24h
     
-    # Technische Indikatoren
+    # Technische Indikatoren - ERWEITERT
     rsi: float
     adx: float
     atr_percent: float  # ATR als % vom Preis
@@ -48,20 +48,48 @@ class TradeSnapshot:
     volatility_percentile: float
     momentum_score: float
     
-    # Position Details
-    position_size_usdt: float
-    position_percent: float  # % vom Portfolio
-    stop_loss_percent: float
-    take_profit_percent: float
+    # NEU: Weitere Indikatoren (mit defaults)
+    macd_value: float = 0
+    macd_signal: float = 0
+    macd_histogram: float = 0
+    bollinger_upper: float = 0
+    bollinger_lower: float = 0
+    bollinger_position: float = 0  # Wo ist Preis in den Bands (0-100)
+    stoch_rsi: float = 0
+    
+    # BTC/ETH Korrelation
+    btc_price: float = 0
+    btc_change_24h: float = 0
+    eth_price: float = 0
+    eth_change_24h: float = 0
+    btc_correlation: float = 0  # Korrelation zu BTC (-1 bis 1)
+    
+    # Futures Daten (für später)
+    funding_rate: float = 0
+    open_interest: float = 0
+    long_short_ratio: float = 0
+    
+    # Position Details (mit defaults für Rückwärtskompatibilität)
+    position_size_usdt: float = 0
+    position_percent: float = 0  # % vom Portfolio
+    stop_loss_percent: float = 0
+    take_profit_percent: float = 0
     
     # Kontext
-    hour_of_day: int  # 0-23
-    day_of_week: int  # 0-6 (Montag=0)
-    open_positions_count: int
+    hour_of_day: int = 0  # 0-23
+    day_of_week: int = 0  # 0-6 (Montag=0)
+    open_positions_count: int = 0
     
     # AI Confidence (wenn AI Mode)
     ai_confidence: Optional[float] = None
     ai_profile: Optional[str] = None
+    
+    # NEU: Explorer Mode Parameter (wenn KI Explorer)
+    explorer_mode: bool = False
+    explorer_rsi_threshold: Optional[float] = None
+    explorer_adx_minimum: Optional[float] = None
+    explorer_sl_pct: Optional[float] = None
+    explorer_tp_rr: Optional[float] = None
     
     # Ergebnis (wird nach Verkauf ausgefüllt)
     exit_time: Optional[str] = None
@@ -70,6 +98,11 @@ class TradeSnapshot:
     pnl_usdt: Optional[float] = None
     exit_reason: Optional[str] = None  # STOP_LOSS, TAKE_PROFIT, PARTIAL, MANUAL
     hold_duration_minutes: Optional[int] = None
+    
+    # NEU: Erweiterte Trade-Analyse
+    max_profit_during_trade: Optional[float] = None  # Höchster Gewinn erreicht
+    max_drawdown_during_trade: Optional[float] = None  # Tiefster Punkt
+    missed_profit_pct: Optional[float] = None  # Verpasster Gewinn
     
     # Label für ML (wird nach Verkauf gesetzt)
     is_winner: Optional[bool] = None  # True wenn PnL > 0

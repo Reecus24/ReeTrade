@@ -22,6 +22,13 @@ class TradingMode(str, Enum):
     AI_CONSERVATIVE = "ai_conservative"
     AI_MODERATE = "ai_moderate"
     AI_AGGRESSIVE = "ai_aggressive"
+    KI_EXPLORER = "ki_explorer"  # Experimenteller Modus für ML Training
+
+
+class MarketType(str, Enum):
+    SPOT = "spot"
+    FUTURES = "futures"
+    AUTO = "auto"  # AI decides based on market conditions
 
 
 class MarketRegime(str, Enum):
@@ -42,6 +49,8 @@ class MarketConditions:
     rsi_value: float
     current_price: float
     volume_24h: float = 0  # 24h trading volume in USDT for low-cap detection
+    funding_rate: float = 0  # Futures funding rate (positive = longs pay shorts)
+    open_interest: float = 0  # Futures open interest
 
 
 @dataclass
@@ -78,6 +87,13 @@ class AIDecision:
     reasoning: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     profile_override: Optional[TradingMode] = None  # If auto-switched
+    
+    # Futures-specific fields
+    market_type: str = "spot"  # "spot" or "futures"
+    direction: str = "long"  # "long" or "short"
+    leverage: int = 1  # Leverage for futures (1 for spot)
+    liquidation_price: Optional[float] = None
+    margin_required: Optional[float] = None
     
     def add_reason(self, reason: str):
         self.reasoning.append(reason)
@@ -141,6 +157,15 @@ RISK_PROFILES_V2 = {
         # ADX Risk Scaling
         "adx_risk_boost_threshold": 25,  # ADX > 25 -> increase risk
         "adx_risk_reduce_threshold": 15,  # ADX < 15 -> reduce risk
+        
+        # ========== FUTURES SETTINGS ==========
+        "futures_enabled": True,
+        "futures_leverage_min": 3,
+        "futures_leverage_max": 10,
+        "futures_leverage_default": 5,
+        "futures_allow_shorts": True,
+        "futures_prefer_in_bearish": True,  # Prefer futures in bearish markets
+        "futures_risk_reduction": 0.5,  # Halve position size for futures
     },
     
     TradingMode.AI_MODERATE: {
@@ -189,6 +214,15 @@ RISK_PROFILES_V2 = {
         # ADX Risk Scaling
         "adx_risk_boost_threshold": 25,
         "adx_risk_reduce_threshold": 15,
+        
+        # ========== FUTURES SETTINGS ==========
+        "futures_enabled": True,
+        "futures_leverage_min": 2,
+        "futures_leverage_max": 5,
+        "futures_leverage_default": 3,
+        "futures_allow_shorts": True,
+        "futures_prefer_in_bearish": True,
+        "futures_risk_reduction": 0.6,  # 60% of normal position for futures
     },
     
     TradingMode.AI_CONSERVATIVE: {
@@ -237,6 +271,83 @@ RISK_PROFILES_V2 = {
         # ADX Risk Scaling
         "adx_risk_boost_threshold": 30,
         "adx_risk_reduce_threshold": 20,
+        
+        # ========== FUTURES SETTINGS ==========
+        "futures_enabled": True,
+        "futures_leverage_min": 2,
+        "futures_leverage_max": 3,
+        "futures_leverage_default": 2,
+        "futures_allow_shorts": False,  # No shorts in conservative mode
+        "futures_prefer_in_bearish": False,  # Stay out in bearish
+        "futures_risk_reduction": 0.4,  # 40% of normal position for futures
+    },
+    
+    # KI Explorer Modus - Variiert Parameter für ML Training
+    TradingMode.KI_EXPLORER: {
+        "name": "KI Explorer",
+        "emoji": "🔬",
+        "description": "Experimenteller Modus - Variiert Parameter für optimales KI-Lernen",
+        
+        # Position Sizing - Konservativ weil experimentell
+        "position_pct_min": 5.0,
+        "position_pct_max": 15.0,
+        "max_positions": 5,
+        
+        # Risk - Wird dynamisch vom Explorer überschrieben
+        "risk_pct_base": 2.0,
+        "risk_pct_min": 1.0,
+        "risk_pct_max": 4.0,
+        
+        # SL/TP - Werden vom Explorer variiert
+        "sl_atr_multiplier_base": 2.0,
+        "sl_atr_multiplier_min": 1.5,
+        "sl_atr_multiplier_max": 2.5,
+        "sl_max_pct": 12.0,  # Höherer Max für Experimente
+        
+        # Low-Cap
+        "lowcap_sl_reduction": 0.6,
+        "lowcap_position_reduction": 0.5,
+        "lowcap_volume_threshold": 500000,
+        
+        # TP - Wird variiert
+        "tp_rr_base": 1.5,
+        "tp_rr_max": 3.0,
+        
+        # Partial - Manchmal an, manchmal aus (Explorer entscheidet)
+        "partial_profit_enabled": False,  # Explorer überschreibt
+        "partial_profit_trigger_pct": 8.0,
+        "partial_profit_close_pct": 50.0,
+        "partial_profit_move_sl_to_entry": True,
+        
+        # Alle Regimes erlaubt für maximale Daten
+        "allowed_regimes": [MarketRegime.BULLISH, MarketRegime.SIDEWAYS, MarketRegime.BEARISH],
+        "min_adx": 5,  # Niedrig - Explorer entscheidet selbst
+        "momentum_tp_boost_adx": 25,
+        
+        # Keine Confidence Einschränkungen
+        "high_confidence_threshold": 50,
+        "low_confidence_threshold": 30,
+        
+        # Drawdown - Etwas lockerer für Experimente
+        "risk_reduce_drawdown": 20.0,
+        "profile_switch_drawdown": 30.0,
+        
+        # ADX Scaling deaktiviert - Explorer variiert selbst
+        "adx_risk_boost_threshold": 100,
+        "adx_risk_reduce_threshold": 0,
+        
+        # Explorer Mode Flag
+        "is_explorer_mode": True,
+        
+        # ========== FUTURES SETTINGS - EXPLORER ==========
+        "futures_enabled": True,
+        "futures_leverage_min": 2,
+        "futures_leverage_max": 10,
+        "futures_leverage_default": 5,
+        "futures_allow_shorts": True,
+        "futures_prefer_in_bearish": True,
+        "futures_risk_reduction": 0.5,
+        "futures_explore_all": True,  # Explorer will try different leverages
     }
 }
 
@@ -707,6 +818,180 @@ class AITradingEngineV2:
         risk_score += (100 - confidence) * 0.3  # Lower confidence = higher risk
         risk_score += (market.volatility_percentile * 0.2)  # Higher volatility = higher risk
         decision.risk_score = max(0, min(100, risk_score))
+        
+        return decision
+    
+    def decide_market_type(
+        self,
+        market: MarketConditions,
+        profile: Dict,
+        user_futures_enabled: bool = False
+    ) -> Tuple[str, str, int]:
+        """
+        Decide whether to use SPOT or FUTURES and the direction
+        Returns: (market_type, direction, leverage)
+        
+        Logic:
+        - BULLISH: Prefer SPOT Long (safer) or Futures Long with low leverage
+        - SIDEWAYS: SPOT only (no clear direction)
+        - BEARISH: Futures Short (can profit from downtrend) or skip
+        """
+        if not user_futures_enabled or not profile.get('futures_enabled', False):
+            return ("spot", "long", 1)
+        
+        # Default to SPOT
+        market_type = "spot"
+        direction = "long"
+        leverage = 1
+        
+        # Get futures settings from profile
+        lev_min = profile.get('futures_leverage_min', 2)
+        lev_max = profile.get('futures_leverage_max', 10)
+        lev_default = profile.get('futures_leverage_default', 5)
+        allow_shorts = profile.get('futures_allow_shorts', True)
+        prefer_futures_bearish = profile.get('futures_prefer_in_bearish', True)
+        
+        if market.regime == MarketRegime.BULLISH:
+            # In bullish market, prefer SPOT or low leverage long
+            if market.adx_value > 30 and market.momentum_score > 50:
+                # Strong bullish trend - can use futures for amplified gains
+                market_type = "futures"
+                direction = "long"
+                leverage = lev_min  # Conservative leverage in longs
+            else:
+                # Normal bullish - stick with SPOT
+                market_type = "spot"
+                direction = "long"
+                leverage = 1
+        
+        elif market.regime == MarketRegime.BEARISH:
+            if allow_shorts and prefer_futures_bearish:
+                # BEARISH = great for shorts!
+                market_type = "futures"
+                direction = "short"
+                # Stronger trend = higher leverage (but capped)
+                if market.adx_value > 30:
+                    leverage = min(lev_max, lev_default + 2)
+                elif market.adx_value > 20:
+                    leverage = lev_default
+                else:
+                    leverage = lev_min
+            else:
+                # Shorts not allowed - skip trading in bearish
+                return ("skip", "none", 0)
+        
+        elif market.regime == MarketRegime.SIDEWAYS:
+            # Sideways - can try futures with very low leverage if ADX shows some direction
+            if market.adx_value > 20 and market.momentum_score > 20:
+                market_type = "futures"
+                direction = "long"
+                leverage = lev_min
+            elif market.adx_value > 20 and market.momentum_score < -20 and allow_shorts:
+                market_type = "futures"
+                direction = "short"
+                leverage = lev_min
+            else:
+                market_type = "spot"
+                direction = "long"
+                leverage = 1
+        
+        # Funding rate consideration for futures
+        if market_type == "futures" and market.funding_rate != 0:
+            # High positive funding rate = longs pay shorts (bearish pressure)
+            if market.funding_rate > 0.001 and direction == "long":
+                leverage = max(lev_min, leverage - 1)  # Reduce leverage
+            # High negative funding rate = shorts pay longs (bullish pressure)
+            elif market.funding_rate < -0.001 and direction == "short":
+                leverage = max(lev_min, leverage - 1)
+        
+        return (market_type, direction, leverage)
+    
+    def make_futures_decision(
+        self,
+        user_id: str,
+        trading_mode: TradingMode,
+        market: MarketConditions,
+        account: AccountState,
+        trading_budget_remaining: float,
+        user_futures_enabled: bool = False,
+        max_leverage: int = 10
+    ) -> AIDecision:
+        """
+        Make a comprehensive AI trading decision with Futures support
+        """
+        # First get base decision
+        decision = self.make_decision(
+            user_id, trading_mode, market, account, trading_budget_remaining
+        )
+        
+        if not decision.should_trade:
+            return decision
+        
+        profile = RISK_PROFILES_V2.get(trading_mode, {})
+        
+        # Decide market type (SPOT vs FUTURES)
+        market_type, direction, leverage = self.decide_market_type(
+            market, profile, user_futures_enabled
+        )
+        
+        if market_type == "skip":
+            decision.should_trade = False
+            decision.add_reason("⏭️ Markt übersprungen (BEARISH ohne Short-Erlaubnis)")
+            return decision
+        
+        decision.market_type = market_type
+        decision.direction = direction
+        decision.leverage = min(leverage, max_leverage)
+        
+        if market_type == "futures":
+            # Apply futures risk reduction
+            risk_reduction = profile.get('futures_risk_reduction', 0.5)
+            decision.position_size_usdt = round(decision.position_size_usdt * risk_reduction, 2)
+            decision.position_size_percent = round(decision.position_size_percent * risk_reduction, 1)
+            
+            # Calculate margin required
+            decision.margin_required = decision.position_size_usdt
+            
+            # Calculate liquidation price
+            if direction == "long":
+                # Long liquidation: price drops
+                decision.liquidation_price = round(
+                    market.current_price * (1 - 1/leverage + 0.005), 8
+                )
+                decision.stop_loss_price = round(
+                    market.current_price * (1 - decision.stop_loss_pct/100), 8
+                )
+                decision.take_profit_price = round(
+                    market.current_price * (1 + decision.take_profit_pct/100), 8
+                )
+            else:
+                # Short liquidation: price rises
+                decision.liquidation_price = round(
+                    market.current_price * (1 + 1/leverage - 0.005), 8
+                )
+                # For shorts, SL is above entry, TP is below
+                decision.stop_loss_price = round(
+                    market.current_price * (1 + decision.stop_loss_pct/100), 8
+                )
+                decision.take_profit_price = round(
+                    market.current_price * (1 - decision.take_profit_pct/100), 8
+                )
+            
+            # Ensure SL is not beyond liquidation
+            if direction == "long" and decision.stop_loss_price < decision.liquidation_price:
+                decision.stop_loss_price = decision.liquidation_price * 1.01  # 1% above liquidation
+                decision.add_warning(f"⚠️ SL angepasst (über Liquidation)")
+            elif direction == "short" and decision.stop_loss_price > decision.liquidation_price:
+                decision.stop_loss_price = decision.liquidation_price * 0.99  # 1% below liquidation
+                decision.add_warning(f"⚠️ SL angepasst (unter Liquidation)")
+            
+            # Add futures info to reasoning
+            dir_emoji = "📈" if direction == "long" else "📉"
+            decision.add_reason(f"{dir_emoji} FUTURES {direction.upper()} {leverage}x")
+            decision.add_reason(f"💵 Margin: ${decision.margin_required:.2f}")
+            decision.add_reason(f"⚡ Liquidation: ${decision.liquidation_price:.4f}")
+        else:
+            decision.add_reason("📊 SPOT LONG")
         
         return decision
     
