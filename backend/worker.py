@@ -797,15 +797,11 @@ class MultiUserTradingWorker:
             })
             return
         
-        # Check cooldown
-        if self.is_in_cooldown(user_id, settings.cooldown_candles):
-            cooldown_mins = settings.cooldown_candles * 15
-            await self.db.log(user_id, "INFO", f"[LIVE] ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min)")
-            await self.db.update_settings(user_id, {
-                'live_last_decision': f'SKIPPED: Cooldown ({cooldown_mins} Min)',
-                'live_last_symbol': 'Warte auf Cooldown-Ende'
-            })
-            return
+        # Cooldown DEAKTIVIERT - Bot kann sofort wieder traden
+        # if self.is_in_cooldown(user_id, settings.cooldown_candles):
+        #     cooldown_mins = settings.cooldown_candles * 15
+        #     await self.db.log(user_id, "INFO", f"[LIVE] ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min)")
+        #     return
         
         # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
