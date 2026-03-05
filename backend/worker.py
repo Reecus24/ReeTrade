@@ -1344,20 +1344,16 @@ class MultiUserTradingWorker:
                     avg_price = current_price
             
             # Recalculate SL/TP based on ACTUAL execution price
-            if is_ai_mode and ai_decision:
-                actual_stop_loss = avg_price * (1 - ai_decision.stop_loss_pct / 100)
-                actual_take_profit = avg_price * (1 + ai_decision.take_profit_pct / 100)
-            else:
-                # Fallback to original calculated values adjusted for actual price
-                sl_pct = (current_price - stop_loss) / current_price if current_price > 0 else 0.03
-                tp_pct = (take_profit - current_price) / current_price if current_price > 0 else 0.075
-                actual_stop_loss = avg_price * (1 - sl_pct)
-                actual_take_profit = avg_price * (1 + tp_pct)
+            # HOCHFREQUENZ-MODUS: Kein festes TP - KI entscheidet selbst!
+            # Nur Notfall-SL bei -10% als Sicherheitsnetz
+            emergency_sl_pct = 10.0  # -10% Notfall Stop Loss
+            actual_stop_loss = avg_price * (1 - emergency_sl_pct / 100)
+            actual_take_profit = avg_price * 999  # Kein echtes TP - KI entscheidet!
             
             actual_notional = executed_qty * avg_price
             
             await self.db.log(user_id, "INFO", 
-                f"[LIVE] 📊 EXECUTED @ ${avg_price:.8f} | SL: ${actual_stop_loss:.8f} | TP: ${actual_take_profit:.8f}")
+                f"[LIVE] 📊 EXECUTED @ ${avg_price:.8f} | Notfall-SL: ${actual_stop_loss:.8f} | KI entscheidet Exit!")
             
             # Create position record with ACTUAL execution price
             position = Position(

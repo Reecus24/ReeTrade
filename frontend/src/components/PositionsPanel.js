@@ -250,13 +250,14 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                   </div>
                 )}
                 
-                {/* SL / TP */}
+                {/* KI Exit - Kein festes TP mehr */}
                 <div className="text-right">
-                  <div className="text-sm text-zinc-400 font-mono-cyber mb-1">SL / TP</div>
+                  <div className="text-sm text-zinc-400 font-mono-cyber mb-1">EXIT</div>
                   <div className="text-base font-mono-cyber">
-                    <span className="text-red-400">{pos.stop_loss?.toFixed(4)}</span>
-                    <span className="text-zinc-600"> / </span>
-                    <span className="text-green-400">{pos.take_profit?.toFixed(4)}</span>
+                    <span className="text-cyan-400">🧠 KI</span>
+                  </div>
+                  <div className="text-xs text-zinc-600 font-mono-cyber">
+                    Notfall: {pos.stop_loss?.toFixed(4)}
                   </div>
                 </div>
                 
