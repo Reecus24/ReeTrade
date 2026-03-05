@@ -1565,6 +1565,25 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0
         ]
         
+        # Serialize open_positions from local DB (source of truth for frontend)
+        open_positions_serialized = []
+        if live_account and live_account.open_positions:
+            for pos in live_account.open_positions:
+                open_positions_serialized.append({
+                    'id': str(pos.id) if hasattr(pos, 'id') else None,
+                    'symbol': pos.symbol,
+                    'side': pos.side,
+                    'qty': pos.qty,
+                    'entry_price': pos.entry_price,
+                    'current_price': getattr(pos, 'current_price', None),
+                    'stop_loss': getattr(pos, 'stop_loss', None),
+                    'take_profit': getattr(pos, 'take_profit', None),
+                    'entry_time': pos.entry_time.isoformat() if hasattr(pos, 'entry_time') and pos.entry_time else None
+                })
+        
+        # Use local DB positions count as source of truth (matches PositionsPanel)
+        local_positions_count = len(open_positions_serialized)
+        
         return {
             'source': 'live',
             'source_label': 'MEXC Live',
@@ -1589,7 +1608,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'used': round(today_exposure, 2),
                 'remaining': round(daily_remaining, 2)
             },
-            'open_positions_count': actual_positions_count,
+            # Open positions from local DB (source of truth)
+            'open_positions': open_positions_serialized,
+            'open_positions_count': local_positions_count,
             # AI max positions based on profile
             'ai_max_positions': get_ai_max_positions(settings),
             # AI Position Range based on available USDT
