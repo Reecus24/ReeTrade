@@ -47,13 +47,14 @@ worker: MultiUserTradingWorker = None
 worker_task: asyncio.Task = None
 telegram_bot: TelegramBot = None
 telegram_polling_task: asyncio.Task = None
+daily_summary_task: asyncio.Task = None
 limiter = Limiter(key_func=get_remote_address)
 limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global worker, worker_task, telegram_bot, telegram_polling_task
+    global worker, worker_task, telegram_bot, telegram_polling_task, daily_summary_task
     
     # Startup
     logger.info("Starting ReeTrade Terminal API")
@@ -69,7 +70,8 @@ async def lifespan(app: FastAPI):
         telegram_bot = get_telegram_bot(tg_token, db)
         await telegram_bot.register_commands()
         telegram_polling_task = asyncio.create_task(telegram_polling_loop())
-        logger.info("Telegram bot started")
+        daily_summary_task = asyncio.create_task(daily_summary_scheduler())
+        logger.info("Telegram bot started with daily summary scheduler")
     
     yield
     
@@ -81,6 +83,8 @@ async def lifespan(app: FastAPI):
         worker_task.cancel()
     if telegram_polling_task:
         telegram_polling_task.cancel()
+    if daily_summary_task:
+        daily_summary_task.cancel()
     db.close()
 
 
@@ -132,6 +136,122 @@ async def telegram_polling_loop():
         except Exception as e:
             logger.error(f"Telegram polling error: {e}")
             await asyncio.sleep(5)
+
+
+async def daily_summary_scheduler():
+    """Scheduler für tägliche Zusammenfassung um 21:00 Uhr"""
+    global telegram_bot
+    
+    if not telegram_bot:
+        return
+    
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not chat_id:
+        return
+    
+    logger.info("Daily summary scheduler started - will send at 21:00")
+    
+    while True:
+        try:
+            now = datetime.now()
+            
+            # Berechne Zeit bis 21:00 Uhr
+            target_hour = 21
+            target_minute = 0
+            
+            if now.hour > target_hour or (now.hour == target_hour and now.minute >= target_minute):
+                # Heute schon vorbei, warte bis morgen
+                tomorrow = now + timedelta(days=1)
+                target_time = tomorrow.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            else:
+                target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+            
+            wait_seconds = (target_time - now).total_seconds()
+            logger.info(f"Daily summary: waiting {wait_seconds/3600:.1f} hours until {target_time}")
+            
+            await asyncio.sleep(wait_seconds)
+            
+            # Zeit für die Zusammenfassung!
+            logger.info("Sending daily summary...")
+            await send_daily_summary_to_all(int(chat_id))
+            
+            # Warte mindestens 1 Minute bevor wir wieder prüfen
+            await asyncio.sleep(60)
+            
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Daily summary error: {e}")
+            await asyncio.sleep(300)  # 5 Minuten warten bei Fehler
+
+
+async def send_daily_summary_to_all(chat_id: int):
+    """Sende tägliche Zusammenfassung"""
+    global telegram_bot
+    
+    if not telegram_bot:
+        return
+    
+    try:
+        # Finde alle User mit Live-Mode
+        users = await db.users.find({"live_mode_confirmed": True}).to_list(100)
+        
+        if not users:
+            # Fallback: Erster User
+            first_user = await db.users.find_one({})
+            users = [first_user] if first_user else []
+        
+        for user in users:
+            user_id = str(user['_id'])
+            
+            # Hole Trades von heute
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            trades = await db.get_trades(user_id, limit=1000)
+            
+            today_trades = [t for t in trades if t.get('exit_time') and t['exit_time'] >= today_start]
+            
+            if not today_trades:
+                # Keine Trades heute
+                summary = {
+                    'trade_count': 0,
+                    'winners': 0,
+                    'losers': 0,
+                    'win_rate': 0,
+                    'total_pnl': 0,
+                    'total_pnl_pct': 0,
+                    'best_trade': 'Keine',
+                    'worst_trade': 'Keine',
+                    'balance': 0
+                }
+            else:
+                total_pnl = sum(t.get('pnl', 0) for t in today_trades)
+                winners = [t for t in today_trades if t.get('pnl', 0) > 0]
+                losers = [t for t in today_trades if t.get('pnl', 0) <= 0]
+                
+                best = max(today_trades, key=lambda x: x.get('pnl', 0))
+                worst = min(today_trades, key=lambda x: x.get('pnl', 0))
+                
+                # Hole Balance
+                account = await db.get_live_account(user_id)
+                balance = account.balance if account else 0
+                
+                summary = {
+                    'trade_count': len(today_trades),
+                    'winners': len(winners),
+                    'losers': len(losers),
+                    'win_rate': (len(winners) / len(today_trades) * 100) if today_trades else 0,
+                    'total_pnl': total_pnl,
+                    'total_pnl_pct': (total_pnl / balance * 100) if balance > 0 else 0,
+                    'best_trade': f"{best.get('symbol', '?')} +${best.get('pnl', 0):.2f}",
+                    'worst_trade': f"{worst.get('symbol', '?')} ${worst.get('pnl', 0):.2f}",
+                    'balance': balance
+                }
+            
+            await telegram_bot.send_daily_summary(chat_id, summary)
+            logger.info(f"Daily summary sent for user {user_id}")
+            
+    except Exception as e:
+        logger.error(f"Error sending daily summary: {e}")
 
 app = FastAPI(
     title="ReeTrade Terminal API",
@@ -1883,4 +2003,16 @@ async def send_trade_notification(
         await telegram_bot.notify_trade_closed(int(chat_id), trade_data)
     
     return {"sent": True}
+
+
+@app.post("/api/telegram/summary")
+async def send_summary_now(current_user: dict = Depends(get_current_user)):
+    """Tages-Zusammenfassung jetzt senden"""
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Telegram nicht konfiguriert")
+    
+    await send_daily_summary_to_all(int(chat_id))
+    return {"message": "Zusammenfassung gesendet!"}
+
 

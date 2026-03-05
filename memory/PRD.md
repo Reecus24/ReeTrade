@@ -2,14 +2,14 @@
 
 ## Originale Anforderung
 KI-gesteuerter Trading Bot für MEXC mit:
-- **Vollautomatischer SPOT Trading** - Die KI übernimmt komplett
-- **Learning by Doing AI** - KI übernimmt nach 10 Trades
-- **Smart Exit Engine** - KI entscheidet selbstständig wann verkaufen
-- **Telegram Benachrichtigungen** - Bidirektional mit Befehlen
+- **Vollautomatischer SPOT Trading**
+- **Learning by Doing AI**
+- **Smart Exit Engine**
+- **Telegram Benachrichtigungen**
 
 ## Implementierte Features (05.03.2026)
 
-### Telegram Integration (NEU)
+### Telegram Integration (Komplett)
 **Bot:** @reetrade_trading_bot
 
 **Automatische Benachrichtigungen:**
@@ -18,6 +18,7 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - 🛑 Stop-Loss ausgelöst
 - 🎯 Take-Profit erreicht
 - 🧠 KI Smart Exit Entscheidung
+- 📊 **Tägliche Zusammenfassung um 21:00 Uhr** (NEU)
 
 **Befehle:**
 - `/status` - Offene Positionen
@@ -27,6 +28,7 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - `/balance` - Wallet-Stand
 - `/trades` - Letzte 5 Trades
 - `/ki` - KI Status & Lernfortschritt
+- `/summary` - Tages-Zusammenfassung jetzt (NEU)
 - `/stop` - Bot pausieren
 - `/resume` - Bot fortsetzen
 - `/help` - Hilfe
@@ -36,26 +38,10 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - Analysiert RSI, Momentum, EMA20, Candlestick-Patterns
 - Kann früher verkaufen bei Trendumkehr
 - Kann länger halten wenn Trade gut läuft
-- Lernfähig: Passt Parameter basierend auf Erfahrung an
+- Lernfähig
 
 ### FUTURES deaktiviert
 - Tab und Keys ausgeblendet (kommt später)
-- Fokus auf SPOT Trading
-
-## Architektur
-
-```
-/app/backend/
-├── telegram_bot.py          # NEU: Telegram Integration
-├── smart_exit_engine.py     # Intelligente Exit-Logik
-├── ki_learning_engine.py    # Lernende KI
-├── worker.py                # Trading Worker (mit Telegram Integration)
-└── server.py                # FastAPI Backend
-
-/app/frontend/src/
-├── components/
-│   └── SettingsTab.js       # Mit Telegram Status & Test Button
-```
 
 ## Deployment auf Hetzner
 
@@ -65,7 +51,7 @@ cd frontend && npm run build && cd ..
 sudo systemctl restart reetrade-backend reetrade-worker
 ```
 
-**WICHTIG:** Nach dem Deployment die .env Datei aktualisieren:
+**.env Datei:**
 ```
 TELEGRAM_BOT_TOKEN=8791012984:AAHWj1EF0YqAZwpH2Cle-H-UwdVq7OaSpyU
 TELEGRAM_CHAT_ID=5642445106
@@ -74,19 +60,15 @@ TELEGRAM_CHAT_ID=5642445106
 ## API Endpoints
 
 **Telegram:**
-- `GET /api/telegram/status` - Telegram-Status
-- `POST /api/telegram/test` - Test-Nachricht senden
-
-**Trading:**
-- `GET /api/status` - Bot-Status
-- `GET /api/trades` - Trade-Historie
-- `GET /api/balance` - Balance
+- `GET /api/telegram/status` - Status
+- `POST /api/telegram/test` - Test senden
+- `POST /api/telegram/summary` - Zusammenfassung jetzt
 
 ## Offene Aufgaben
 
 ### P1
-- [ ] Tägliche Zusammenfassung automatisch senden (z.B. 21:00 Uhr)
-- [ ] Smart Exit mit echten Trades testen
+- [x] Tägliche Zusammenfassung um 21:00 Uhr ✅
+- [ ] Smart Exit mit echten Trades verifizieren
 
 ### P2 (Zukunft)
 - [ ] FUTURES Trading wieder aktivieren

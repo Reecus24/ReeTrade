@@ -239,6 +239,9 @@ class TelegramBot:
         elif command == "/ki":
             return await self._get_ki_status(user_id)
         
+        elif command == "/summary":
+            return await self._get_daily_summary(user_id)
+        
         elif command == "/stop":
             return await self._pause_bot(user_id)
         
@@ -258,6 +261,7 @@ class TelegramBot:
 /status - Offene Positionen
 /balance - Wallet-Stand
 /ki - KI Status & Lernfortschritt
+/summary - Tages-Zusammenfassung jetzt
 
 💰 <b>Profit</b>
 /profit - Heutiger Profit
@@ -272,6 +276,8 @@ class TelegramBot:
 /resume - Bot fortsetzen
 
 /help - Diese Hilfe
+
+📅 Tägliche Zusammenfassung wird automatisch um 21:00 Uhr gesendet.
 """
     
     async def _get_status(self, user_id: str) -> str:
@@ -463,6 +469,67 @@ Die KI übernimmt nach 10 Trades.
             return "▶️ Bot wurde fortgesetzt. Trading ist wieder aktiv."
         except Exception as e:
             return f"❌ Fehler: {str(e)[:50]}"
+
+    async def _get_daily_summary(self, user_id: str) -> str:
+        """Generiere Tages-Zusammenfassung"""
+        if not self.db:
+            return "❌ Datenbank nicht verfügbar"
+        
+        try:
+            from datetime import timezone
+            
+            # Hole Trades von heute
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            trades = await self.db.get_trades(user_id, limit=1000)
+            
+            today_trades = [t for t in trades if t.get('exit_time') and t['exit_time'] >= today_start]
+            
+            if not today_trades:
+                return f"""
+📊 <b>TAGES-ZUSAMMENFASSUNG</b>
+{datetime.now().strftime('%d.%m.%Y')}
+
+Keine abgeschlossenen Trades heute.
+
+💡 Tipp: Die KI analysiert weiterhin den Markt und wartet auf gute Einstiegspunkte.
+"""
+            
+            total_pnl = sum(t.get('pnl', 0) for t in today_trades)
+            winners = [t for t in today_trades if t.get('pnl', 0) > 0]
+            losers = [t for t in today_trades if t.get('pnl', 0) <= 0]
+            win_rate = (len(winners) / len(today_trades) * 100) if today_trades else 0
+            
+            best = max(today_trades, key=lambda x: x.get('pnl', 0))
+            worst = min(today_trades, key=lambda x: x.get('pnl', 0))
+            
+            # Hole Balance
+            account = await self.db.get_live_account(user_id)
+            balance = account.balance if account else 0
+            
+            emoji = "📈" if total_pnl >= 0 else "📉"
+            
+            return f"""
+{emoji} <b>TAGES-ZUSAMMENFASSUNG</b>
+{datetime.now().strftime('%d.%m.%Y')}
+
+<b>Trades heute:</b> {len(today_trades)}
+<b>Gewinner:</b> {len(winners)} ✅
+<b>Verlierer:</b> {len(losers)} ❌
+<b>Win-Rate:</b> {win_rate:.1f}%
+
+<b>Tages-PnL:</b> {'+' if total_pnl >= 0 else ''}${total_pnl:.2f}
+
+<b>Bester Trade:</b> {best.get('symbol', '?')} +${best.get('pnl', 0):.2f}
+<b>Schlechtester:</b> {worst.get('symbol', '?')} ${worst.get('pnl', 0):.2f}
+
+<b>Portfolio:</b> ${balance:.2f}
+
+🤖 ReeTrade Terminal
+"""
+        except Exception as e:
+            logger.error(f"Daily summary error: {e}")
+            return f"❌ Fehler: {str(e)[:50]}"
+
 
 
 # Singleton instance
