@@ -505,7 +505,7 @@ const DashboardPage = ({ onLogout }) => {
                           {formatCurrency(balance.invested_value || balance.budget?.used_budget || 0)}
                         </p>
                         <p className="text-xs text-zinc-600 mt-1 font-mono-cyber">
-                          {balance.open_positions_count || 0} POSITIONS
+                          {(balance?.open_positions || live_account?.open_positions || []).length} POSITIONS
                         </p>
                       </div>
                       <div className="bg-black/50 border border-green-500/20 p-4">
@@ -527,7 +527,7 @@ const DashboardPage = ({ onLogout }) => {
                       <div className="p-3 border border-zinc-800 text-center">
                         <p className="text-xs text-zinc-600 font-mono-cyber">POSITIONS</p>
                         <p className="text-lg font-cyber text-white">
-                          {balance.open_positions_count || 0} / {balance.ai_max_positions || settings.max_positions}
+                          {(balance?.open_positions || live_account?.open_positions || []).length} / {balance.ai_max_positions || settings.max_positions}
                         </p>
                       </div>
                       <div className="p-3 border border-zinc-800 text-center">
@@ -587,7 +587,12 @@ const DashboardPage = ({ onLogout }) => {
 
           {/* Bot Status Panel */}
           {settings.live_confirmed && (
-            <BotStatusPanel settings={settings} mode="live" balance={balance} />
+            <BotStatusPanel 
+              settings={settings} 
+              mode="live" 
+              balance={balance} 
+              actualPositionsCount={(balance?.open_positions || live_account?.open_positions || []).length}
+            />
           )}
 
           {/* Positions Panel */}

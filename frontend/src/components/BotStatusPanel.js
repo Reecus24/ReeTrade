@@ -7,15 +7,15 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { de } from 'date-fns/locale';
 
-const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
+const BotStatusPanel = ({ settings, mode = 'paper', balance, actualPositionsCount }) => {
   const prefix = mode;
   
   const lastScan = settings?.[`${prefix}_last_scan`];
   const lastDecision = settings?.[`${prefix}_last_decision`];
   const lastRegime = settings?.[`${prefix}_last_regime`];
   const lastSymbol = settings?.[`${prefix}_last_symbol`];
-  // Verwende die gleiche Quelle wie Portfolio für konsistente Werte
-  const positionsCount = balance?.open_positions_count ?? settings?.[`${prefix}_positions_count`] ?? 0;
+  // Verwende actualPositionsCount (Array-Länge) für konsistente Werte mit PositionsPanel
+  const positionsCount = actualPositionsCount ?? balance?.open_positions_count ?? settings?.[`${prefix}_positions_count`] ?? 0;
   const maxPositions = balance?.ai_max_positions ?? settings?.max_positions ?? 5;
   const isRunning = mode === 'live' ? settings?.live_running : settings?.paper_running;
   
