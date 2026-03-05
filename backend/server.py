@@ -2172,3 +2172,49 @@ async def unlink_telegram(current_user: dict = Depends(get_current_user)):
     return {"message": "Telegram-Konto getrennt", "linked": False}
 
 
+
+# ============ ML MODEL STATUS ============
+
+@app.get("/api/ml/status")
+async def get_ml_status(current_user: dict = Depends(get_current_user)):
+    """Get ML Model Status"""
+    from ml_trading_model import get_ml_model
+    
+    ml_model = get_ml_model(db)
+    status = ml_model.get_status()
+    
+    return {
+        "ml_available": status['ml_available'],
+        "model_trained": status['model_trained'],
+        "training_samples": status['training_samples'],
+        "min_samples_needed": status['min_samples_needed'],
+        "model_accuracy": status['model_accuracy'],
+        "exploration_mode": status['exploration_mode'],
+        "message": "ML sammelt Daten" if status['exploration_mode'] else f"ML trainiert mit {status['model_accuracy']:.1%} Genauigkeit"
+    }
+
+
+@app.post("/api/ml/train")
+async def train_ml_model(current_user: dict = Depends(get_current_user)):
+    """Manuell ML-Modell trainieren"""
+    from ml_trading_model import get_ml_model
+    
+    user_id = current_user['user_id']
+    ml_model = get_ml_model(db)
+    
+    success = await ml_model.train_model(user_id)
+    
+    if success:
+        return {
+            "success": True,
+            "message": f"ML-Modell trainiert! Accuracy: {ml_model.model_accuracy:.1%}",
+            "accuracy": ml_model.model_accuracy
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"Brauche mindestens {ml_model.MIN_SAMPLES_FOR_TRAINING} Trades. Aktuell: {len(ml_model.training_data)}",
+            "samples": len(ml_model.training_data)
+        }
+
+

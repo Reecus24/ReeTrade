@@ -19,6 +19,7 @@ from ml_data_collector import get_ml_collector
 from ki_learning_engine import get_ki_engine
 from smart_exit_engine import SmartExitEngine, check_position_exit, PositionContext
 from telegram_bot import get_telegram_bot
+from ml_trading_model import get_ml_model, MLTradingModel, TradeFeatures
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,9 @@ class MultiUserTradingWorker:
         # Position tracking to prevent race conditions
         self._buying_positions: set = set()  # Symbols currently being bought
         self._selling_positions: set = set()  # Symbols currently being sold
+        
+        # Echte ML Trading KI
+        self.ml_model = get_ml_model(db)
     
     async def notify_telegram(self, notification_type: str, data: Dict, user_id: str = None):
         """Sende Telegram-Benachrichtigung (mit Dedupe) an User-spezifische Chat ID"""
@@ -453,12 +457,55 @@ class MultiUserTradingWorker:
                         else:
                             break
                     
-                    # Erstelle Marktdaten für Smart Exit
+                    # Erstelle ML Features für echte KI-Entscheidung
+                    ml_features = TradeFeatures(
+                        rsi=rsi,
+                        adx=25,  # TODO: echte ADX Berechnung
+                        macd_histogram=0,  # TODO: echte MACD Berechnung
+                        volume_ratio=float(ticker.get('volume', 0)) / max(float(ticker.get('quoteVolume', 1)), 1),
+                        price_vs_ema20=price_vs_ema20,
+                        price_vs_ema50=price_vs_ema20,  # Vereinfacht
+                        momentum_1h=momentum_1h,
+                        momentum_4h=momentum_4h,
+                        momentum_24h=momentum_4h * 2,  # Vereinfacht
+                        pnl_pct=pnl_pct,
+                        hours_in_trade=time_held.total_seconds() / 3600 if hasattr(position, 'entry_time') and position.entry_time else 0,
+                        distance_to_sl_pct=((current_price - position.stop_loss) / position.stop_loss * 100) if position.stop_loss else 10,
+                        distance_to_tp_pct=((position.take_profit - current_price) / current_price * 100) if position.take_profit else 10,
+                        btc_trend=0,  # TODO: BTC Trend holen
+                        market_volatility=abs(momentum_1h)
+                    )
+                    
+                    # ========== ML-BASIERTE EXIT ENTSCHEIDUNG ==========
+                    ml_prediction = await self.ml_model.predict_exit(ml_features)
+                    
+                    if ml_prediction['model_used']:
+                        # ML-Modell ist trainiert - verwende dessen Entscheidung
+                        if ml_prediction['should_exit'] and ml_prediction['confidence'] > 65:
+                            should_exit = True
+                            exit_reason = f"🤖 ML-EXIT: {ml_prediction['reasoning']}"
+                            
+                            await self.db.log(user_id, "WARNING", 
+                                f"[ML EXIT] {position.symbol} | Confidence: {ml_prediction['confidence']:.1f}% | Modell-Accuracy: {self.ml_model.model_accuracy:.1%}")
+                            
+                            # Telegram über ML-Entscheidung
+                            await self.notify_telegram('smart_exit', {
+                                'symbol': position.symbol,
+                                'exit_type': 'ml_decision',
+                                'confidence': ml_prediction['confidence'],
+                                'reasons': [ml_prediction['reasoning']]
+                            }, user_id)
+                    else:
+                        # ML noch im Lernmodus - sammle nur Daten, keine Exits
+                        await self.db.log(user_id, "DEBUG", 
+                            f"[ML LEARNING] {position.symbol} | Exploration Mode - sammle Daten | Samples: {len(self.ml_model.training_data)}")
+                    
+                    # Erstelle Marktdaten für Smart Exit (Fallback)
                     market_data = {
                         'price': current_price,
                         'pnl_pct': pnl_pct,
                         'rsi': rsi,
-                        'adx': 25,  # Wird später berechnet
+                        'adx': 25,
                         'momentum_1h': momentum_1h,
                         'momentum_4h': momentum_4h,
                         'price_vs_ema20': price_vs_ema20,
@@ -1780,6 +1827,29 @@ class MultiUserTradingWorker:
             except Exception as ki_err:
                 logger.warning(f"KI learning record error: {ki_err}")
             # ============ END KI LEARNING ============
+            
+            # ============ ML MODEL: Record Trade Outcome ============
+            try:
+                # Erstelle Features basierend auf Exit-Daten
+                ml_features = TradeFeatures(
+                    rsi=50, adx=25, macd_histogram=0,
+                    volume_ratio=1.0, price_vs_ema20=0, price_vs_ema50=0,
+                    momentum_1h=0, momentum_4h=0, momentum_24h=0,
+                    pnl_pct=pnl_pct,
+                    hours_in_trade=(datetime.now(timezone.utc) - position.entry_time).total_seconds() / 3600 if position.entry_time else 0,
+                    distance_to_sl_pct=0, distance_to_tp_pct=0,
+                    btc_trend=0, market_volatility=0
+                )
+                
+                # Lerne aus diesem Trade
+                await self.ml_model.record_outcome(ml_features, was_profitable=(pnl > 0))
+                
+                ml_status = self.ml_model.get_status()
+                await self.db.log(user_id, "INFO", 
+                    f"[ML] 🧠 Samples: {ml_status['training_samples']} | Trainiert: {ml_status['model_trained']} | Accuracy: {ml_status['model_accuracy']:.1%}")
+            except Exception as ml_err:
+                logger.warning(f"ML learning error: {ml_err}")
+            # ============ END ML MODEL ============
             
             # Check consecutive losses
             if pnl < 0:
