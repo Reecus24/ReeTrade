@@ -1026,7 +1026,7 @@ class MultiUserTradingWorker:
                             'position_size': candidate_ai.position_size_usdt if candidate_ai else None,
                             'stop_loss_pct': candidate_ai.stop_loss_pct if candidate_ai else None,
                             'take_profit_pct': candidate_ai.take_profit_pct if candidate_ai else None,
-                            'overrides': [{'field': o.field, 'manual': o.manual_value, 'ai': o.ai_value, 'reason': o.reason} for o in (candidate_ai.overrides if candidate_ai else [])]
+                            'overrides': []
                         } if is_ai_mode else None
                     })
                     break
