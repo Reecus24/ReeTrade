@@ -681,8 +681,8 @@ class MultiUserTradingWorker:
                 f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | USDT Free: ${usdt_free:.2f} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
-            # Fetch 100 coins as requested by user
-            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=100)
+            # Fetch 500 coins for maximum opportunities
+            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=500)
             
             await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} USDT Coins gefunden - starte Filterung...")
             
