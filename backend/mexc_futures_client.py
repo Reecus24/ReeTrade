@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class MexcFuturesClient:
     """MEXC Futures API Client for USDT-margined perpetual contracts"""
     
-    # MEXC Futures API Base URL
+    # MEXC Futures API Base URL - Updated 2026
     BASE_URL = "https://contract.mexc.com"
     
     # Side constants
@@ -63,7 +63,9 @@ class MexcFuturesClient:
         if not self.api_secret:
             raise ValueError("MEXC_API_SECRET not configured")
         
-        sign_str = self.api_key + timestamp + params_str
+        # Build sign string: accessKey + timestamp + parameterString
+        sign_str = self.api_key + timestamp + (params_str if params_str else "")
+        
         signature = hmac.new(
             self.api_secret.encode('utf-8'),
             sign_str.encode('utf-8'),
@@ -101,15 +103,17 @@ class MexcFuturesClient:
         timestamp = str(int(time.time() * 1000))
         headers = {"Content-Type": "application/json"}
         
+        # Build params string
         if method == "GET":
             if params:
+                # Sort params and build query string
                 query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()) if v is not None)
             else:
                 query_string = ""
             params_str = query_string
         else:
             # For POST, use JSON body
-            params_str = json.dumps(params) if params else ""
+            params_str = json.dumps(params, separators=(',', ':')) if params else ""
         
         if signed:
             if not self.api_key or not self.api_secret:
@@ -129,22 +133,38 @@ class MexcFuturesClient:
                 else:
                     raise ValueError(f"Unsupported method: {method}")
                 
-                result = response.json()
+                # Log response for debugging
+                logger.debug(f"MEXC Futures {method} {endpoint}: {response.status_code}")
+                
+                # Check if response is empty
+                if not response.text or response.text.strip() == "":
+                    logger.error(f"Empty response from MEXC Futures API: {endpoint}")
+                    return {"error": "Empty response from API"}
+                
+                try:
+                    result = response.json()
+                except Exception as json_err:
+                    logger.error(f"JSON parse error: {json_err}, response: {response.text[:200]}")
+                    return {"error": f"Invalid JSON: {response.text[:100]}"}
                 
                 # Check for API errors
-                if not result.get("success", True):
-                    error_code = result.get("code", "unknown")
-                    error_msg = result.get("message", result.get("msg", "Unknown error"))
-                    raise Exception(f"MEXC Futures API Error [{error_code}]: {error_msg}")
+                if isinstance(result, dict):
+                    if result.get("success") == False:
+                        error_code = result.get("code", "unknown")
+                        error_msg = result.get("message", result.get("msg", "Unknown error"))
+                        return {"error": f"[{error_code}]: {error_msg}"}
+                    
+                    # Return data field if exists
+                    return result.get("data", result)
                 
-                return result.get("data", result)
+                return result
                 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
-            raise
+            return {"error": f"HTTP {e.response.status_code}"}
         except Exception as e:
             logger.error(f"Request error: {e}")
-            raise
+            return {"error": str(e)}
     
     # ============ PUBLIC ENDPOINTS ============
     
@@ -205,24 +225,28 @@ class MexcFuturesClient:
     async def get_account_assets(self) -> Dict[str, Any]:
         """Get futures account assets (USDT balance, etc.)"""
         result = await self._request("GET", "/api/v1/private/account/assets", signed=True)
-        return result
+        if isinstance(result, dict) and result.get('error'):
+            return result
+        return result if result else {}
     
     async def get_account_asset(self, currency: str = "USDT") -> Dict[str, Any]:
         """Get specific asset balance"""
-        try:
-            result = await self._request(
-                "GET", 
-                "/api/v1/private/account/asset",
-                {"currency": currency},
-                signed=True
-            )
-            # Handle different response formats
-            if isinstance(result, dict):
-                return result
-            return {"availableBalance": 0, "frozenBalance": 0, "equity": 0}
-        except Exception as e:
-            logger.error(f"get_account_asset error: {e}")
-            return {"availableBalance": 0, "frozenBalance": 0, "equity": 0, "error": str(e)}
+        result = await self._request(
+            "GET", 
+            "/api/v1/private/account/asset",
+            {"currency": currency},
+            signed=True
+        )
+        
+        # Check for error in result
+        if isinstance(result, dict) and result.get('error'):
+            return {"availableBalance": 0, "frozenBalance": 0, "equity": 0, "error": result.get('error')}
+        
+        # Handle different response formats
+        if isinstance(result, dict):
+            return result
+        
+        return {"availableBalance": 0, "frozenBalance": 0, "equity": 0}
     
     # ============ PRIVATE ENDPOINTS (Positions) ============
     
@@ -238,6 +262,12 @@ class MexcFuturesClient:
             params if params else None,
             signed=True
         )
+        
+        # Check for error
+        if isinstance(result, dict) and result.get('error'):
+            logger.warning(f"get_open_positions error: {result.get('error')}")
+            return []
+        
         return result if isinstance(result, list) else []
     
     async def get_position_leverage(self, symbol: str) -> Dict[str, Any]:
