@@ -19,6 +19,8 @@ import TradingModeSelector from '@/components/TradingModeSelector';
 import MLStatsTab from '@/components/MLStatsTab';
 import FuturesTab from '@/components/FuturesTab';
 import KILogTab from '@/components/KILogTab';
+import InfoTab from '@/components/InfoTab';
+import { Info } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -460,6 +462,9 @@ const DashboardPage = ({ onLogout }) => {
             <TabsTrigger value="settings" className="data-[state=active]:text-red-500">
               <Settings className="w-4 h-4 mr-2" />Settings
             </TabsTrigger>
+            <TabsTrigger value="info" className="data-[state=active]:text-blue-500">
+              <Info className="w-4 h-4 mr-2" />Info
+            </TabsTrigger>
           </TabsList>
           <div className="mt-4">
             {settings.live_confirmed && (
@@ -477,6 +482,7 @@ const DashboardPage = ({ onLogout }) => {
               </>
             )}
             <TabsContent value="settings"><SettingsTab /></TabsContent>
+            <TabsContent value="info"><InfoTab /></TabsContent>
           </div>
         </Tabs>
 

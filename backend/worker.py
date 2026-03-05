@@ -821,7 +821,17 @@ class MultiUserTradingWorker:
         
         await self.db.log(user_id, "INFO", f"[LIVE] 🔍 Scanne {len(settings.top_pairs[:20])} Coins | Trade-Größe: ${effective_scan_position:.2f} | Bereits im Portfolio: {len(owned_symbols)}")
         
-        for symbol in settings.top_pairs[:20]:
+        # Get coins to scan based on user selection
+        coins_to_scan = settings.top_pairs[:20]
+        
+        # If user has selected specific SPOT coins, filter the list
+        if not getattr(settings, 'spot_trade_all', True):
+            selected_spot = getattr(settings, 'selected_spot_coins', [])
+            if selected_spot:
+                coins_to_scan = [c for c in coins_to_scan if c in selected_spot]
+                await self.db.log(user_id, "INFO", f"[LIVE] 🎯 User-Auswahl: {len(selected_spot)} SPOT Coins aktiviert")
+        
+        for symbol in coins_to_scan:
             symbols_checked += 1
             try:
                 # Skip if we already own this symbol (diversification)
@@ -929,6 +939,29 @@ class MultiUserTradingWorker:
                         ai_decision = self.ai_engine.make_decision(
                             user_id, trading_mode, market_conditions, account_state, trading_budget_remaining
                         )
+                    
+                    # ============ KI LEARNING CHECK ============
+                    # Ab Trade 11: KI muss Trade genehmigen
+                    ki_state = await self.ki_engine.get_ki_state(user_id)
+                    if ki_state.ki_active:
+                        # KI ist aktiv - muss Trade prüfen
+                        market_data_for_ki = {
+                            'rsi': regime_context.get('rsi', 50),
+                            'adx': adx_value,
+                            'volume_24h': volume_24h,
+                            'regime': regime,
+                            'direction': ai_decision.direction if hasattr(ai_decision, 'direction') else 'long'
+                        }
+                        should_trade, ki_reason, ki_warnings = self.ki_engine.should_ki_trade(ki_state, market_data_for_ki)
+                        
+                        if not should_trade:
+                            await self.db.log(user_id, "INFO", 
+                                f"[KI] 🧠 VETO für {symbol}: {ki_reason} | Warnings: {', '.join(ki_warnings)}")
+                            continue
+                        else:
+                            await self.db.log(user_id, "INFO", 
+                                f"[KI] ✅ {symbol}: {ki_reason} (Confidence: {ki_state.ki_confidence*100:.0f}%)")
+                    # ============ END KI LEARNING CHECK ============
                     
                     if not ai_decision.should_trade:
                         reason = ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'
@@ -1059,6 +1092,18 @@ class MultiUserTradingWorker:
                     decision_text = f'TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     if is_ai_mode and candidate_ai:
                         decision_text = f'🤖 AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
+                    
+                    # ============ KI LEARNING: Record Trade ============
+                    await self.ki_engine.record_trade(user_id, {
+                        'symbol': symbol,
+                        'type': trade_type,
+                        'entry_price': candidate['current_price'],
+                        'rsi': candidate.get('rsi', 50),
+                        'adx': candidate.get('adx', 0),
+                        'volume_24h': candidate.get('volume_24h', 0),
+                        'regime': candidate.get('regime', 'UNKNOWN')
+                    })
+                    # ============ END KI LEARNING ============
                     
                     await self.db.update_settings(user_id, {
                         'live_last_decision': decision_text,
@@ -1439,6 +1484,29 @@ class MultiUserTradingWorker:
             
             await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
                 f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
+            
+            # ============ KI LEARNING: Record Result ============
+            try:
+                ki_state = await self.ki_engine.get_ki_state(user_id)
+                entry_data = {
+                    'symbol': position.symbol,
+                    'entry_price': position.entry_price,
+                    'rsi': 50,  # Will be enhanced later with actual entry data
+                    'adx': 20,
+                    'volume_24h': 0,
+                    'regime': 'UNKNOWN'
+                }
+                await self.ki_engine.record_trade_result(
+                    user_id, position.symbol, entry_data, pnl_pct, was_ki_trade=ki_state.ki_active
+                )
+                
+                if ki_state.ki_active:
+                    emoji = "✅" if pnl > 0 else "❌"
+                    await self.db.log(user_id, "INFO", 
+                        f"[KI] {emoji} Trade-Ergebnis aufgezeichnet | Confidence: {ki_state.ki_confidence*100:.0f}%")
+            except Exception as ki_err:
+                logger.warning(f"KI learning record error: {ki_err}")
+            # ============ END KI LEARNING ============
             
             # Check consecutive losses
             if pnl < 0:
