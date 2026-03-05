@@ -61,7 +61,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
       return new Intl.NumberFormat('de-DE', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-      }).format(Math.round(qty)) + ' Stk';
+      }).format(Math.round(qty));
     } else if (qty >= 1) {
       return new Intl.NumberFormat('de-DE', {
         minimumFractionDigits: 2,

@@ -318,22 +318,44 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     }
 
 async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
-    """Add current prices to positions for live PnL display"""
+    """Add current prices AND real MEXC balances to positions for live PnL display"""
     if not positions:
         return []
     
     # Try to get MEXC client for user
     keys = await db.get_mexc_keys(user_id)
     mexc = None
+    mexc_balances = {}
+    
     if keys:
         try:
             mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+            # Get all balances once
+            account_info = await mexc.get_account()
+            for bal in account_info.get('balances', []):
+                asset = bal.get('asset', '')
+                try:
+                    total = float(bal.get('free', 0) or 0) + float(bal.get('locked', 0) or 0)
+                    if total > 0:
+                        mexc_balances[asset] = total
+                except:
+                    pass
         except Exception:
             pass
     
     enriched = []
     for pos in positions:
         pos_dict = pos.model_dump() if hasattr(pos, 'model_dump') else dict(pos)
+        
+        # Get the asset name (e.g., AIXBT from AIXBTUSDT)
+        asset = pos.symbol.replace('USDT', '')
+        
+        # Use REAL MEXC balance instead of stored qty
+        if asset in mexc_balances:
+            real_qty = mexc_balances[asset]
+            if real_qty != pos_dict.get('qty'):
+                pos_dict['qty'] = real_qty
+                pos_dict['qty_synced'] = True  # Flag that we synced from MEXC
         
         # Try to get current price
         if mexc:
