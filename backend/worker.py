@@ -732,8 +732,8 @@ class MultiUserTradingWorker:
             'ai_confidence': ai_decision.confidence if ai_decision else (85 if is_ai_mode else None),
             'ai_risk_score': ai_decision.risk_score if ai_decision else None,
             'ai_reasoning': ai_decision.reasoning if ai_decision else None,
-            'ai_min_position': ai_decision.min_position_usdt if ai_decision else ai_min_position,
-            'ai_max_position': ai_decision.max_position_usdt if ai_decision else ai_max_position,
+            'ai_min_position': ai_decision.position_size_usdt if ai_decision else ai_min_position,
+            'ai_max_position': ai_decision.position_size_usdt if ai_decision else ai_max_position,
             'ai_current_position': ai_decision.position_size_usdt if ai_decision else effective_position_size
         })
         
@@ -1017,8 +1017,8 @@ class MultiUserTradingWorker:
                         'ai_confidence': candidate_ai.confidence if candidate_ai else None,
                         'ai_risk_score': candidate_ai.risk_score if candidate_ai else None,
                         'ai_reasoning': candidate_ai.reasoning if candidate_ai else None,
-                        'ai_min_position': candidate_ai.min_position_usdt if candidate_ai else None,
-                        'ai_max_position': candidate_ai.max_position_usdt if candidate_ai else None,
+                        'ai_min_position': candidate_ai.position_size_usdt if candidate_ai else None,
+                        'ai_max_position': candidate_ai.position_size_usdt if candidate_ai else None,
                         'ai_current_position': candidate_ai.position_size_usdt if candidate_ai else None,
                         'ai_last_override': {
                             'timestamp': scan_time.isoformat(),
@@ -1039,8 +1039,8 @@ class MultiUserTradingWorker:
                         'ai_confidence': best_ai_decision.confidence,
                         'ai_risk_score': best_ai_decision.risk_score,
                         'ai_reasoning': best_ai_decision.reasoning,
-                        'ai_min_position': best_ai_decision.min_position_usdt,
-                        'ai_max_position': best_ai_decision.max_position_usdt,
+                        'ai_min_position': best_ai_decision.position_size_usdt,
+                        'ai_max_position': best_ai_decision.position_size_usdt,
                         'ai_current_position': best_ai_decision.position_size_usdt,
                     })
         else:
