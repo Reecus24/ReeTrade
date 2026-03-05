@@ -1330,22 +1330,38 @@ class MultiUserTradingWorker:
             # Parse order result - get ACTUAL executed price
             executed_qty = float(order_result.get('executedQty', formatted_qty))
             
-            # MEXC returns price=0 for MARKET orders, need to calculate from fills
-            avg_price = 0
-            fills = order_result.get('fills', [])
-            if fills:
-                total_qty = sum(float(f.get('qty', 0)) for f in fills)
-                total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
-                if total_qty > 0:
-                    avg_price = total_cost / total_qty
+            # Log raw MEXC BUY response
+            logger.info(f"[MEXC] {symbol} BUY Response: price={order_result.get('price')}, fills={order_result.get('fills', [])}, cummulativeQuoteQty={order_result.get('cummulativeQuoteQty')}")
+            
+            # MEXC returns price=0 for MARKET orders, need to calculate from fills or cummulativeQuoteQty
+            avg_price = float(order_result.get('price', 0))
+            
+            # Method 1: Calculate from fills
+            if avg_price == 0:
+                fills = order_result.get('fills', [])
+                if fills:
+                    total_qty = sum(float(f.get('qty', 0)) for f in fills)
+                    total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
+                    if total_qty > 0:
+                        avg_price = total_cost / total_qty
+                        logger.info(f"[MEXC] {symbol} Entry price from fills: ${avg_price}")
+            
+            # Method 2: Calculate from cummulativeQuoteQty / executedQty
+            if avg_price == 0:
+                cumm_quote = float(order_result.get('cummulativeQuoteQty', 0) or 0)
+                if cumm_quote > 0 and executed_qty > 0:
+                    avg_price = cumm_quote / executed_qty
+                    logger.info(f"[MEXC] {symbol} Entry price from cummulativeQuoteQty: {cumm_quote} / {executed_qty} = ${avg_price}")
                     
-            # Fallback: if no fills data, get current ticker price
-            if avg_price == 0 or avg_price == current_price:
+            # Fallback: if no fills data, get current ticker price (LAST RESORT)
+            if avg_price == 0:
                 try:
                     ticker = await mexc.get_ticker_24h(symbol)
                     avg_price = float(ticker.get('lastPrice', current_price))
+                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to ticker: ${avg_price}")
                 except Exception:
                     avg_price = current_price
+                    logger.warning(f"[MEXC] {symbol} Entry price FALLBACK to current_price: ${avg_price}")
             
             # Recalculate SL/TP based on ACTUAL execution price
             # HOCHFREQUENZ-MODUS: Kein festes TP - KI entscheidet selbst!
