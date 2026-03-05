@@ -548,16 +548,11 @@ class RLTradingAI:
     
     async def should_buy(self, symbol: str, state: MarketState, can_afford: bool = True) -> Dict:
         """
-        Soll die KI kaufen?
+        Soll gekauft werden?
         
-        Returns:
-            {
-                'should_buy': bool,
-                'confidence': float,
-                'reasoning': str,
-                'action': str,
-                'exploration': bool
-            }
+        HYBRID-SYSTEM:
+        - PHASE 1 (< 50 Trades): Feste Hochfrequenz-Regeln, KI lernt mit
+        - PHASE 2 (>= 50 Trades): KI übernimmt selbstständig
         """
         if state.has_position:
             return {
@@ -577,36 +572,89 @@ class RLTradingAI:
                 'exploration': False
             }
         
+        total_trades = self.brain.total_trades
+        
+        # ============================================================
+        # PHASE 1: LEHRER-MODUS (< 50 Trades)
+        # Feste Regeln für gute Einstiegspunkte
+        # ============================================================
+        if total_trades < 50:
+            should_buy = False
+            reason = ""
+            
+            # REGEL 1: RSI überverkauft + positives Momentum
+            if state.rsi < 35 and state.price_change_1h > 0:
+                should_buy = True
+                reason = f"📗 LEHRER: RSI überverkauft ({state.rsi:.0f}) + steigend → BUY"
+            
+            # REGEL 2: Starkes Aufwärts-Momentum
+            elif state.price_change_1h > 1.5 and state.price_change_4h > 0:
+                should_buy = True
+                reason = f"📗 LEHRER: Starkes Momentum (+{state.price_change_1h:.1f}% 1h) → BUY"
+            
+            # REGEL 3: Grüne Kerzen-Serie + guter Trend
+            elif state.consecutive_green >= 3 and state.rsi < 65:
+                should_buy = True
+                reason = f"📗 LEHRER: {state.consecutive_green} grüne Kerzen + RSI OK → BUY"
+            
+            # REGEL 4: Preis über EMA + Volume Spike
+            elif state.ema_20_distance > 0.5 and state.volume_ratio > 1.5:
+                should_buy = True
+                reason = f"📗 LEHRER: Über EMA + hohes Volume ({state.volume_ratio:.1f}x) → BUY"
+            
+            if should_buy:
+                logger.info(f"[RL] {symbol}: {reason} (Trade #{total_trades + 1}/50)")
+                return {
+                    'should_buy': True,
+                    'confidence': 85,
+                    'reasoning': reason,
+                    'action': 'BUY',
+                    'exploration': False,
+                    'phase': 'LEHRER'
+                }
+            
+            # Kein Kaufsignal
+            return {
+                'should_buy': False,
+                'confidence': 50,
+                'reasoning': f"📗 LEHRER: Kein Signal (RSI: {state.rsi:.0f}, Mom: {state.price_change_1h:+.1f}%)",
+                'action': 'HOLD',
+                'exploration': False,
+                'phase': 'LEHRER'
+            }
+        
+        # ============================================================
+        # PHASE 2: KI-MODUS (>= 50 Trades)
+        # KI entscheidet selbstständig
+        # ============================================================
         state_array = state.to_array()
         action = self.brain.choose_action(state_array, can_buy=can_afford, has_position=False)
-        
         q_values = self.brain.get_q_values(state_array)
-        confidence = max(0, min(100, 50 + q_values[action] * 10))
         
-        is_exploration = random.random() < self.brain.epsilon
+        confidence = max(0, min(100, 50 + (q_values[action] - q_values[0]) * 20))
         
-        # Log die Entscheidungsgrundlage
-        logger.info(f"[RL] 🔍 ENTRY-ANALYSE {symbol}:")
-        logger.info(f"[RL]    → Q-Werte: HOLD={q_values[0]:.3f}, BUY={q_values[1]:.3f}, SELL={q_values[2]:.3f}")
-        logger.info(f"[RL]    → Beste Action: {Action.to_string(action)} (Q={q_values[action]:.3f})")
-        logger.info(f"[RL]    → Exploration: {'JA (zufällig)' if is_exploration else 'NEIN (gelernt)'}")
-        logger.info(f"[RL]    → Bisherige Erfahrung: {self.brain.total_trades} Trades, {self.brain.win_rate*100:.1f}% Win-Rate")
+        if action == Action.BUY:
+            reason = f"🧠 KI-DECISION: BUY | Q[BUY]={q_values[1]:.3f} > Q[HOLD]={q_values[0]:.3f}"
+            logger.info(f"[RL] {symbol}: {reason}")
+        else:
+            reason = f"🧠 KI-DECISION: HOLD | Q[HOLD]={q_values[0]:.3f} ≥ Q[BUY]={q_values[1]:.3f}"
         
         return {
             'should_buy': action == Action.BUY,
             'confidence': confidence,
-            'reasoning': f"RL Decision: {Action.to_string(action)} | Q-Values: {q_values.round(2)} | Epsilon: {self.brain.epsilon:.2f}",
+            'reasoning': reason,
             'action': Action.to_string(action),
-            'exploration': is_exploration,
-            'brain_status': self.brain.get_status()
+            'exploration': random.random() < self.brain.epsilon,
+            'phase': 'KI'
         }
     
     async def should_sell(self, symbol: str, state: MarketState) -> Dict:
         """
-        Soll die KI verkaufen? - 100% KI-ENTSCHEIDUNG
+        Soll verkauft werden?
         
-        In der Lernphase ist die KI aggressiver beim Verkaufen,
-        damit sie schneller lernt wann Verkaufen gut ist.
+        HYBRID-SYSTEM:
+        - PHASE 1 (< 50 Trades): Feste Hochfrequenz-Regeln, KI lernt mit
+        - PHASE 2 (>= 50 Trades): KI übernimmt selbstständig
         """
         if not state.has_position:
             return {
@@ -618,49 +666,85 @@ class RLTradingAI:
             }
         
         pnl = state.position_pnl_pct
-        state_array = state.to_array()
+        total_trades = self.brain.total_trades
         
-        # ============ 100% KI-ENTSCHEIDUNG ============
-        # In der Lernphase (hohe Exploration) bevorzugen wir SELL um schneller zu lernen
-        
-        is_learning_phase = self.brain.epsilon > 0.5  # Erste ~50 Trades
-        
-        if is_learning_phase:
-            # AGGRESSIVER LERN-MODUS: 60% SELL, 40% HOLD bei Exploration
-            # So sammelt die KI schneller Erfahrungen über Verkaufs-Entscheidungen
-            if random.random() < self.brain.epsilon:  # Exploration
-                # Bei Gewinn: 70% SELL, 30% HOLD
-                # Bei Verlust: 50% SELL, 50% HOLD
-                sell_bias = 0.7 if pnl > 0 else 0.5
-                action = Action.SELL if random.random() < sell_bias else Action.HOLD
-                
-                reasoning = f"🎲 LERN-EXPLORATION: {Action.to_string(action)} (Bias: {sell_bias*100:.0f}% SELL) | PnL: {pnl:.2f}%"
-                logger.info(f"[RL] {symbol}: {reasoning}")
-                
+        # ============================================================
+        # PHASE 1: LEHRER-MODUS (< 50 Trades)
+        # Feste Regeln für Hochfrequenz-Trading, KI lernt daraus
+        # ============================================================
+        if total_trades < 50:
+            should_sell = False
+            reason = ""
+            
+            # REGEL 1: Quick Profit - Bei +0.5% bis +3% sofort verkaufen
+            if pnl >= 0.5:
+                should_sell = True
+                reason = f"📗 LEHRER: Quick Profit! +{pnl:.2f}% ≥ 0.5% → SELL"
+            
+            # REGEL 2: Momentum-Profit - Positiv aber Momentum dreht
+            elif pnl > 0.2 and state.price_change_1h < -0.5:
+                should_sell = True
+                reason = f"📗 LEHRER: Profit sichern! +{pnl:.2f}% bei fallendem Momentum → SELL"
+            
+            # REGEL 3: RSI überkauft - Im Plus und RSI > 70
+            elif pnl > 0 and state.rsi > 70:
+                should_sell = True
+                reason = f"📗 LEHRER: RSI überkauft ({state.rsi:.0f}) + Profit → SELL"
+            
+            # REGEL 4: Schneller Loss-Cut - Bei -2% und negativem Trend raus
+            elif pnl <= -2 and state.price_change_1h < -1:
+                should_sell = True
+                reason = f"📗 LEHRER: Loss-Cut! {pnl:.2f}% + neg. Trend → SELL"
+            
+            # REGEL 5: Langer Verlust - Über 1 Stunde im Minus
+            elif pnl < 0 and state.position_hold_hours > 1:
+                should_sell = True
+                reason = f"📗 LEHRER: Zu lange im Minus ({state.position_hold_hours:.1f}h) → SELL"
+            
+            if should_sell:
+                logger.info(f"[RL] {symbol}: {reason} (Trade #{total_trades + 1}/50)")
                 return {
-                    'should_sell': action == Action.SELL,
-                    'confidence': 50,
-                    'reasoning': reasoning,
-                    'action': Action.to_string(action),
-                    'exploration': True
+                    'should_sell': True,
+                    'confidence': 90,
+                    'reasoning': reason,
+                    'action': 'SELL',
+                    'exploration': False,
+                    'phase': 'LEHRER'
                 }
+            
+            # Kein Verkaufssignal - HOLD
+            return {
+                'should_sell': False,
+                'confidence': 50,
+                'reasoning': f"📗 LEHRER: Warte auf Signal (PnL: {pnl:.2f}%, RSI: {state.rsi:.0f})",
+                'action': 'HOLD',
+                'exploration': False,
+                'phase': 'LEHRER'
+            }
         
-        # EXPLOITATION: Nutze gelerntes Wissen
+        # ============================================================
+        # PHASE 2: KI-MODUS (>= 50 Trades)
+        # KI hat gelernt und entscheidet selbstständig
+        # ============================================================
+        state_array = state.to_array()
         action = self.brain.choose_action(state_array, can_buy=False, has_position=True)
         q_values = self.brain.get_q_values(state_array)
-        confidence = max(0, min(100, 50 + q_values[action] * 10))
         
-        reasoning = f"🧠 KI-DECISION: {Action.to_string(action)} | Q[HOLD]={q_values[0]:.2f} Q[SELL]={q_values[2]:.2f} | PnL: {pnl:.2f}%"
+        confidence = max(0, min(100, 50 + (q_values[action] - q_values[1-action]) * 20))
         
         if action == Action.SELL:
-            logger.info(f"[RL] {symbol}: {reasoning}")
+            reason = f"🧠 KI-DECISION: SELL | Q[SELL]={q_values[2]:.3f} > Q[HOLD]={q_values[0]:.3f} | PnL: {pnl:.2f}%"
+            logger.info(f"[RL] {symbol}: {reason}")
+        else:
+            reason = f"🧠 KI-DECISION: HOLD | Q[HOLD]={q_values[0]:.3f} ≥ Q[SELL]={q_values[2]:.3f} | PnL: {pnl:.2f}%"
         
         return {
             'should_sell': action == Action.SELL,
             'confidence': confidence,
-            'reasoning': reasoning,
+            'reasoning': reason,
             'action': Action.to_string(action),
-            'exploration': False
+            'exploration': random.random() < self.brain.epsilon,
+            'phase': 'KI'
         }
     
     async def start_episode(self, symbol: str, state: MarketState, entry_price: float):
