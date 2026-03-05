@@ -19,10 +19,12 @@ logger = logging.getLogger(__name__)
 
 class TradingMode(str, Enum):
     MANUAL = "manual"
+    RL_AI = "rl_ai"  # NEW: Pure Reinforcement Learning AI
+    # Legacy modes (deprecated, mapped to RL_AI)
     AI_CONSERVATIVE = "ai_conservative"
     AI_MODERATE = "ai_moderate"
     AI_AGGRESSIVE = "ai_aggressive"
-    KI_EXPLORER = "ki_explorer"  # Experimenteller Modus für ML Training
+    KI_EXPLORER = "ki_explorer"
 
 
 class MarketType(str, Enum):

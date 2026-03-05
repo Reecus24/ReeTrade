@@ -7,9 +7,12 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - **Telegram Benachrichtigungen**
 - **Cyberpunk UI Design**
 
+## Aktueller Stand (2025-12)
+Der Bot verwendet jetzt **ausschließlich Reinforcement Learning (RL-AI)** für alle Trading-Entscheidungen. Alle alten, regelbasierten AI-Modi wurden entfernt.
+
 ## Implementierte Features
 
-### Reinforcement Learning AI (NEU - 2025-12)
+### Reinforcement Learning AI ✅
 - **Q-Learning basierte KI** die aus jedem Trade lernt
 - **Exploration/Exploitation Balance** - startet mit 100% Exploration
 - **22 Market Features** werden analysiert (RSI, EMA, Volume, etc.)
@@ -18,8 +21,8 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - **Memory System:** Speichert vergangene Trades für Training
 - **Status Endpoint:** `/api/rl/status` zeigt Lernfortschritt
 
-### Cyberpunk UI Design (NEU - 2025-12)
-- **Neon-Farbschema:** Cyan, Magenta, Gelb
+### Cyberpunk UI Design ✅
+- **Neon-Farbschema:** Cyan (#00f0ff), Magenta (#ff00ff), Gelb (#ffff00)
 - **Orbitron Font** für Überschriften
 - **Share Tech Mono** für Terminal-Stil
 - **Glow-Effekte** für aktive Elemente
@@ -27,7 +30,7 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - **Terminal-Style Logs**
 - **Cyberpunk-Panels** mit Neon-Borders
 
-### Telegram Integration (Komplett)
+### Telegram Integration ✅
 **Bot:** @ReeTrade_Bot
 
 **Automatische Benachrichtigungen:**
@@ -35,7 +38,7 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - 🔴 Trade geschlossen  
 - 🛑 Stop-Loss ausgelöst
 - 🎯 Take-Profit erreicht
-- 🧠 KI Smart Exit Entscheidung
+- 🧠 RL-KI Exit Entscheidung
 - 📊 Tägliche Zusammenfassung um 21:00 Uhr
 
 **Befehle:**
@@ -47,20 +50,20 @@ KI-gesteuerter Trading Bot für MEXC mit:
 - `/link` - Telegram Account verknüpfen
 - `/help` - Hilfe
 
-### Smart Exit Engine (Aktiv)
-- Intelligente Verkaufsentscheidungen
-- Analysiert RSI, Momentum, EMA, Candlestick-Patterns
-- Dient jetzt als **Data Provider** für die RL-KI
-
-### Deaktivierte Features
-- **FUTURES Trading** - deaktiviert wegen MEXC IP-Block
-- **Alte KI-Modi** (KI Explorer, KI Hyper) - ersetzt durch RL-KI
+### ENTFERNTE Features (Cleanup)
+- ❌ **KI Explorer Mode** - entfernt
+- ❌ **KI Hyper Mode** - entfernt
+- ❌ **AI Conservative/Moderate/Aggressive** - entfernt
+- ❌ **ML Model (GradientBoostingClassifier)** - entfernt
+- ❌ **KI Learning Engine** - entfernt
+- ❌ **ML Data Collector** - entfernt
+- ❌ **FUTURES Trading** - deaktiviert wegen MEXC IP-Block
 
 ## Technischer Stack
 - **Frontend:** React + TailwindCSS + shadcn/ui
 - **Backend:** FastAPI + Python
 - **Datenbank:** MongoDB
-- **ML:** scikit-learn (GradientBoostingClassifier)
+- **ML:** RL-AI mit Q-Learning (eigene Implementierung)
 - **Deployment:** Hetzner VPS + systemd
 
 ## API Endpoints
@@ -99,21 +102,21 @@ source venv/bin/activate
 pip install -r requirements.txt
 deactivate
 sudo systemctl restart reetrade-backend
+
+# Logs prüfen:
+sudo journalctl -u reetrade-backend -f --since "1 minute ago"
 ```
 
 ## Bekannte Issues
 
-### P0 - Kritisch
-- **`_buying_positions` AttributeError** - Bug im Worker, muss auf Server verifiziert werden
-- **Dueling Worker Services** - User muss `reetrade-worker` deaktivieren
-
 ### P1 - Wichtig
-- Telegram Befehle (`/balance`, `/status`) zeigen manchmal falsche Daten
+- **`_buying_positions` Bug** - muss auf Server verifiziert werden
+- **Dueling Worker Services** - User muss `reetrade-worker` deaktivieren
 
 ## Offene Aufgaben
 
 ### P1
-- [ ] `_buying_positions` Bug beheben und verifizieren
+- [ ] Code auf Hetzner Server deployen
 - [ ] RL-KI mit echten Trades testen
 - [ ] Telegram Befehle verifizieren
 
@@ -123,14 +126,40 @@ sudo systemctl restart reetrade-backend
 - [ ] FUTURES Trading wieder aktivieren
 - [ ] History Reset Script ausführen
 
+## Code Cleanup Summary
+
+### Entfernte Imports
+- `ki_learning_engine.get_ki_engine`
+- `ml_data_collector.get_ml_collector`
+- `ml_trading_model.get_ml_model, MLTradingModel, TradeFeatures`
+- `ai_engine_v2.AITradingEngineV2, ai_engine_v2`
+- `smart_exit_engine.check_position_exit, PositionContext`
+
+### Entfernte Objekte
+- `self.ai_engine` - Alter AI Engine
+- `self.ml_collector` - ML Data Collector
+- `self.ki_engine` - KI Learning Engine
+- `self.ml_model` - ML Trading Model
+- `ai_decision` - Alte AI Decision Variable
+
+### Vereinfachte Logik
+- TradingMode: Nur noch `RL_AI` und `MANUAL`
+- Entry Decision: Nur noch RL-AI
+- Exit Decision: Nur noch RL-AI + SL/TP Fallback
+- Alle alten "KI Learning" und "ML Model" Checks entfernt
+
 ## Changelog
 
-### 2025-12 - Cyberpunk & RL-KI Update
-- ✅ Reinforcement Learning KI implementiert
-- ✅ Alte KI-Modi deaktiviert und versteckt
-- ✅ Cyberpunk UI Design für alle Komponenten
-- ✅ Login/Register Pages im Cyberpunk-Stil
-- ✅ Dashboard mit Neon-Glow Effekten
-- ✅ Terminal-Style Logs
-- ✅ RL-Status Panel mit Lernfortschritt
-- ✅ Deutsche UI-Texte
+### 2025-12 - Cleanup & RL-AI Only
+- ✅ Alle alten AI-Modi entfernt
+- ✅ Worker auf reine RL-AI Logik umgestellt
+- ✅ Unbenutzte Imports entfernt
+- ✅ ML Collector und KI Learning Engine entfernt
+- ✅ Code-Linting durchgeführt
+- ✅ Backend startet ohne Fehler
+
+### 2025-12 - Cyberpunk UI
+- ✅ Neon-Farbschema implementiert
+- ✅ Orbitron + Share Tech Mono Fonts
+- ✅ Glow-Effekte und Scanlines
+- ✅ Alle Komponenten im Cyberpunk-Stil

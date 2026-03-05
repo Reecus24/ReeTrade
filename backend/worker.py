@@ -12,20 +12,17 @@ from regime_detector import RegimeDetector
 from order_sizer import order_sizer
 from models import Position, Trade, UserSettings, PaperAccount
 from ai_engine_v2 import (
-    AITradingEngineV2, TradingMode, MarketConditions, AccountState, MarketRegime,
-    RISK_PROFILES_V2, ai_engine_v2
+    TradingMode, MarketConditions, AccountState, MarketRegime,
+    RISK_PROFILES_V2
 )
-from ml_data_collector import get_ml_collector
-from ki_learning_engine import get_ki_engine
-from smart_exit_engine import SmartExitEngine, check_position_exit, PositionContext
+from smart_exit_engine import SmartExitEngine
 from telegram_bot import get_telegram_bot
-from ml_trading_model import get_ml_model, MLTradingModel, TradeFeatures
 from rl_trading_ai import get_rl_trading_ai, RLTradingAI, MarketState, Action
 
 logger = logging.getLogger(__name__)
 
 class MultiUserTradingWorker:
-    """Background worker for multi-user LIVE automated trading with AI support"""
+    """Background worker for multi-user LIVE automated trading with RL-AI"""
     
     def __init__(self, db: Database):
         self.db = db
@@ -34,10 +31,10 @@ class MultiUserTradingWorker:
         self.user_last_trade_time: Dict[str, datetime] = {}
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
-        self.ai_engine = ai_engine_v2  # AI Trading Engine V2
-        self.ml_collector = get_ml_collector(db)  # ML Data Collector für Training
-        self.ki_engine = get_ki_engine(db)  # KI Learning Engine
-        self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für intelligente Exits
+        self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für Fallback-Analyse
+        
+        # RL-AI: Der einzige Decision Maker
+        self.rl_ai = get_rl_trading_ai()
         
         # Telegram Bot
         tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -56,9 +53,6 @@ class MultiUserTradingWorker:
         # Position tracking to prevent race conditions
         self._buying_positions: set = set()  # Symbols currently being bought
         self._selling_positions: set = set()  # Symbols currently being sold
-        
-        # Echte ML Trading KI
-        self.ml_model = get_ml_model(db)
         
         # Reinforcement Learning KI (echtes Lernen!)
         self.rl_ai = get_rl_trading_ai(db)
@@ -422,135 +416,52 @@ class MultiUserTradingWorker:
                             f"[EXIT CHECK] {position.symbol}: Haltezeit {time_held.total_seconds():.0f}s < {min_hold_time_minutes}min - Smart Exit übersprungen")
                         continue
                 
-                # Hole erweiterte Marktdaten für intelligente Analyse
+                # ========== RL-KI EXIT ENTSCHEIDUNG ==========
                 try:
-                    # Hole KI-Lernzustand für diesen User
-                    ki_state = await self.ki_engine.get_ki_state(user_id)
-                    
-                    # Hole zusätzliche Indikatoren für Smart Analysis
+                    # Hole Marktdaten für RL-KI
                     klines = await mexc.get_klines(position.symbol, "60m", limit=50)
                     closes = [float(k[4]) for k in klines]
                     
-                    # Berechne Indikatoren
+                    # Berechne Indikatoren für Logging
                     rsi = self._calculate_rsi(closes) if len(closes) >= 14 else 50
                     momentum_1h = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) >= 2 else 0
-                    momentum_4h = ((closes[-1] - closes[-5]) / closes[-5] * 100) if len(closes) >= 5 else 0
                     
-                    # EMA Berechnung
-                    ema20 = self._calculate_ema(closes, 20) if len(closes) >= 20 else current_price
-                    price_vs_ema20 = ((current_price - ema20) / ema20 * 100)
-                    
-                    # Kerzen-Analyse
-                    last_candle = klines[-1] if klines else None
-                    candle_type = "neutral"
-                    if last_candle:
-                        open_p, close_p = float(last_candle[1]), float(last_candle[4])
-                        if close_p > open_p * 1.005:
-                            candle_type = "bullish"
-                        elif close_p < open_p * 0.995:
-                            candle_type = "bearish"
-                    
-                    # Zähle rote/grüne Kerzen
-                    red_count = 0
-                    for i in range(-1, -6, -1):
-                        if i < -len(klines):
-                            break
-                        k = klines[i]
-                        if float(k[4]) < float(k[1]):
-                            red_count += 1
-                        else:
-                            break
-                    
-                    # Erstelle ML Features für echte KI-Entscheidung
-                    ml_features = TradeFeatures(
-                        rsi=rsi,
-                        adx=25,  # TODO: echte ADX Berechnung
-                        macd_histogram=0,  # TODO: echte MACD Berechnung
-                        volume_ratio=float(ticker.get('volume', 0)) / max(float(ticker.get('quoteVolume', 1)), 1),
-                        price_vs_ema20=price_vs_ema20,
-                        price_vs_ema50=price_vs_ema20,  # Vereinfacht
-                        momentum_1h=momentum_1h,
-                        momentum_4h=momentum_4h,
-                        momentum_24h=momentum_4h * 2,  # Vereinfacht
-                        pnl_pct=pnl_pct,
-                        hours_in_trade=time_held.total_seconds() / 3600 if hasattr(position, 'entry_time') and position.entry_time else 0,
-                        distance_to_sl_pct=((current_price - position.stop_loss) / position.stop_loss * 100) if position.stop_loss else 10,
-                        distance_to_tp_pct=((position.take_profit - current_price) / current_price * 100) if position.take_profit else 10,
-                        btc_trend=0,  # TODO: BTC Trend holen
-                        market_volatility=abs(momentum_1h)
+                    # Frage RL-KI ob verkaufen
+                    rl_market_state = await self.rl_ai.analyze_market(
+                        symbol=position.symbol,
+                        klines=klines,
+                        ticker=ticker,
+                        position={
+                            'entry_price': position.entry_price,
+                            'current_price': current_price,
+                            'pnl_pct': pnl_pct
+                        }
                     )
                     
-                    # ========== ML-BASIERTE EXIT ENTSCHEIDUNG ==========
-                    ml_prediction = await self.ml_model.predict_exit(ml_features)
+                    rl_decision = await self.rl_ai.should_sell(
+                        symbol=position.symbol,
+                        state=rl_market_state,
+                        entry_price=position.entry_price,
+                        current_price=current_price
+                    )
                     
-                    if ml_prediction['model_used']:
-                        # ML-Modell ist trainiert - verwende dessen Entscheidung
-                        if ml_prediction['should_exit'] and ml_prediction['confidence'] > 65:
-                            should_exit = True
-                            exit_reason = f"🤖 ML-EXIT: {ml_prediction['reasoning']}"
-                            
-                            await self.db.log(user_id, "WARNING", 
-                                f"[ML EXIT] {position.symbol} | Confidence: {ml_prediction['confidence']:.1f}% | Modell-Accuracy: {self.ml_model.model_accuracy:.1%}")
-                            
-                            # Telegram über ML-Entscheidung
-                            await self.notify_telegram('smart_exit', {
-                                'symbol': position.symbol,
-                                'exit_type': 'ml_decision',
-                                'confidence': ml_prediction['confidence'],
-                                'reasons': [ml_prediction['reasoning']]
-                            }, user_id)
-                    else:
-                        # ML noch im Lernmodus - sammle nur Daten, keine Exits
-                        await self.db.log(user_id, "DEBUG", 
-                            f"[ML LEARNING] {position.symbol} | Exploration Mode - sammle Daten | Samples: {len(self.ml_model.training_data)}")
-                    
-                    # Erstelle Marktdaten für Smart Exit (Fallback)
-                    market_data = {
-                        'price': current_price,
-                        'pnl_pct': pnl_pct,
-                        'rsi': rsi,
-                        'adx': 25,
-                        'momentum_1h': momentum_1h,
-                        'momentum_4h': momentum_4h,
-                        'price_vs_ema20': price_vs_ema20,
-                        'volume_ratio': float(ticker.get('volume', 0)) / max(float(ticker.get('quoteVolume', 1)), 1),
-                        'last_candle_type': candle_type,
-                        'consecutive_red_candles': red_count
-                    }
-                    
-                    # Position-Daten
-                    position_data = {
-                        'symbol': position.symbol,
-                        'entry_price': position.entry_price,
-                        'quantity': position.qty,
-                        'entry_time': position.entry_time,
-                        'stop_loss': position.stop_loss,
-                        'take_profit': position.take_profit
-                    }
-                    
-                    # Smart Exit Analyse
-                    exit_signal = await check_position_exit(position_data, market_data, self.db, ki_state)
-                    
-                    # Wenn Smart Exit empfiehlt zu verkaufen
-                    if exit_signal.should_exit:
+                    if rl_decision['should_sell']:
                         should_exit = True
-                        exit_reason = f"🧠 KI-EXIT ({exit_signal.exit_type}): {exit_signal.reasoning[0] if exit_signal.reasoning else 'Smart Analysis'}"
+                        exit_reason = f"🧠 RL-EXIT: {rl_decision['reasoning']}"
                         
-                        # Log die KI-Entscheidung
                         await self.db.log(user_id, "WARNING", 
-                            f"[SMART EXIT] {position.symbol} | Confidence: {exit_signal.confidence}% | Type: {exit_signal.exit_type}")
-                        for reason in exit_signal.reasoning[:3]:
-                            await self.db.log(user_id, "INFO", f"  → {reason}")
+                            f"[RL EXIT] {position.symbol} | "
+                            f"Action: {rl_decision['action']} | "
+                            f"RSI: {rsi:.0f} | "
+                            f"Momentum: {momentum_1h:.2f}%")
                         
-                        # KI-Log eintragen
-                        await self.ki_engine.log_decision(user_id, {
-                            'type': 'SMART_EXIT',
+                        # Telegram über RL-Entscheidung
+                        await self.notify_telegram('smart_exit', {
                             'symbol': position.symbol,
-                            'exit_type': exit_signal.exit_type,
-                            'confidence': exit_signal.confidence,
-                            'pnl_at_exit': pnl_pct,
-                            'reasons': exit_signal.reasoning
-                        })
+                            'exit_type': 'rl_decision',
+                            'confidence': 100,  # RL doesn't output confidence
+                            'reasons': [rl_decision['reasoning']]
+                        }, user_id)
                 
                 except Exception as smart_err:
                     logger.warning(f"Smart Exit error for {position.symbol}: {smart_err}")
@@ -744,9 +655,9 @@ class MultiUserTradingWorker:
         try:
             settings = await self.db.get_settings(user_id)
             
-            # Get AI position size for intelligent filtering
-            trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
-            is_ai_mode = trading_mode != TradingMode.MANUAL
+            # Simplified: Always use RL-AI mode
+            trading_mode = TradingMode.RL_AI
+            is_ai_mode = True
             
             # Get USDT free balance for position sizing
             mexc = MexcClient()
@@ -964,11 +875,14 @@ class MultiUserTradingWorker:
         
         positions_count = len(account.open_positions) if account else 0
         
-        # ============ AI MODE SETUP ============
-        trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
-        is_ai_mode = trading_mode != TradingMode.MANUAL
+        # ============ AI MODE SETUP (SIMPLIFIED - Only RL-AI) ============
+        trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.RL_AI
+        # Map all legacy modes to RL_AI
+        if trading_mode in [TradingMode.AI_CONSERVATIVE, TradingMode.AI_MODERATE, TradingMode.AI_AGGRESSIVE, TradingMode.KI_EXPLORER]:
+            trading_mode = TradingMode.RL_AI
         
-        ai_decision = None
+        is_ai_mode = trading_mode == TradingMode.RL_AI
+        
         effective_max_positions = settings.max_positions
         effective_position_size = settings.live_max_order_usdt
         ai_min_position = None
@@ -1008,12 +922,12 @@ class MultiUserTradingWorker:
             'live_daily_used': round(today_exposure, 2),
             'live_daily_remaining': round(daily_remaining, 2),
             'live_positions_count': positions_count,
-            'ai_confidence': ai_decision.confidence if ai_decision else (85 if is_ai_mode else None),
-            'ai_risk_score': ai_decision.risk_score if ai_decision else None,
-            'ai_reasoning': ai_decision.reasoning if ai_decision else None,
-            'ai_min_position': ai_decision.position_size_usdt if ai_decision else ai_min_position,
-            'ai_max_position': ai_decision.position_size_usdt if ai_decision else ai_max_position,
-            'ai_current_position': ai_decision.position_size_usdt if ai_decision else effective_position_size
+            'ai_confidence': 85 if is_ai_mode else None,  # RL-AI doesn't output confidence
+            'ai_risk_score': None,
+            'ai_reasoning': None,
+            'ai_min_position': ai_min_position,
+            'ai_max_position': ai_max_position,
+            'ai_current_position': effective_position_size
         })
         
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
@@ -1121,111 +1035,8 @@ class MultiUserTradingWorker:
                 volatility_percentile = min(100, (current_atr / avg_atr) * 50) if avg_atr > 0 else 50
                 atr_percent = (current_atr / current_price * 100) if current_price > 0 else 1
                 
-                # AI Mode: Get AI decision with REAL market data (V2 Engine)
-                if is_ai_mode:
-                    # Get USDT free balance for position sizing
-                    try:
-                        account_info = await mexc.get_account()
-                        usdt_balance = next(
-                            (b for b in account_info.get('balances', []) if b.get('asset') == 'USDT'),
-                            {'free': '0'}
-                        )
-                        usdt_free = float(usdt_balance.get('free', 0))
-                    except:
-                        usdt_free = available_budget
-                    
-                    # Calculate open positions value
-                    open_positions_value = sum(
-                        pos.entry_price * pos.qty for pos in account.open_positions
-                    ) if account and account.open_positions else 0
-                    
-                    # Convert regime string (BULLISH/SIDEWAYS/BEARISH) to enum (bullish/sideways/bearish)
-                    try:
-                        regime_enum = MarketRegime(regime.lower())
-                    except ValueError:
-                        await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol}: Unbekanntes Regime '{regime}' - überspringe")
-                        continue
-                    
-                    # Get 24h volume for low-cap detection
-                    volume_24h = 0
-                    try:
-                        ticker = await mexc.get_ticker_24h(symbol)
-                        volume_24h = float(ticker.get('quoteVolume', 0))  # Volume in USDT
-                    except Exception:
-                        pass
-                    
-                    market_conditions = MarketConditions(
-                        regime=regime_enum,
-                        adx_value=adx_value,
-                        atr_value=current_atr,
-                        atr_percent=atr_percent,
-                        volatility_percentile=volatility_percentile,
-                        momentum_score=regime_context.get('momentum', 0),
-                        rsi_value=regime_context.get('rsi', 50),
-                        current_price=current_price,
-                        volume_24h=volume_24h
-                    )
-                    
-                    # Calculate remaining trading budget
-                    trading_budget = settings.trading_budget_usdt or 500
-                    trading_budget_remaining = max(0, trading_budget - open_positions_value)
-                    
-                    account_state = AccountState(
-                        total_equity=current_equity,
-                        usdt_free=usdt_free,
-                        current_drawdown_pct=drawdown_pct,
-                        open_positions_count=positions_count,
-                        open_positions_value=open_positions_value,
-                        today_pnl=today_pnl,
-                        today_trades_count=today_trades
-                    )
-                    
-                    # Get AI decision - use futures-aware method if enabled
-                    if settings.futures_enabled:
-                        ai_decision = self.ai_engine.make_futures_decision(
-                            user_id, trading_mode, market_conditions, account_state, 
-                            trading_budget_remaining, 
-                            user_futures_enabled=True,
-                            max_leverage=settings.futures_max_leverage
-                        )
-                    else:
-                        ai_decision = self.ai_engine.make_decision(
-                            user_id, trading_mode, market_conditions, account_state, trading_budget_remaining
-                        )
-                    
-                    # ============ KI LEARNING CHECK ============
-                    # Ab Trade 11: KI muss Trade genehmigen
-                    ki_state = await self.ki_engine.get_ki_state(user_id)
-                    if ki_state.ki_active:
-                        # KI ist aktiv - muss Trade prüfen
-                        market_data_for_ki = {
-                            'rsi': regime_context.get('rsi', 50),
-                            'adx': adx_value,
-                            'volume_24h': volume_24h,
-                            'regime': regime,
-                            'direction': ai_decision.direction if hasattr(ai_decision, 'direction') else 'long'
-                        }
-                        should_trade, ki_reason, ki_warnings = self.ki_engine.should_ki_trade(ki_state, market_data_for_ki)
-                        
-                        if not should_trade:
-                            await self.db.log(user_id, "INFO", 
-                                f"[KI] 🧠 VETO für {symbol}: {ki_reason} | Warnings: {', '.join(ki_warnings)}")
-                            continue
-                        else:
-                            await self.db.log(user_id, "INFO", 
-                                f"[KI] ✅ {symbol}: {ki_reason} (Confidence: {ki_state.ki_confidence*100:.0f}%)")
-                    # ============ END KI LEARNING CHECK ============
-                    
-                    if not ai_decision.should_trade:
-                        reason = ai_decision.reasoning[-1] if ai_decision.reasoning else 'Unbekannt'
-                        await self.db.log(user_id, "INFO", f"[LIVE] 🤖 {symbol}: AI SKIP - {reason}")
-                        continue
-                    
-                    # Update effective position size from AI V2
-                    effective_position_size = ai_decision.position_size_usdt
-                
-                # ============ RL TRADING AI ENTRY CHECK ============
-                # NUR DIE RL-KI ENTSCHEIDET - keine regelbasierten Checks mehr!
+                # ============ RL TRADING AI - ONLY DECISION MAKER ============
+                # Die RL-KI ist der EINZIGE Entscheider - keine alten AI-Modi mehr!
                 try:
                     # Hole Ticker für RL-Analyse
                     ticker_data = await mexc.get_ticker_24h(symbol)
@@ -1263,65 +1074,35 @@ class MultiUserTradingWorker:
                             f"[RL] ✅ {symbol}: RL-KI sagt JA! - {rl_decision['reasoning']}")
                     
                 except Exception as rl_err:
-                    logger.warning(f"RL Entry check error: {rl_err}")
+                    logger.warning(f"RL Entry check error for {symbol}: {rl_err}")
                     continue  # Bei Fehler: Kein Trade
                 # ============ END RL TRADING AI ============
                 
-                # Überspringe alte regelbasierte Signal-Checks - RL-KI hat entschieden!
-                # Get 15m klines nur für SL/TP Berechnung
-                if not is_ai_mode and regime != "BULLISH":
-                    continue
-                
-                # Get 15m klines for entry signal
+                # RL-KI hat JA gesagt - jetzt SL/TP berechnen und Trade vorbereiten
+                # Get 15m klines for SL/TP calculation
                 klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
-                if len(klines_15m) < settings.ema_slow:
+                if len(klines_15m) < 50:
                     continue
                 
-                # Check signal
-                signal, context = strategy.generate_signal(klines_15m)
-                if signal != "LONG":
-                    # Log why no signal
-                    rsi_val = context.get('rsi', 50)
-                    ema_fast = context.get('ema_fast', 0)
-                    ema_slow = context.get('ema_slow', 0)
-                    reason = "Kein LONG Signal"
-                    if rsi_val > 70:
-                        reason = "RSI überkauft ({:.0f})".format(rsi_val)
-                    elif ema_fast < ema_slow:
-                        reason = "EMA bearish (Fast < Slow)"
-                    await self.db.log(user_id, "INFO", f"[LIVE] ⏭️ {symbol}: {reason} | RSI={rsi_val:.0f}, ADX={adx_value:.1f}")
-                    continue
-                
-                # SIGNAL FOUND!
+                # Get current price from 15m data
                 current_price = float(klines_15m[-1][4])
-                ema_fast_val = context.get('ema_fast', 0)
-                ema_slow_val = context.get('ema_slow', 0)
-                rsi_val = context.get('rsi', 0)
+                rsi_val = regime_context.get('rsi', 50)
                 
-                # Calculate stop/take profit (AI V2 with ATR-based SL/TP)
-                if is_ai_mode and ai_decision:
-                    # Use AI V2 ATR-based SL/TP prices directly
-                    stop_loss = ai_decision.stop_loss_price
-                    take_profit = ai_decision.take_profit_price
-                    await self.db.log(user_id, "INFO", 
-                        f"[LIVE] 🤖 {symbol}: SL={stop_loss:.8f} (-{ai_decision.stop_loss_pct:.2f}%), TP={take_profit:.8f} (+{ai_decision.take_profit_pct:.2f}%), R:R={ai_decision.risk_reward_ratio:.1f}:1")
+                # Calculate ATR-based stop/take profit
+                atr = strategy.calculate_atr(klines_15m, 14)
+                if atr:
+                    stop_loss = current_price - (atr * 2.0)
+                    risk_amount = current_price - stop_loss
+                    take_profit = current_price + (risk_amount * 2.5)
                 else:
-                    # Manual mode - use ATR-based calculation
-                    atr = strategy.calculate_atr(klines_15m, 14)
-                    if atr:
-                        stop_loss = current_price - (atr * 2.0)
-                        risk_amount = current_price - stop_loss
-                        take_profit = current_price + (risk_amount * 2.5)
-                    else:
-                        stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
-                        take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
+                    stop_loss = risk_mgr.calculate_stop_loss(current_price, None)
+                    take_profit = risk_mgr.calculate_take_profit(current_price, stop_loss)
                 
-                # Score calculation
-                ema_spread = ((ema_fast_val - ema_slow_val) / ema_slow_val * 100) if ema_slow_val > 0 else 0
+                # Score calculation for prioritizing multiple signals
                 opportunity_score = (
                     adx_value * 0.4 +
                     (100 - rsi_val) * 0.3 +
-                    min(ema_spread * 10, 30) * 0.3
+                    30 * 0.3  # Base score
                 )
                 
                 signal_candidates.append({
@@ -1334,12 +1115,12 @@ class MultiUserTradingWorker:
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
                     'klines_15m': klines_15m,
-                    'context': context,
-                    'ai_decision': ai_decision,
+                    'context': {'rsi': rsi_val, 'adx': adx_value},
+                    'ai_decision': None,  # No longer using old AI decisions
                     'volatility_percentile': volatility_percentile
                 })
                 
-                await self.db.log(user_id, "INFO", f"[LIVE] SIGNAL: {symbol} Score={opportunity_score:.1f}, ADX={adx_value:.1f}, RSI={rsi_val:.1f}")
+                await self.db.log(user_id, "INFO", f"[RL] ✅ {symbol} READY: Score={opportunity_score:.1f}, ADX={adx_value:.1f}, RSI={rsi_val:.1f}")
                 
             except Exception as e:
                 await self.db.log(user_id, "ERROR", f"[LIVE] Error scanning {symbol}: {str(e)}")
@@ -1395,38 +1176,30 @@ class MultiUserTradingWorker:
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
-                    decision_text = f'TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
-                    if is_ai_mode and candidate_ai:
-                        decision_text = f'🤖 AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
+                    decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
-                    # ============ KI LEARNING: Record Trade ============
-                    await self.ki_engine.record_trade(user_id, {
-                        'symbol': symbol,
-                        'type': trade_type,
-                        'entry_price': candidate['current_price'],
-                        'rsi': candidate.get('rsi', 50),
-                        'adx': candidate.get('adx', 0),
-                        'volume_24h': candidate.get('volume_24h', 0),
-                        'regime': candidate.get('regime', 'UNKNOWN')
-                    })
-                    # ============ END KI LEARNING ============
+                    # ============ RL LEARNING: Record Trade Entry ============
+                    await self.rl_ai.start_episode(symbol, candidate['current_price'])
+                    await self.db.log(user_id, "INFO", 
+                        f"[RL] 📈 Trade gestartet: {symbol} @ {candidate['current_price']}")
+                    # ============ END RL LEARNING ============
                     
                     await self.db.update_settings(user_id, {
                         'live_last_decision': decision_text,
                         'live_last_regime': candidate['regime'],
                         'live_last_symbol': symbol,
-                        'ai_confidence': candidate_ai.confidence if candidate_ai else None,
-                        'ai_risk_score': candidate_ai.risk_score if candidate_ai else None,
-                        'ai_reasoning': candidate_ai.reasoning if candidate_ai else None,
-                        'ai_min_position': candidate_ai.position_size_usdt if candidate_ai else None,
-                        'ai_max_position': candidate_ai.position_size_usdt if candidate_ai else None,
-                        'ai_current_position': candidate_ai.position_size_usdt if candidate_ai else None,
+                        'ai_confidence': None,
+                        'ai_risk_score': None,
+                        'ai_reasoning': None,
+                        'ai_min_position': None,
+                        'ai_max_position': None,
+                        'ai_current_position': effective_position_size,
                         'ai_last_override': {
                             'timestamp': scan_time.isoformat(),
                             'symbol': symbol,
-                            'position_size': candidate_ai.position_size_usdt if candidate_ai else None,
-                            'stop_loss_pct': candidate_ai.stop_loss_pct if candidate_ai else None,
-                            'take_profit_pct': candidate_ai.take_profit_pct if candidate_ai else None,
+                            'position_size': effective_position_size,
+                            'stop_loss_pct': None,
+                            'take_profit_pct': None,
                             'overrides': []
                         } if is_ai_mode else None
                     })
@@ -1659,25 +1432,16 @@ class MultiUserTradingWorker:
                     'confidence': candidate.get('ai_confidence'),
                     'profile': settings.trading_mode
                 }
-                await self.ml_collector.save_entry_snapshot(
-                    user_id=user_id,
-                    symbol=symbol,
-                    entry_price=avg_price,
-                    position_size_usdt=actual_notional,
-                    stop_loss_pct=calc_sl_pct,
-                    take_profit_pct=calc_tp_pct,
-                    market_data=market_data,
-                    ai_data=ai_data
-                )
-                await self.db.log(user_id, "INFO", f"[ML] 📊 Training-Snapshot gespeichert für {symbol}")
+                # Log für RL-AI (ml_collector entfernt)
+                await self.db.log(user_id, "INFO", f"[RL] 📊 Trade geöffnet: {symbol} @ {avg_price}")
             except Exception as ml_err:
-                logger.warning(f"ML snapshot error: {ml_err}")
-            # === END ML DATA COLLECTION ===
+                logger.warning(f"Trade entry log error: {ml_err}")
             
             # === RL TRADING AI: Starte Episode ===
             try:
                 ticker_data = await mexc.get_ticker_24h(symbol)
-                rl_state = await self.rl_ai.analyze_market(symbol, klines_4h, ticker_data, None)
+                klines_for_rl = await mexc.get_klines(symbol, interval="4h", limit=50)
+                rl_state = await self.rl_ai.analyze_market(symbol, klines_for_rl, ticker_data, None)
                 await self.rl_ai.start_episode(symbol, rl_state, avg_price)
                 await self.db.log(user_id, "INFO", f"[RL] 🎮 Episode gestartet: {symbol}")
             except Exception as rl_err:
@@ -1799,22 +1563,11 @@ class MultiUserTradingWorker:
                 elif "BREAK" in reason.upper() or "EVEN" in reason.upper():
                     exit_reason_ml = "BREAK_EVEN"
                 
-                await self.ml_collector.update_exit_result(
-                    user_id=user_id,
-                    symbol=position.symbol,
-                    exit_price=actual_exit_price,
-                    pnl_percent=pnl_pct,
-                    pnl_usdt=pnl,
-                    exit_reason=exit_reason_ml
-                )
-                
-                # Log ML stats periodically
-                stats = await self.ml_collector.get_training_stats(user_id)
+                # Log exit for RL tracking
                 await self.db.log(user_id, "INFO", 
-                    f"[ML] 🧠 Training Data: {stats['completed_trades']} Trades | Win Rate: {stats['win_rate']:.1f}%")
+                    f"[RL] 📉 Trade geschlossen: {position.symbol} | PnL: {pnl_pct:.1f}% | Grund: {exit_reason_ml}")
             except Exception as ml_err:
-                logger.warning(f"ML exit update error: {ml_err}")
-            # === END ML DATA COLLECTION ===
+                logger.warning(f"Exit log error: {ml_err}")
             
             await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
                 f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
@@ -1863,53 +1616,7 @@ class MultiUserTradingWorker:
                     'duration': duration_str
                 }, user_id)
             
-            # ============ KI LEARNING: Record Result ============
-            try:
-                ki_state = await self.ki_engine.get_ki_state(user_id)
-                entry_data = {
-                    'symbol': position.symbol,
-                    'entry_price': position.entry_price,
-                    'rsi': 50,  # Will be enhanced later with actual entry data
-                    'adx': 20,
-                    'volume_24h': 0,
-                    'regime': 'UNKNOWN'
-                }
-                await self.ki_engine.record_trade_result(
-                    user_id, position.symbol, entry_data, pnl_pct, was_ki_trade=ki_state.ki_active
-                )
-                
-                if ki_state.ki_active:
-                    emoji = "✅" if pnl > 0 else "❌"
-                    await self.db.log(user_id, "INFO", 
-                        f"[KI] {emoji} Trade-Ergebnis aufgezeichnet | Confidence: {ki_state.ki_confidence*100:.0f}%")
-            except Exception as ki_err:
-                logger.warning(f"KI learning record error: {ki_err}")
-            # ============ END KI LEARNING ============
-            
-            # ============ ML MODEL: Record Trade Outcome ============
-            try:
-                # Erstelle Features basierend auf Exit-Daten
-                ml_features = TradeFeatures(
-                    rsi=50, adx=25, macd_histogram=0,
-                    volume_ratio=1.0, price_vs_ema20=0, price_vs_ema50=0,
-                    momentum_1h=0, momentum_4h=0, momentum_24h=0,
-                    pnl_pct=pnl_pct,
-                    hours_in_trade=(datetime.now(timezone.utc) - position.entry_time).total_seconds() / 3600 if position.entry_time else 0,
-                    distance_to_sl_pct=0, distance_to_tp_pct=0,
-                    btc_trend=0, market_volatility=0
-                )
-                
-                # Lerne aus diesem Trade
-                await self.ml_model.record_outcome(ml_features, was_profitable=(pnl > 0))
-                
-                ml_status = self.ml_model.get_status()
-                await self.db.log(user_id, "INFO", 
-                    f"[ML] 🧠 Samples: {ml_status['training_samples']} | Trainiert: {ml_status['model_trained']} | Accuracy: {ml_status['model_accuracy']:.1%}")
-            except Exception as ml_err:
-                logger.warning(f"ML learning error: {ml_err}")
-            # ============ END ML MODEL ============
-            
-            # ============ RL TRADING AI: Beende Episode ============
+            # ============ RL TRADING AI: Beende Episode und Lerne ============
             try:
                 # Hole finale Marktdaten
                 klines = await mexc.get_klines(position.symbol, "4h", limit=50)

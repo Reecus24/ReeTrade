@@ -30,7 +30,8 @@ class UserSettings(BaseModel):
     user_id: str
     
     # ========== TRADING MODE ==========
-    trading_mode: Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"] = "manual"
+    # Simplified: Only RL-AI or Manual
+    trading_mode: Literal["manual", "rl_ai", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"] = "rl_ai"
     
     # ========== MARKET TYPE (SPOT vs FUTURES) ==========
     market_type: Literal["spot", "futures", "auto"] = "spot"  # auto = AI decides
