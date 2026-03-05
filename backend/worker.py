@@ -425,8 +425,11 @@ class MultiUserTradingWorker:
                         ticker=ticker,
                         position={
                             'entry_price': position.entry_price,
+                            'entry_time': position.entry_time,
                             'current_price': current_price,
-                            'pnl_pct': pnl_pct
+                            'pnl_pct': pnl_pct,
+                            'stop_loss': position.stop_loss,
+                            'take_profit': position.take_profit
                         }
                     )
                     
