@@ -156,30 +156,40 @@ async def telegram_polling_loop():
 async def handle_telegram_link(chat_id: int, code: str) -> str:
     """Handle /link command to connect Telegram account"""
     
+    code_upper = code.upper().strip()
+    logger.info(f"[TELEGRAM LINK] Attempting to link with code: '{code_upper}' for chat_id: {chat_id}")
+    
     # Look up code in database
-    link_doc = await db.db.telegram_link_codes.find_one({'code': code.upper()})
+    link_doc = await db.db.telegram_link_codes.find_one({'code': code_upper})
     
     if not link_doc:
+        # Debug: List all codes in DB
+        all_codes = await db.db.telegram_link_codes.find({}).to_list(100)
+        logger.warning(f"[TELEGRAM LINK] Code '{code_upper}' not found. Existing codes in DB: {[c.get('code') for c in all_codes]}")
         return "❌ Ungültiger oder abgelaufener Code.\n\nBitte generiere einen neuen Code in der Web-App."
+    
+    logger.info(f"[TELEGRAM LINK] Code found! User ID: {link_doc.get('user_id')}")
     
     # Check expiration
     expires_at = link_doc.get('expires_at')
     if expires_at and datetime.now(timezone.utc) > expires_at:
         # Delete expired code
-        await db.db.telegram_link_codes.delete_one({'code': code.upper()})
+        await db.db.telegram_link_codes.delete_one({'code': code_upper})
+        logger.warning(f"[TELEGRAM LINK] Code expired")
         return "❌ Code ist abgelaufen.\n\nBitte generiere einen neuen Code in der Web-App."
     
     user_id = link_doc['user_id']
     
     # Save chat_id to user
     from bson import ObjectId
-    await db.users.update_one(
+    result = await db.users.update_one(
         {"_id": ObjectId(user_id)},
         {"$set": {"telegram_chat_id": str(chat_id)}}
     )
+    logger.info(f"[TELEGRAM LINK] User updated: matched={result.matched_count}, modified={result.modified_count}")
     
     # Delete used code
-    await db.db.telegram_link_codes.delete_one({'code': code.upper()})
+    await db.db.telegram_link_codes.delete_one({'code': code_upper})
     
     # Log
     await db.log(user_id, "INFO", f"Telegram-Konto verknüpft (Chat ID: {str(chat_id)[:5]}...)")
@@ -2093,7 +2103,9 @@ async def get_telegram_link_code(current_user: dict = Depends(get_current_user))
     # Store in database with expiration (10 minutes)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
     
-    await db.db.telegram_link_codes.update_one(
+    logger.info(f"[TELEGRAM LINK] Generating code '{code}' for user {user_id}")
+    
+    result = await db.db.telegram_link_codes.update_one(
         {'user_id': user_id},
         {'$set': {
             'code': code,
@@ -2103,6 +2115,12 @@ async def get_telegram_link_code(current_user: dict = Depends(get_current_user))
         }},
         upsert=True
     )
+    
+    logger.info(f"[TELEGRAM LINK] Code saved: matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id}")
+    
+    # Verify it was saved
+    saved = await db.db.telegram_link_codes.find_one({'code': code})
+    logger.info(f"[TELEGRAM LINK] Verification - code in DB: {saved is not None}")
     
     # Clean up old expired codes
     await db.db.telegram_link_codes.delete_many({
