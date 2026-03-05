@@ -33,7 +33,9 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--cyber-bg-dark);
-    color: #e0e0e0;
+    color: #d4d4d4;
+    font-size: 15px;
+    line-height: 1.6;
 }
 
 /* Cyberpunk Font Classes */
@@ -451,3 +453,34 @@ body {
         border-bottom-color: inherit;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   IMPROVED READABILITY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Better contrast for zinc colors */
+.text-zinc-300 { color: #d4d4d4 !important; }
+.text-zinc-400 { color: #a1a1aa !important; }
+.text-zinc-500 { color: #8b8b96 !important; }
+.text-zinc-600 { color: #6b6b76 !important; }
+
+/* Minimum font sizes for readability */
+.text-xs { font-size: 0.8rem !important; line-height: 1.4 !important; }
+.text-sm { font-size: 0.9rem !important; line-height: 1.5 !important; }
+.text-base { font-size: 1rem !important; line-height: 1.6 !important; }
+
+/* Better contrast for small text */
+small, .text-xs, .text-\[10px\], .text-\[11px\] {
+    color: #9ca3af !important;
+}
+
+/* Panel text improvements */
+.cyber-panel p, .cyber-panel span {
+    color: #d1d5db;
+}
+
+.cyber-panel .text-zinc-500,
+.cyber-panel .text-zinc-600 {
+    color: #9ca3af !important;
+}
+

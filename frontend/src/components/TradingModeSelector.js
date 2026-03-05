@@ -120,11 +120,11 @@ const RLStatusPanel = () => {
       )}
 
       {/* Boot Phase Warning */}
-      {totalTrades < 20 && (
+      {totalTrades < 10 && (
         <div className="mt-4 p-3 border border-yellow-500/30 bg-yellow-500/5">
-          <p className="text-xs text-yellow-400 font-mono-cyber">
+          <p className="text-sm text-yellow-400 font-mono-cyber">
             <Zap className="w-3 h-3 inline mr-1" />
-            BOOT PHASE: {20 - totalTrades} Trades bis Neural Training aktiviert
+            LERNPHASE: Noch {10 - totalTrades} Trades - KI sammelt Erfahrung
           </p>
         </div>
       )}

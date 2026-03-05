@@ -1,254 +1,221 @@
 import React from 'react';
 import { Badge } from './ui/badge';
 import { 
-  Brain, TrendingUp, Zap, Shield, Target, 
-  BarChart3, RefreshCw, AlertTriangle, CheckCircle,
-  ArrowRight, Cpu, Database, LineChart, Activity
+  Brain, TrendingUp, Zap, Target, 
+  RefreshCw, AlertTriangle, CheckCircle,
+  ArrowRight, Activity
 } from 'lucide-react';
 
 export default function InfoTab() {
   return (
-    <div className="space-y-6" data-testid="info-tab">
+    <div className="space-y-8 text-base" data-testid="info-tab">
       {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="font-cyber text-3xl text-white tracking-wider mb-2">
+      <div className="text-center mb-10">
+        <h1 className="font-cyber text-4xl text-white tracking-wider mb-3">
           Ree<span className="text-cyan-400 glow-cyan">Trade</span> Terminal
         </h1>
-        <p className="text-zinc-500 font-mono-cyber">KI-gesteuerter Trading Bot für MEXC</p>
-        <Badge className="mt-3 cyber-badge bg-purple-500/20 text-purple-400 border border-purple-500/50">
-          Learning by Doing AI
+        <p className="text-lg text-zinc-300">Selbstlernender Trading Bot für MEXC SPOT</p>
+        <Badge className="mt-4 cyber-badge bg-purple-500/20 text-purple-400 border border-purple-500/50 text-sm px-4 py-1">
+          Reinforcement Learning KI
         </Badge>
       </div>
 
       {/* Hauptkonzept */}
-      <div className="cyber-panel p-6 box-glow-purple">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
-            <Brain className="w-5 h-5 text-purple-400" />
+      <div className="cyber-panel p-8 box-glow-purple">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+            <Brain className="w-6 h-6 text-purple-400" />
           </div>
-          <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">Das Konzept</h3>
+          <h3 className="font-cyber text-lg text-purple-400 tracking-widest uppercase">Was ist ReeTrade?</h3>
         </div>
         
-        <p className="text-zinc-400 font-mono-cyber text-sm mb-6">
-          ReeTrade Terminal ist ein <strong className="text-white">selbstlernender Trading-Bot</strong>, 
-          der mit deinem echten MEXC-Konto handelt. Die KI lernt aus jedem Trade und verbessert sich kontinuierlich.
+        <p className="text-lg text-zinc-200 mb-8 leading-relaxed">
+          ReeTrade ist ein <strong className="text-white">selbstlernender Trading-Bot</strong>, 
+          der mit deinem echten MEXC-Konto handelt. Die KI lernt aus <strong className="text-cyan-400">jedem einzelnen Trade</strong> und 
+          verbessert ihre Strategie kontinuierlich.
         </p>
         
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-black/50 border border-cyan-500/20 p-4 text-center">
-            <div className="text-3xl font-cyber text-cyan-400">1-10</div>
-            <p className="text-xs text-zinc-500 font-mono-cyber mt-1">Trades: Datensammlung</p>
-            <p className="text-[10px] text-zinc-600 mt-1">Bot handelt, KI beobachtet</p>
+        <div className="grid grid-cols-3 gap-6">
+          <div className="bg-black/50 border border-cyan-500/30 p-6 text-center">
+            <div className="text-4xl font-cyber text-cyan-400 mb-2">1-10</div>
+            <p className="text-base text-zinc-200 mb-1">Lernphase</p>
+            <p className="text-sm text-zinc-400">KI sammelt Erfahrung</p>
           </div>
-          <div className="bg-black/50 border border-purple-500/20 p-4 text-center">
-            <div className="text-3xl font-cyber text-purple-400">11+</div>
-            <p className="text-xs text-zinc-500 font-mono-cyber mt-1">Trades: KI übernimmt</p>
-            <p className="text-[10px] text-zinc-600 mt-1">KI trifft Entscheidungen</p>
+          <div className="bg-black/50 border border-purple-500/30 p-6 text-center">
+            <div className="text-4xl font-cyber text-purple-400 mb-2">11+</div>
+            <p className="text-base text-zinc-200 mb-1">KI übernimmt</p>
+            <p className="text-sm text-zinc-400">Nutzt gelerntes Wissen</p>
           </div>
-          <div className="bg-black/50 border border-green-500/20 p-4 text-center">
-            <div className="text-3xl font-cyber text-green-400">∞</div>
-            <p className="text-xs text-zinc-500 font-mono-cyber mt-1">Kontinuierliches Lernen</p>
-            <p className="text-[10px] text-zinc-600 mt-1">Aus jedem Fehler lernen</p>
+          <div className="bg-black/50 border border-green-500/30 p-6 text-center">
+            <div className="text-4xl font-cyber text-green-400 mb-2">∞</div>
+            <p className="text-base text-zinc-200 mb-1">Immer besser</p>
+            <p className="text-sm text-zinc-400">Lernt aus jedem Trade</p>
           </div>
         </div>
       </div>
 
-      {/* RL-KI Erklärung */}
-      <div className="cyber-panel p-6 box-glow-cyan">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
-            <Cpu className="w-5 h-5 text-cyan-400" />
+      {/* Wie funktioniert die KI */}
+      <div className="cyber-panel p-8 box-glow-cyan">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
+            <Zap className="w-6 h-6 text-cyan-400" />
           </div>
-          <h3 className="font-cyber text-sm text-cyan-400 tracking-widest uppercase">Reinforcement Learning KI</h3>
+          <h3 className="font-cyber text-lg text-cyan-400 tracking-widest uppercase">Wie lernt die KI?</h3>
         </div>
         
-        <p className="text-zinc-400 font-mono-cyber text-sm mb-4">
-          Die KI verwendet <strong className="text-cyan-400">Q-Learning</strong>, um die beste Handelsstrategie zu finden:
+        <p className="text-lg text-zinc-200 mb-6 leading-relaxed">
+          Die KI verwendet <strong className="text-cyan-400">Reinforcement Learning</strong> - 
+          sie lernt durch Versuch und Irrtum, genau wie ein Mensch.
         </p>
         
-        <div className="space-y-3">
-          <div className="flex items-start gap-3 p-3 bg-black/50 border border-cyan-500/10">
-            <Activity className="w-5 h-5 text-cyan-400 mt-0.5 shrink-0" />
+        <div className="space-y-4">
+          <div className="flex items-start gap-4 p-5 bg-black/50 border border-cyan-500/20">
+            <Activity className="w-6 h-6 text-cyan-400 mt-1 shrink-0" />
             <div>
-              <p className="text-sm text-white font-mono-cyber">STATE → Marktdaten analysieren</p>
-              <p className="text-xs text-zinc-600">RSI, EMA, Volumen, Momentum, Kerzenmuster</p>
+              <p className="text-lg text-white font-semibold mb-1">1. Markt analysieren</p>
+              <p className="text-base text-zinc-300">RSI, EMA, Volumen, Momentum und mehr werden geprüft</p>
             </div>
           </div>
-          <div className="flex items-start gap-3 p-3 bg-black/50 border border-purple-500/10">
-            <Brain className="w-5 h-5 text-purple-400 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-4 p-5 bg-black/50 border border-purple-500/20">
+            <Brain className="w-6 h-6 text-purple-400 mt-1 shrink-0" />
             <div>
-              <p className="text-sm text-white font-mono-cyber">ACTION → Entscheidung treffen</p>
-              <p className="text-xs text-zinc-600">HOLD (warten), BUY (kaufen), SELL (verkaufen)</p>
+              <p className="text-lg text-white font-semibold mb-1">2. Entscheidung treffen</p>
+              <p className="text-base text-zinc-300">KAUFEN, HALTEN oder VERKAUFEN - die KI entscheidet</p>
             </div>
           </div>
-          <div className="flex items-start gap-3 p-3 bg-black/50 border border-green-500/10">
-            <Target className="w-5 h-5 text-green-400 mt-0.5 shrink-0" />
+          <div className="flex items-start gap-4 p-5 bg-black/50 border border-green-500/20">
+            <Target className="w-6 h-6 text-green-400 mt-1 shrink-0" />
             <div>
-              <p className="text-sm text-white font-mono-cyber">REWARD → Aus Ergebnis lernen</p>
-              <p className="text-xs text-zinc-600">Profit = positives Signal, Verlust = negative Anpassung</p>
+              <p className="text-lg text-white font-semibold mb-1">3. Aus Ergebnis lernen</p>
+              <p className="text-base text-zinc-300">Gewinn = "Das war gut!" | Verlust = "Das mache ich anders"</p>
             </div>
           </div>
         </div>
         
-        <div className="mt-4 p-3 bg-purple-500/5 border border-purple-500/20">
-          <p className="text-xs text-purple-400 font-mono-cyber">
-            <Zap className="w-3 h-3 inline mr-1" />
-            Die KI beginnt mit Exploration (probiert verschiedene Strategien) und verlässt sich mit mehr Trades immer mehr auf gelerntes Wissen.
+        <div className="mt-6 p-5 bg-purple-500/10 border border-purple-500/30">
+          <p className="text-base text-purple-300">
+            <Zap className="w-5 h-5 inline mr-2" />
+            <strong>Exploration vs Exploitation:</strong> Am Anfang probiert die KI viel aus (Exploration). 
+            Mit mehr Erfahrung verlässt sie sich immer mehr auf bewährte Strategien (Exploitation).
           </p>
         </div>
       </div>
 
       {/* SPOT Trading */}
-      <div className="cyber-panel p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-green-500/20 border border-green-500/50">
-            <TrendingUp className="w-5 h-5 text-green-400" />
+      <div className="cyber-panel p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-green-500/20 border border-green-500/50">
+            <TrendingUp className="w-6 h-6 text-green-400" />
           </div>
           <div>
-            <h3 className="font-cyber text-sm text-green-400 tracking-widest uppercase">SPOT Trading</h3>
-            <p className="text-xs text-zinc-600 font-mono-cyber">AKTIV</p>
+            <h3 className="font-cyber text-lg text-green-400 tracking-widest uppercase">SPOT Trading</h3>
+            <p className="text-sm text-zinc-400">Sicher und einfach</p>
           </div>
         </div>
         
-        <ul className="space-y-2 text-sm text-zinc-400 font-mono-cyber">
-          <li className="flex items-start gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-            <span>Kein Hebel - sicherer für Anfänger</span>
+        <ul className="space-y-4 text-base">
+          <li className="flex items-start gap-3">
+            <CheckCircle className="w-6 h-6 text-green-500 mt-0.5 shrink-0" />
+            <span className="text-zinc-200"><strong className="text-white">Kein Hebel</strong> - Du handelst nur mit dem was du hast</span>
           </li>
-          <li className="flex items-start gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-            <span>Nur Long-Positionen (auf steigende Kurse)</span>
+          <li className="flex items-start gap-3">
+            <CheckCircle className="w-6 h-6 text-green-500 mt-0.5 shrink-0" />
+            <span className="text-zinc-200"><strong className="text-white">Nur Long</strong> - Kaufen wenn günstig, verkaufen wenn teurer</span>
           </li>
-          <li className="flex items-start gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-            <span>Kein Liquidationsrisiko</span>
+          <li className="flex items-start gap-3">
+            <CheckCircle className="w-6 h-6 text-green-500 mt-0.5 shrink-0" />
+            <span className="text-zinc-200"><strong className="text-white">Kein Liquidationsrisiko</strong> - Du verlierst maximal deinen Einsatz</span>
           </li>
-          <li className="flex items-start gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-            <span>RL-KI analysiert Markt und entscheidet autonom</span>
+          <li className="flex items-start gap-3">
+            <CheckCircle className="w-6 h-6 text-green-500 mt-0.5 shrink-0" />
+            <span className="text-zinc-200"><strong className="text-white">100+ Coins</strong> - Die KI wählt die besten Chancen aus</span>
           </li>
         </ul>
       </div>
 
-      {/* KI Entscheidungsprozess */}
-      <div className="cyber-panel p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
-            <LineChart className="w-5 h-5 text-cyan-400" />
+      {/* Decision Flow */}
+      <div className="cyber-panel p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
+            <RefreshCw className="w-6 h-6 text-cyan-400" />
           </div>
-          <h3 className="font-cyber text-sm text-cyan-400 tracking-widest uppercase">KI Decision Flow</h3>
+          <h3 className="font-cyber text-lg text-cyan-400 tracking-widest uppercase">So arbeitet die KI</h3>
         </div>
         
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex-1 bg-black/50 border border-cyan-500/20 p-4 text-center">
-            <BarChart3 className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-            <p className="text-xs text-white font-mono-cyber">ANALYZE</p>
-            <p className="text-[10px] text-zinc-600">22 Features</p>
+          <div className="flex-1 bg-black/50 border border-cyan-500/30 p-6 text-center">
+            <Activity className="w-8 h-8 text-cyan-400 mx-auto mb-3" />
+            <p className="text-base font-semibold text-white mb-1">SCAN</p>
+            <p className="text-sm text-zinc-400">100+ Coins prüfen</p>
           </div>
           
-          <ArrowRight className="w-5 h-5 text-cyan-500/50 hidden md:block" />
+          <ArrowRight className="w-6 h-6 text-cyan-500/50 hidden md:block" />
           
-          <div className="flex-1 bg-black/50 border border-purple-500/20 p-4 text-center">
-            <Brain className="w-6 h-6 text-purple-400 mx-auto mb-2" />
-            <p className="text-xs text-white font-mono-cyber">PROCESS</p>
-            <p className="text-[10px] text-zinc-600">Neural Net</p>
+          <div className="flex-1 bg-black/50 border border-purple-500/30 p-6 text-center">
+            <Brain className="w-8 h-8 text-purple-400 mx-auto mb-3" />
+            <p className="text-base font-semibold text-white mb-1">ANALYSE</p>
+            <p className="text-sm text-zinc-400">22 Indikatoren</p>
           </div>
           
-          <ArrowRight className="w-5 h-5 text-cyan-500/50 hidden md:block" />
+          <ArrowRight className="w-6 h-6 text-cyan-500/50 hidden md:block" />
           
-          <div className="flex-1 bg-black/50 border border-green-500/20 p-4 text-center">
-            <Target className="w-6 h-6 text-green-400 mx-auto mb-2" />
-            <p className="text-xs text-white font-mono-cyber">DECIDE</p>
-            <p className="text-[10px] text-zinc-600">BUY/HOLD/SELL</p>
+          <div className="flex-1 bg-black/50 border border-green-500/30 p-6 text-center">
+            <Target className="w-8 h-8 text-green-400 mx-auto mb-3" />
+            <p className="text-base font-semibold text-white mb-1">TRADE</p>
+            <p className="text-sm text-zinc-400">Kaufen / Verkaufen</p>
           </div>
           
-          <ArrowRight className="w-5 h-5 text-cyan-500/50 hidden md:block" />
+          <ArrowRight className="w-6 h-6 text-cyan-500/50 hidden md:block" />
           
-          <div className="flex-1 bg-black/50 border border-yellow-500/20 p-4 text-center">
-            <RefreshCw className="w-6 h-6 text-yellow-400 mx-auto mb-2" />
-            <p className="text-xs text-white font-mono-cyber">LEARN</p>
-            <p className="text-[10px] text-zinc-600">From Result</p>
+          <div className="flex-1 bg-black/50 border border-yellow-500/30 p-6 text-center">
+            <RefreshCw className="w-8 h-8 text-yellow-400 mx-auto mb-3" />
+            <p className="text-base font-semibold text-white mb-1">LERNEN</p>
+            <p className="text-sm text-zinc-400">Strategie anpassen</p>
           </div>
         </div>
       </div>
 
-      {/* Risk Management */}
-      <div className="cyber-panel p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
-            <Shield className="w-5 h-5 text-blue-400" />
+      {/* Sicherheit */}
+      <div className="cyber-panel p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
+            <Target className="w-6 h-6 text-blue-400" />
           </div>
-          <h3 className="font-cyber text-sm text-blue-400 tracking-widest uppercase">Risk Management</h3>
+          <h3 className="font-cyber text-lg text-blue-400 tracking-widest uppercase">Risiko-Management</h3>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-black/50 border border-red-500/20">
-            <h4 className="font-mono-cyber text-sm text-red-400 mb-2">STOP LOSS</h4>
-            <p className="text-xs text-zinc-500 font-mono-cyber">
-              Automatisch basierend auf ATR. Typisch 1.5x-2.5x ATR unter Entry.
+        <div className="grid grid-cols-2 gap-6">
+          <div className="p-6 bg-black/50 border border-red-500/30">
+            <h4 className="text-lg font-semibold text-red-400 mb-3">Stop Loss</h4>
+            <p className="text-base text-zinc-300 mb-3">
+              Automatischer Verkauf bei zu großem Verlust. Basiert auf der Volatilität des Coins.
             </p>
-            <div className="mt-2 p-2 bg-red-500/10 text-xs text-red-300 font-mono-cyber">
-              Entry $100, ATR $2 → SL ~$96
+            <div className="p-3 bg-red-500/10 text-base text-red-300">
+              Typisch: 2-4% unter Kaufpreis
             </div>
           </div>
           
-          <div className="p-4 bg-black/50 border border-green-500/20">
-            <h4 className="font-mono-cyber text-sm text-green-400 mb-2">TAKE PROFIT</h4>
-            <p className="text-xs text-zinc-500 font-mono-cyber">
-              Risk:Reward 1:1.5 bis 1:2.5 je nach Markt-Regime.
+          <div className="p-6 bg-black/50 border border-green-500/30">
+            <h4 className="text-lg font-semibold text-green-400 mb-3">Take Profit</h4>
+            <p className="text-base text-zinc-300 mb-3">
+              Automatischer Verkauf bei Zielgewinn. Die KI passt das Ziel dynamisch an.
             </p>
-            <div className="mt-2 p-2 bg-green-500/10 text-xs text-green-300 font-mono-cyber">
-              Risiko $4 → TP +$6 bis +$10
+            <div className="p-3 bg-green-500/10 text-base text-green-300">
+              Typisch: 4-8% über Kaufpreis
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Feedback Loop */}
-      <div className="cyber-panel p-6 box-glow-red" style={{boxShadow: '0 0 15px rgba(255,0,68,0.2)'}}>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 flex items-center justify-center bg-red-500/20 border border-red-500/50">
-            <RefreshCw className="w-5 h-5 text-red-400" />
-          </div>
-          <h3 className="font-cyber text-sm text-red-400 tracking-widest uppercase">Learning from Losses</h3>
-        </div>
-        
-        <p className="text-zinc-400 font-mono-cyber text-sm mb-4">
-          Wenn ein Trade mit Verlust endet, analysiert die KI <strong className="text-white">sofort</strong> was falsch war:
-        </p>
-        
-        <div className="grid grid-cols-2 gap-3 text-xs font-mono-cyber">
-          <div className="p-3 bg-black/50 border border-red-500/10">
-            <p className="text-red-400">❌ RSI war 72</p>
-            <p className="text-zinc-600">→ KI senkt RSI Maximum</p>
-          </div>
-          <div className="p-3 bg-black/50 border border-red-500/10">
-            <p className="text-red-400">❌ ADX nur 12</p>
-            <p className="text-zinc-600">→ KI erhöht ADX Minimum</p>
-          </div>
-          <div className="p-3 bg-black/50 border border-red-500/10">
-            <p className="text-red-400">❌ Volumen $150k</p>
-            <p className="text-zinc-600">→ KI erhöht Vol-Threshold</p>
-          </div>
-          <div className="p-3 bg-black/50 border border-red-500/10">
-            <p className="text-red-400">❌ SL -8% getroffen</p>
-            <p className="text-zinc-600">→ KI passt ATR Multiplier an</p>
-          </div>
-        </div>
-        
-        <p className="text-[10px] text-zinc-600 text-center mt-4 font-mono-cyber">
-          Die KI passt sich nach jedem Verlust an und wird mit der Zeit besser.
-        </p>
       </div>
 
       {/* Warning */}
-      <div className="p-4 border border-yellow-500/30 bg-yellow-500/5">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" />
+      <div className="p-6 border border-yellow-500/40 bg-yellow-500/10">
+        <div className="flex items-start gap-4">
+          <AlertTriangle className="w-8 h-8 text-yellow-400 shrink-0" />
           <div>
-            <p className="text-sm text-yellow-400 font-mono-cyber">WARNING</p>
-            <p className="text-xs text-zinc-500 font-mono-cyber mt-1">
-              Trading mit KI birgt Risiken. Die KI lernt durch echte Trades mit echtem Geld. 
+            <p className="text-lg font-semibold text-yellow-400 mb-2">Wichtiger Hinweis</p>
+            <p className="text-base text-zinc-200 leading-relaxed">
+              Die KI lernt durch <strong className="text-white">echte Trades mit echtem Geld</strong>. 
+              Die ersten Trades können Verluste bringen - das ist Teil des Lernprozesses. 
               Investiere nur, was du dir leisten kannst zu verlieren.
             </p>
           </div>
@@ -256,12 +223,12 @@ export default function InfoTab() {
       </div>
 
       {/* Footer */}
-      <div className="text-center py-4">
-        <p className="font-cyber text-xs text-zinc-600 tracking-widest">
+      <div className="text-center py-6">
+        <p className="font-cyber text-base text-zinc-400 tracking-widest">
           REETRADE TERMINAL v2.0
         </p>
-        <p className="text-[10px] text-zinc-700 font-mono-cyber mt-1">
-          REINFORCEMENT LEARNING TRADING AI
+        <p className="text-sm text-zinc-500 mt-2">
+          Reinforcement Learning Trading • MEXC SPOT • Automatisiert
         </p>
       </div>
     </div>

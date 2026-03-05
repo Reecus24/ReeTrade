@@ -295,14 +295,14 @@ export default function KILogTab() {
       )}
 
       {/* Boot Phase Warning */}
-      {(rlStatus?.total_trades || 0) < 20 && (
+      {(rlStatus?.total_trades || 0) < 10 && (
         <div className="p-4 border border-yellow-500/30 bg-yellow-500/5">
           <div className="flex items-center gap-3">
             <Zap className="w-5 h-5 text-yellow-400" />
             <div>
-              <p className="text-sm text-yellow-400 font-mono-cyber">BOOT PHASE ACTIVE</p>
-              <p className="text-xs text-zinc-600 font-mono-cyber">
-                {20 - (rlStatus?.total_trades || 0)} trades remaining until full neural training
+              <p className="text-base text-yellow-400 font-mono-cyber">LERNPHASE AKTIV</p>
+              <p className="text-sm text-zinc-400 font-mono-cyber">
+                Noch {10 - (rlStatus?.total_trades || 0)} Trades bis KI voll einsatzbereit
               </p>
             </div>
           </div>
