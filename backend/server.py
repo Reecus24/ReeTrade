@@ -170,13 +170,19 @@ async def handle_telegram_link(chat_id: int, code: str) -> str:
     
     logger.info(f"[TELEGRAM LINK] Code found! User ID: {link_doc.get('user_id')}")
     
-    # Check expiration
+    # Check expiration (handle both timezone-aware and naive datetimes)
     expires_at = link_doc.get('expires_at')
-    if expires_at and datetime.now(timezone.utc) > expires_at:
-        # Delete expired code
-        await db.db.telegram_link_codes.delete_one({'code': code_upper})
-        logger.warning(f"[TELEGRAM LINK] Code expired")
-        return "❌ Code ist abgelaufen.\n\nBitte generiere einen neuen Code in der Web-App."
+    if expires_at:
+        now = datetime.now(timezone.utc)
+        # Convert naive datetime to aware if needed
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        if now > expires_at:
+            # Delete expired code
+            await db.db.telegram_link_codes.delete_one({'code': code_upper})
+            logger.warning(f"[TELEGRAM LINK] Code expired")
+            return "❌ Code ist abgelaufen.\n\nBitte generiere einen neuen Code in der Web-App."
     
     user_id = link_doc['user_id']
     
