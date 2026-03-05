@@ -3,8 +3,8 @@ import axios from 'axios';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { 
-  Brain, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, 
-  BookOpen, Target, Activity, Zap, Clock, RefreshCw
+  Brain, AlertTriangle, 
+  Target, Activity, Zap, Clock, RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -158,53 +158,43 @@ export default function KILogTab() {
         </div>
       )}
 
-      {/* Learned Parameters */}
-      {stats?.learned_params && (
-        <div className="cyber-panel p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
-              <BookOpen className="w-5 h-5 text-blue-400" />
+      {/* RL-KI Erklärung */}
+      <div className="cyber-panel p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
+            <Brain className="w-5 h-5 text-blue-400" />
+          </div>
+          <h3 className="font-cyber text-sm text-blue-400 tracking-widest uppercase">WIE LERNT DIE KI?</h3>
+        </div>
+        
+        <div className="space-y-4 text-base">
+          <p className="text-zinc-300">
+            Die KI verwendet ein <strong className="text-purple-400">Neural Network</strong>, das aus Erfahrung lernt.
+            Es gibt keine festen Regeln - die KI entwickelt ihre eigene Strategie.
+          </p>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 bg-black/50 border border-green-500/20">
+              <p className="text-green-400 font-semibold mb-2">Bei Gewinn:</p>
+              <p className="text-sm text-zinc-400">
+                "Diese Marktbedingungen → KAUFEN war richtig"
+                <br/>→ KI merkt sich das Muster
+              </p>
             </div>
-            <h3 className="font-cyber text-sm text-blue-400 tracking-widest uppercase">LEARNED PARAMETERS</h3>
+            <div className="p-4 bg-black/50 border border-red-500/20">
+              <p className="text-red-400 font-semibold mb-2">Bei Verlust:</p>
+              <p className="text-sm text-zinc-400">
+                "Diese Marktbedingungen → KAUFEN war falsch"
+                <br/>→ KI vermeidet ähnliche Situationen
+              </p>
+            </div>
           </div>
           
-          <div className="grid grid-cols-5 gap-3">
-            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">RSI MIN</p>
-              <p className="text-xl font-cyber text-cyan-400">
-                {stats.learned_params.rsi_min?.toFixed(0) || 45}
-              </p>
-            </div>
-            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">RSI MAX</p>
-              <p className="text-xl font-cyber text-cyan-400">
-                {stats.learned_params.rsi_max?.toFixed(0) || 70}
-              </p>
-            </div>
-            <div className="bg-black/50 border border-green-500/20 p-3 text-center">
-              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">ADX MIN</p>
-              <p className="text-xl font-cyber text-green-400">
-                {stats.learned_params.adx_min?.toFixed(0) || 20}
-              </p>
-            </div>
-            <div className="bg-black/50 border border-yellow-500/20 p-3 text-center">
-              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">VOL MIN</p>
-              <p className="text-lg font-cyber text-yellow-400">
-                ${(stats.learned_params.volume_threshold / 1000)?.toFixed(0) || 500}k
-              </p>
-            </div>
-            <div className="bg-black/50 border border-orange-500/20 p-3 text-center">
-              <p className="text-[10px] text-zinc-600 font-mono-cyber mb-1">ATR MULT</p>
-              <p className="text-xl font-cyber text-orange-400">
-                {stats.learned_params.atr_multiplier?.toFixed(1) || 2.0}x
-              </p>
-            </div>
-          </div>
-          <p className="text-[10px] text-zinc-600 mt-3 text-center font-mono-cyber">
-            VALUES AUTO-ADJUSTED BY REINFORCEMENT LEARNING
+          <p className="text-sm text-zinc-500 text-center mt-4">
+            Mit jedem Trade wird das Neural Network angepasst - die KI wird immer besser.
           </p>
         </div>
-      )}
+      </div>
 
       {/* Learning Log */}
       <div className="cyber-panel p-6">
