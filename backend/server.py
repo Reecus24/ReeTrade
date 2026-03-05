@@ -30,6 +30,7 @@ from mexc_futures_client import MexcFuturesClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
 from ml_data_collector import get_ml_collector
+from ki_learning_engine import get_ki_engine
 from models import PaperAccount, Position
 
 # Logging
@@ -890,6 +891,68 @@ async def update_futures_settings(
     
     return {"message": "Futures-Einstellungen aktualisiert", "updates": updates}
 
+
+# ============ KI LEARNING ENDPOINTS ============
+
+@app.get("/api/ki/stats")
+async def get_ki_stats(current_user: dict = Depends(get_current_user)):
+    """Get KI learning statistics"""
+    user_id = current_user['user_id']
+    ki_engine = get_ki_engine(db)
+    return await ki_engine.get_ki_stats(user_id)
+
+
+@app.get("/api/ki/log")
+async def get_ki_log(limit: int = 20, current_user: dict = Depends(get_current_user)):
+    """Get KI learning log"""
+    user_id = current_user['user_id']
+    ki_engine = get_ki_engine(db)
+    log = await ki_engine.get_ki_log(user_id, limit)
+    return {"log": log}
+
+
+# ============ COIN SELECTION ENDPOINTS ============
+
+@app.get("/api/coins/available")
+async def get_available_coins(current_user: dict = Depends(get_current_user)):
+    """Get all available SPOT and FUTURES coins from MEXC"""
+    user_id = current_user['user_id']
+    
+    keys = await db.get_mexc_keys(user_id)
+    if not keys:
+        return {"spot_coins": [], "futures_coins": [], "error": "API Keys nicht konfiguriert"}
+    
+    spot_coins = []
+    futures_coins = []
+    
+    try:
+        # Get SPOT coins
+        mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        exchange_info = await mexc.get_exchange_info()
+        
+        for symbol_info in exchange_info.get('symbols', []):
+            symbol = symbol_info.get('symbol', '')
+            if symbol.endswith('USDT') and symbol_info.get('status') == 'ENABLED':
+                spot_coins.append(symbol)
+        
+        spot_coins = sorted(spot_coins)[:200]  # Limit to top 200
+    except Exception as e:
+        logger.error(f"SPOT coins fetch error: {e}")
+    
+    try:
+        # Get FUTURES coins
+        futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
+        futures_coins = await futures_client.get_available_futures_pairs("USDT")
+        futures_coins = sorted(futures_coins)[:100]  # Limit to top 100
+    except Exception as e:
+        logger.error(f"Futures coins fetch error: {e}")
+    
+    return {
+        "spot_coins": spot_coins,
+        "futures_coins": futures_coins,
+        "spot_count": len(spot_coins),
+        "futures_count": len(futures_coins)
+    }
 
 
 # ============ MEXC KEYS ENDPOINTS ============

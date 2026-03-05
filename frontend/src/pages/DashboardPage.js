@@ -18,6 +18,7 @@ import PositionsPanel from '@/components/PositionsPanel';
 import TradingModeSelector from '@/components/TradingModeSelector';
 import MLStatsTab from '@/components/MLStatsTab';
 import FuturesTab from '@/components/FuturesTab';
+import KILogTab from '@/components/KILogTab';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -448,11 +449,11 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsTrigger value="futures" className="data-[state=active]:text-yellow-500">
                   <Zap className="w-4 h-4 mr-2" />Futures
                 </TabsTrigger>
+                <TabsTrigger value="ki" className="data-[state=active]:text-purple-500">
+                  <Brain className="w-4 h-4 mr-2" />KI Log
+                </TabsTrigger>
                 <TabsTrigger value="logs" className="data-[state=active]:text-red-500">
                   <FileText className="w-4 h-4 mr-2" />Logs
-                </TabsTrigger>
-                <TabsTrigger value="ml" className="data-[state=active]:text-purple-500">
-                  <Brain className="w-4 h-4 mr-2" />KI Training
                 </TabsTrigger>
               </>
             )}
@@ -471,8 +472,8 @@ const DashboardPage = ({ onLogout }) => {
                     onSettingsUpdate={() => fetchStatus()}
                   />
                 </TabsContent>
+                <TabsContent value="ki"><KILogTab /></TabsContent>
                 <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
-                <TabsContent value="ml"><MLStatsTab /></TabsContent>
               </>
             )}
             <TabsContent value="settings"><SettingsTab /></TabsContent>

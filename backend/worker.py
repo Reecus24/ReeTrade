@@ -15,6 +15,7 @@ from ai_engine_v2 import (
     RISK_PROFILES_V2, ai_engine_v2
 )
 from ml_data_collector import get_ml_collector
+from ki_learning_engine import get_ki_engine
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class MultiUserTradingWorker:
         self.exchange_info_loaded = False
         self.ai_engine = ai_engine_v2  # AI Trading Engine V2
         self.ml_collector = get_ml_collector(db)  # ML Data Collector für Training
+        self.ki_engine = get_ki_engine(db)  # KI Learning Engine
         # Coin rotation: track which batch of coins to scan next
         self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}

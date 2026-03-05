@@ -105,6 +105,12 @@ class UserSettings(BaseModel):
     paper_heartbeat: Optional[datetime] = None
     live_heartbeat: Optional[datetime] = None
     
+    # ========== COIN SELECTION ==========
+    selected_spot_coins: List[str] = Field(default_factory=list)  # User selected SPOT coins
+    selected_futures_coins: List[str] = Field(default_factory=list)  # User selected FUTURES coins
+    spot_trade_all: bool = True  # Trade all available SPOT coins
+    futures_trade_all: bool = True  # Trade all available FUTURES coins
+    
     # ========== BOT STATUS TRACKING (Paper) ==========
     paper_last_scan: Optional[str] = None
     paper_last_decision: Optional[str] = None
@@ -171,6 +177,13 @@ class SettingsUpdate(BaseModel):
     trading_budget_usdt: Optional[float] = None
     live_daily_cap_usdt: Optional[float] = None
     live_max_order_usdt: Optional[float] = None
+    live_min_notional_usdt: Optional[float] = None
+    
+    # Coin Selection
+    selected_spot_coins: Optional[List[str]] = None
+    selected_futures_coins: Optional[List[str]] = None
+    spot_trade_all: Optional[bool] = None
+    futures_trade_all: Optional[bool] = None
     
     # Legacy
     fee_bps: Optional[int] = None
