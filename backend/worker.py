@@ -1499,16 +1499,30 @@ class MultiUserTradingWorker:
             
             # Parse result
             executed_qty = float(order_result.get('executedQty', position.qty))
-            actual_exit_price = float(order_result.get('price', exit_price))
+            actual_exit_price = float(order_result.get('price', 0))
+            
+            # Log raw MEXC response for debugging
+            logger.info(f"[MEXC] {position.symbol} SELL Response: price={order_result.get('price')}, fills={order_result.get('fills', [])}, cummulativeQuoteQty={order_result.get('cummulativeQuoteQty')}")
             
             if actual_exit_price == 0:
+                # Try to get price from fills
                 fills = order_result.get('fills', [])
                 if fills:
                     total_qty = sum(float(f.get('qty', 0)) for f in fills)
                     total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
-                    actual_exit_price = total_cost / total_qty if total_qty > 0 else exit_price
-                else:
+                    actual_exit_price = total_cost / total_qty if total_qty > 0 else 0
+                
+                # Fallback to cummulativeQuoteQty / executedQty
+                if actual_exit_price == 0:
+                    cumm_quote = float(order_result.get('cummulativeQuoteQty', 0))
+                    if cumm_quote > 0 and executed_qty > 0:
+                        actual_exit_price = cumm_quote / executed_qty
+                        logger.info(f"[MEXC] Using cummulativeQuoteQty: {cumm_quote} / {executed_qty} = {actual_exit_price}")
+                
+                # Final fallback to current ticker price
+                if actual_exit_price == 0:
                     actual_exit_price = exit_price
+                    logger.warning(f"[MEXC] Could not get actual price, using exit_price: {exit_price}")
             
             # Calculate PnL
             pnl = (actual_exit_price - position.entry_price) * executed_qty
