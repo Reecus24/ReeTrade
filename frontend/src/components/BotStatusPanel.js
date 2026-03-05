@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { 
   Activity, Clock, TrendingUp, TrendingDown, Minus, 
-  CheckCircle, XCircle, Pause, Cpu
+  CheckCircle, XCircle, Pause, Brain
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -14,8 +14,9 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
   const lastDecision = settings?.[`${prefix}_last_decision`];
   const lastRegime = settings?.[`${prefix}_last_regime`];
   const lastSymbol = settings?.[`${prefix}_last_symbol`];
-  const positionsCount = balance?.open_positions_count || settings?.[`${prefix}_positions_count`] || 0;
-  const maxPositions = settings?.max_positions || 5;
+  // Verwende die gleiche Quelle wie Portfolio für konsistente Werte
+  const positionsCount = balance?.open_positions_count ?? settings?.[`${prefix}_positions_count`] ?? 0;
+  const maxPositions = balance?.ai_max_positions ?? settings?.max_positions ?? 5;
   const isRunning = mode === 'live' ? settings?.live_running : settings?.paper_running;
   
   const getDecisionInfo = () => {
@@ -58,12 +59,12 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
     <div className="cyber-panel p-6 mb-6" data-testid={`${mode}-bot-status`}>
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 flex items-center justify-center bg-cyan-500/20 border border-cyan-500/50">
-            <Cpu className="w-6 h-6 text-cyan-400" />
+          <div className="w-12 h-12 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+            <Brain className="w-6 h-6 text-purple-400" />
           </div>
           <div>
-            <h3 className="font-cyber text-lg text-cyan-400 tracking-widest uppercase">Bot Status</h3>
-            <p className="text-sm text-zinc-400">Trading Engine</p>
+            <h3 className="font-cyber text-lg text-purple-400 tracking-widest uppercase">KI Status</h3>
+            <p className="text-sm text-zinc-400">Reinforcement Learning Engine</p>
           </div>
         </div>
         <Badge className={`cyber-badge text-sm ${isRunning ? 'bg-green-500/20 text-green-400 border border-green-500/50 animate-pulse' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}`}>
@@ -73,8 +74,8 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
       
       <div className="grid grid-cols-4 gap-4 mb-5">
         {/* Last Scan */}
-        <div className="bg-black/50 border border-cyan-500/20 p-4">
-          <div className="text-sm text-cyan-400 flex items-center gap-2 font-mono-cyber mb-2">
+        <div className="bg-black/50 border border-purple-500/20 p-4">
+          <div className="text-sm text-purple-400 flex items-center gap-2 font-mono-cyber mb-2">
             <Clock className="w-4 h-4" />
             LETZTER SCAN
           </div>
@@ -90,16 +91,16 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         </div>
         
         {/* Last Symbol */}
-        <div className="bg-black/50 border border-cyan-500/20 p-4">
-          <div className="text-sm text-cyan-400 font-mono-cyber mb-2">LETZTER COIN</div>
+        <div className="bg-black/50 border border-purple-500/20 p-4">
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">LETZTER COIN</div>
           <div className="text-xl font-cyber text-white">
             {lastSymbol ? lastSymbol.replace('USDT', '') : '-'}
           </div>
         </div>
         
         {/* Regime */}
-        <div className="bg-black/50 border border-cyan-500/20 p-4">
-          <div className="text-sm text-cyan-400 font-mono-cyber mb-2">MARKT</div>
+        <div className="bg-black/50 border border-purple-500/20 p-4">
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">MARKT</div>
           <div className={`text-lg font-cyber flex items-center gap-2 ${regimeInfo.color}`}>
             <RegimeIcon className="w-5 h-5" />
             {regimeInfo.label}
@@ -107,8 +108,8 @@ const BotStatusPanel = ({ settings, mode = 'paper', balance }) => {
         </div>
         
         {/* Positions */}
-        <div className="bg-black/50 border border-cyan-500/20 p-4">
-          <div className="text-sm text-cyan-400 font-mono-cyber mb-2">POSITIONEN</div>
+        <div className="bg-black/50 border border-purple-500/20 p-4">
+          <div className="text-sm text-purple-400 font-mono-cyber mb-2">POSITIONEN</div>
           <div className="text-xl font-cyber text-white">
             {positionsCount} <span className="text-zinc-500">/ {maxPositions}</span>
           </div>
