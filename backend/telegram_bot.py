@@ -418,13 +418,15 @@ class TelegramBot:
             return "❌ Datenbank nicht verfügbar"
         
         if not user_id:
-            return "❌ Kein User verknüpft. Bitte in der App einloggen."
+            return "❌ Kein User verknüpft. Bitte /link CODE in der App generieren."
         
         try:
             # Hole API Keys des Users
+            logger.info(f"[BALANCE] Getting keys for user {user_id[:8]}...")
             keys = await self.db.get_mexc_keys(user_id)
             
             if not keys or not keys.get('api_key'):
+                logger.warning(f"[BALANCE] No API keys for user {user_id[:8]}")
                 return """
 💰 <b>WALLET BALANCE</b>
 
@@ -432,10 +434,13 @@ class TelegramBot:
 Bitte API Keys in der App eintragen.
 """
             
+            logger.info(f"[BALANCE] Calling MEXC API...")
             # Lade Balance direkt von MEXC
             from mexc_client import MexcClient
             mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
             account_info = await mexc.get_account()
+            
+            logger.info(f"[BALANCE] Got {len(account_info.get('balances', []))} balances from MEXC")
             
             # USDT Balance
             usdt_balance = next(
@@ -474,6 +479,8 @@ Bitte API Keys in der App eintragen.
             
             total_balance = usdt_free + usdt_locked + positions_value
             
+            logger.info(f"[BALANCE] Success: ${total_balance:.2f} total, {len(positions)} positions")
+            
             return f"""
 💰 <b>WALLET BALANCE</b>
 
@@ -485,8 +492,8 @@ Bitte API Keys in der App eintragen.
 <b>Offene Positionen:</b> {len(positions)}
 """
         except Exception as e:
-            logger.error(f"Balance error: {e}")
-            return f"❌ Fehler: {str(e)[:100]}"
+            logger.error(f"[BALANCE] Error: {e}", exc_info=True)
+            return f"❌ Fehler beim Laden: {str(e)[:80]}"
     
     async def _get_recent_trades(self, user_id: str) -> str:
         """Hole letzte Trades"""

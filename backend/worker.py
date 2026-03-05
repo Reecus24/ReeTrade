@@ -51,15 +51,29 @@ class MultiUserTradingWorker:
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
         self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
     
-    async def notify_telegram(self, notification_type: str, data: Dict):
-        """Sende Telegram-Benachrichtigung (mit Dedupe)"""
-        if not self.telegram or not self.telegram_chat_id:
+    async def notify_telegram(self, notification_type: str, data: Dict, user_id: str = None):
+        """Sende Telegram-Benachrichtigung (mit Dedupe) an User-spezifische Chat ID"""
+        if not self.telegram:
             return
         
         try:
+            # Hole User-spezifische Chat ID aus DB
+            chat_id = None
+            if user_id:
+                user = await self.db.users.find_one({"_id": __import__('bson').ObjectId(user_id)})
+                if user and user.get('telegram_chat_id'):
+                    chat_id = int(user['telegram_chat_id'])
+            
+            # Fallback zu Default Chat ID
+            if not chat_id and self.telegram_chat_id:
+                chat_id = int(self.telegram_chat_id)
+            
+            if not chat_id:
+                return
+            
             # Dedupe-Key erstellen
             symbol = data.get('symbol', '')
-            dedupe_key = f"{notification_type}:{symbol}"
+            dedupe_key = f"{notification_type}:{symbol}:{chat_id}"
             
             # Prüfen ob kürzlich gesendet
             now = datetime.now(timezone.utc).timestamp()
@@ -75,8 +89,6 @@ class MultiUserTradingWorker:
             # Alte Einträge aufräumen (älter als 5 Minuten)
             cutoff = now - 300
             self._sent_notifications = {k: v for k, v in self._sent_notifications.items() if v > cutoff}
-            
-            chat_id = int(self.telegram_chat_id)
             
             if notification_type == 'trade_opened':
                 await self.telegram.notify_trade_opened(chat_id, data)
@@ -1569,7 +1581,7 @@ class MultiUserTradingWorker:
                 'value': actual_notional,
                 'stop_loss': actual_stop_loss,
                 'take_profit': actual_take_profit
-            })
+            }, user_id)
             
             await self.db.log(user_id, "INFO",
                 f"[LIVE] 📊 TRADE DETAILS | Stop: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
@@ -1709,7 +1721,7 @@ class MultiUserTradingWorker:
                     'exit_price': actual_exit_price,
                     'pnl': pnl,
                     'pnl_pct': pnl_pct
-                })
+                }, user_id)
             elif "PROFIT" in reason.upper() or "TP" in reason.upper():
                 await self.notify_telegram('take_profit', {
                     'symbol': position.symbol,
@@ -1717,14 +1729,14 @@ class MultiUserTradingWorker:
                     'exit_price': actual_exit_price,
                     'pnl': pnl,
                     'pnl_pct': pnl_pct
-                })
+                }, user_id)
             elif "SMART" in reason.upper() or "KI" in reason.upper():
                 await self.notify_telegram('smart_exit', {
                     'symbol': position.symbol,
                     'exit_type': 'smart_analysis',
                     'confidence': 75,
                     'reasons': [reason]
-                })
+                }, user_id)
             else:
                 await self.notify_telegram('trade_closed', {
                     'symbol': position.symbol,
@@ -1734,7 +1746,7 @@ class MultiUserTradingWorker:
                     'pnl_pct': pnl_pct,
                     'exit_reason': reason,
                     'duration': duration_str
-                })
+                }, user_id)
             
             # ============ KI LEARNING: Record Result ============
             try:
