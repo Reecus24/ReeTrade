@@ -151,20 +151,20 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
   return (
     <div className="space-y-4 mb-6" data-testid="positions-panel">
       {/* Header */}
-      <div className="cyber-panel p-4">
+      <div className="cyber-panel p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 flex items-center justify-center bg-green-500/20 border border-green-500/50">
-              <Layers className="w-5 h-5 text-green-400" />
+            <div className="w-12 h-12 flex items-center justify-center bg-green-500/20 border border-green-500/50">
+              <Layers className="w-6 h-6 text-green-400" />
             </div>
             <div>
-              <h3 className="font-cyber text-sm text-green-400 tracking-widest uppercase">
-                POSITIONS <span className="text-zinc-500">({positions.length})</span>
+              <h3 className="font-cyber text-lg text-green-400 tracking-widest uppercase">
+                POSITIONS <span className="text-zinc-400">({positions.length})</span>
               </h3>
-              <p className="text-xs text-zinc-600 font-mono-cyber">
-                TOTAL: <span className="text-white">{totalCurrentValue.toFixed(2)} $</span>
-                <span className={`ml-2 ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}$ ({totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
+              <p className="text-base text-zinc-300 font-mono-cyber">
+                Gesamt: <span className="text-white text-lg">{totalCurrentValue.toFixed(2)} $</span>
+                <span className={`ml-3 text-lg ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)} $ ({totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
                 </span>
               </p>
             </div>
@@ -174,9 +174,9 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
             size="sm" 
             onClick={handleSyncWithMexc}
             disabled={syncing}
-            className="text-zinc-600 hover:text-cyan-400 font-mono-cyber text-xs"
+            className="text-zinc-400 hover:text-cyan-400 font-mono-cyber text-base"
           >
-            <RefreshCw className={`w-3 h-3 mr-1 ${syncing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'SYNC...' : 'MEXC SYNC'}
           </Button>
         </div>
@@ -201,61 +201,59 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
         return (
           <div 
             key={pos.id || idx} 
-            className={`cyber-panel p-4 ${isNetProfit ? 'border-green-500/30' : 'border-red-500/30'}`}
+            className={`cyber-panel p-5 ${isNetProfit ? 'border-green-500/30' : 'border-red-500/30'}`}
             data-testid={`position-${pos.symbol}`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 {/* Symbol & Side */}
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-cyber text-lg text-white">{pos.symbol.replace('USDT', '')}</span>
-                    <Badge className={`cyber-badge ${pos.side === 'LONG' ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="font-cyber text-2xl text-white">{pos.symbol.replace('USDT', '')}</span>
+                    <Badge className={`cyber-badge text-sm ${pos.side === 'LONG' ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-red-500/20 text-red-400 border border-red-500/50'}`}>
                       {pos.side}
                     </Badge>
                     {pos.entry_time && (
-                      <Badge className="cyber-badge bg-zinc-800 text-zinc-500 border border-zinc-700">
+                      <Badge className="cyber-badge text-sm bg-zinc-800 text-zinc-400 border border-zinc-700">
                         {formatTradeDuration(pos.entry_time)}
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-zinc-600 font-mono-cyber mt-1">
-                    {formatQty(pos.qty)} @ {formatCurrency(pos.entry_price)}
+                  <div className="text-base text-zinc-300 font-mono-cyber">
+                    <span className="text-zinc-500">Menge:</span> {formatQty(pos.qty)} 
+                    <span className="text-zinc-500 ml-3">Kauf:</span> {formatCurrency(pos.entry_price)}
                   </div>
                   {hasCurrentPrice && (
-                    <div className="text-xs font-mono-cyber mt-1">
-                      <span className="text-zinc-600">NOW: </span>
-                      <span className={pos.current_price >= pos.entry_price ? 'text-green-400' : 'text-red-400'}>
+                    <div className="text-base font-mono-cyber mt-2">
+                      <span className="text-zinc-500">Jetzt: </span>
+                      <span className={`text-lg ${pos.current_price >= pos.entry_price ? 'text-green-400' : 'text-red-400'}`}>
                         {formatCurrency(pos.current_price)}
                       </span>
-                      <span className="text-zinc-600 ml-2">VALUE: </span>
-                      <span className="text-white">{currentValue.toFixed(2)}$</span>
+                      <span className="text-zinc-500 ml-4">Wert: </span>
+                      <span className="text-lg text-white">{currentValue.toFixed(2)} $</span>
                     </div>
                   )}
                 </div>
               </div>
               
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-8">
                 {/* PnL Display */}
                 {netPnlAmount !== null && (
                   <div className="text-right">
-                    <div className={`text-lg font-cyber ${isNetProfit ? 'text-green-400 glow-green' : 'text-red-400'}`}>
-                      {isNetProfit ? '+' : ''}{netPnlAmount.toFixed(4)}$
+                    <div className={`text-2xl font-cyber ${isNetProfit ? 'text-green-400 glow-green' : 'text-red-400'}`}>
+                      {isNetProfit ? '+' : ''}{netPnlAmount.toFixed(2)} $
                     </div>
-                    <div className={`text-xs font-mono-cyber ${isNetProfit ? 'text-green-500' : 'text-red-500'}`}>
+                    <div className={`text-base font-mono-cyber ${isNetProfit ? 'text-green-400' : 'text-red-400'}`}>
                       {isNetProfit ? '+' : ''}{netPnlPct.toFixed(2)}%
-                      <span className="text-zinc-600 ml-1">(fee: {totalFees.toFixed(4)}$)</span>
+                      <span className="text-zinc-500 ml-2">(Fee: {totalFees.toFixed(3)}$)</span>
                     </div>
-                    {aboveBreakEven && (
-                      <div className="text-[10px] text-green-400 font-mono-cyber">ABOVE BREAK-EVEN</div>
-                    )}
                   </div>
                 )}
                 
                 {/* SL / TP */}
                 <div className="text-right">
-                  <div className="text-[10px] text-zinc-600 font-mono-cyber">SL / TP</div>
-                  <div className="text-xs font-mono-cyber">
+                  <div className="text-sm text-zinc-400 font-mono-cyber mb-1">SL / TP</div>
+                  <div className="text-base font-mono-cyber">
                     <span className="text-red-400">{pos.stop_loss?.toFixed(4)}</span>
                     <span className="text-zinc-600"> / </span>
                     <span className="text-green-400">{pos.take_profit?.toFixed(4)}</span>
@@ -265,10 +263,10 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                 {/* Sell Button */}
                 <Button
                   onClick={() => handleSellClick(pos)}
-                  className="cyber-btn bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 px-4"
+                  className="cyber-btn bg-red-500/20 border-red-500 text-red-400 hover:bg-red-500/30 px-6 py-3 text-base"
                   data-testid={`sell-btn-${pos.symbol}`}
                 >
-                  <X className="w-4 h-4 mr-1" />
+                  <X className="w-5 h-5 mr-2" />
                   SELL
                 </Button>
               </div>
