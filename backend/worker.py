@@ -1225,7 +1225,7 @@ class MultiUserTradingWorker:
                     effective_position_size = ai_decision.position_size_usdt
                 
                 # ============ RL TRADING AI ENTRY CHECK ============
-                # Die RL-KI lernt selbstständig aus Erfahrung
+                # NUR DIE RL-KI ENTSCHEIDET - keine regelbasierten Checks mehr!
                 try:
                     # Hole Ticker für RL-Analyse
                     ticker_data = await mexc.get_ticker_24h(symbol)
@@ -1253,17 +1253,22 @@ class MultiUserTradingWorker:
                         f"Trades: {rl_status['total_trades']} | "
                         f"Win-Rate: {rl_status['win_rate']*100:.1f}%")
                     
-                    # Wenn RL-KI nicht kaufen will und nicht im Explorations-Modus
-                    if not rl_decision['should_buy'] and not rl_decision['exploration']:
+                    # RL-KI entscheidet ALLEIN
+                    if not rl_decision['should_buy']:
                         await self.db.log(user_id, "INFO", 
                             f"[RL] ❌ {symbol}: RL-KI sagt NEIN - {rl_decision['reasoning']}")
                         continue
+                    else:
+                        await self.db.log(user_id, "INFO", 
+                            f"[RL] ✅ {symbol}: RL-KI sagt JA! - {rl_decision['reasoning']}")
                     
                 except Exception as rl_err:
                     logger.warning(f"RL Entry check error: {rl_err}")
+                    continue  # Bei Fehler: Kein Trade
                 # ============ END RL TRADING AI ============
                 
-                # Only BULLISH for manual mode
+                # Überspringe alte regelbasierte Signal-Checks - RL-KI hat entschieden!
+                # Get 15m klines nur für SL/TP Berechnung
                 if not is_ai_mode and regime != "BULLISH":
                     continue
                 
