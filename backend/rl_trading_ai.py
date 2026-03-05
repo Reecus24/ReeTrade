@@ -603,12 +603,10 @@ class RLTradingAI:
     
     async def should_sell(self, symbol: str, state: MarketState) -> Dict:
         """
-        Soll die KI verkaufen?
+        Soll die KI verkaufen? - 100% KI-ENTSCHEIDUNG
         
-        HOCHFREQUENZ-LOGIK:
-        - Bei kleinem Profit → aggressiv verkaufen (Quick Profit!)
-        - Bei Verlust der sich verschlechtert → schnell raus
-        - KI lernt zusätzlich aus allen Entscheidungen
+        In der Lernphase ist die KI aggressiver beim Verkaufen,
+        damit sie schneller lernt wann Verkaufen gut ist.
         """
         if not state.has_position:
             return {
@@ -620,62 +618,49 @@ class RLTradingAI:
             }
         
         pnl = state.position_pnl_pct
-        
-        # ============ HOCHFREQUENZ QUICK-PROFIT REGELN ============
-        # Diese Regeln helfen der KI schneller zu lernen
-        
-        # QUICK PROFIT: Bei +0.5% bis +2% Gewinn → hohe Verkaufswahrscheinlichkeit
-        quick_profit_sell = False
-        quick_profit_reason = ""
-        
-        if pnl >= 0.5:
-            # Je höher der Profit, desto höher die Verkaufswahrscheinlichkeit
-            sell_probability = min(0.8, 0.3 + (pnl * 0.1))  # 30% + 10% pro 1% Gewinn
-            
-            if random.random() < sell_probability:
-                quick_profit_sell = True
-                quick_profit_reason = f"⚡ QUICK PROFIT: +{pnl:.2f}% (Prob: {sell_probability*100:.0f}%)"
-                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
-        
-        # SCHNELLER LOSS-CUT: Bei sinkendem Trend und Verlust → raus
-        elif pnl < -0.5 and state.price_change_1h < -1:
-            # Momentum ist negativ und wir sind im Minus → 60% Verkaufswahrscheinlichkeit
-            if random.random() < 0.6:
-                quick_profit_sell = True
-                quick_profit_reason = f"📉 LOSS-CUT: {pnl:.2f}% bei negativem Momentum ({state.price_change_1h:.1f}%)"
-                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
-        
-        # RSI ÜBERKAUFT: RSI > 70 und im Profit → verkaufen
-        elif pnl > 0 and state.rsi > 70:
-            if random.random() < 0.7:
-                quick_profit_sell = True
-                quick_profit_reason = f"📊 RSI ÜBERKAUFT: RSI={state.rsi:.0f}, PnL: +{pnl:.2f}%"
-                logger.info(f"[RL] {symbol}: {quick_profit_reason}")
-        
-        if quick_profit_sell:
-            return {
-                'should_sell': True,
-                'confidence': 80,
-                'reasoning': quick_profit_reason,
-                'action': 'SELL',
-                'exploration': False
-            }
-        
-        # ============ RL-KI ENTSCHEIDUNG (lernt dazu) ============
         state_array = state.to_array()
-        action = self.brain.choose_action(state_array, can_buy=False, has_position=True)
         
+        # ============ 100% KI-ENTSCHEIDUNG ============
+        # In der Lernphase (hohe Exploration) bevorzugen wir SELL um schneller zu lernen
+        
+        is_learning_phase = self.brain.epsilon > 0.5  # Erste ~50 Trades
+        
+        if is_learning_phase:
+            # AGGRESSIVER LERN-MODUS: 60% SELL, 40% HOLD bei Exploration
+            # So sammelt die KI schneller Erfahrungen über Verkaufs-Entscheidungen
+            if random.random() < self.brain.epsilon:  # Exploration
+                # Bei Gewinn: 70% SELL, 30% HOLD
+                # Bei Verlust: 50% SELL, 50% HOLD
+                sell_bias = 0.7 if pnl > 0 else 0.5
+                action = Action.SELL if random.random() < sell_bias else Action.HOLD
+                
+                reasoning = f"🎲 LERN-EXPLORATION: {Action.to_string(action)} (Bias: {sell_bias*100:.0f}% SELL) | PnL: {pnl:.2f}%"
+                logger.info(f"[RL] {symbol}: {reasoning}")
+                
+                return {
+                    'should_sell': action == Action.SELL,
+                    'confidence': 50,
+                    'reasoning': reasoning,
+                    'action': Action.to_string(action),
+                    'exploration': True
+                }
+        
+        # EXPLOITATION: Nutze gelerntes Wissen
+        action = self.brain.choose_action(state_array, can_buy=False, has_position=True)
         q_values = self.brain.get_q_values(state_array)
         confidence = max(0, min(100, 50 + q_values[action] * 10))
         
-        is_exploration = random.random() < self.brain.epsilon
+        reasoning = f"🧠 KI-DECISION: {Action.to_string(action)} | Q[HOLD]={q_values[0]:.2f} Q[SELL]={q_values[2]:.2f} | PnL: {pnl:.2f}%"
+        
+        if action == Action.SELL:
+            logger.info(f"[RL] {symbol}: {reasoning}")
         
         return {
             'should_sell': action == Action.SELL,
             'confidence': confidence,
-            'reasoning': f"RL Decision: {Action.to_string(action)} | Q-Values: {q_values.round(2)} | PnL: {pnl:.2f}%",
+            'reasoning': reasoning,
             'action': Action.to_string(action),
-            'exploration': is_exploration
+            'exploration': False
         }
     
     async def start_episode(self, symbol: str, state: MarketState, entry_price: float):
