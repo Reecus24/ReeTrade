@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Dict
 import os
 import logging
 import asyncio
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 async def telegram_polling_loop():
     """Polling loop für Telegram Befehle"""
-    global telegram_bot
+    global telegram_bot, telegram_link_codes
     
     if not telegram_bot:
         return
@@ -114,7 +114,22 @@ async def telegram_polling_loop():
                 
                 if 'message' in update and 'text' in update['message']:
                     chat_id = update['message']['chat']['id']
-                    text = update['message']['text']
+                    text = update['message']['text'].strip()
+                    
+                    # Handle /link command separately (no user_id needed)
+                    if text.lower().startswith('/link'):
+                        parts = text.split()
+                        if len(parts) >= 2:
+                            code = parts[1].upper()
+                            response = await handle_telegram_link(chat_id, code)
+                            await telegram_bot.send_message(chat_id, response)
+                            continue
+                        else:
+                            await telegram_bot.send_message(
+                                chat_id, 
+                                "❌ Bitte gib den Code an: <code>/link DEIN_CODE</code>"
+                            )
+                            continue
                     
                     # Finde user_id basierend auf chat_id
                     user = await db.users.find_one({"telegram_chat_id": str(chat_id)})
@@ -136,6 +151,52 @@ async def telegram_polling_loop():
         except Exception as e:
             logger.error(f"Telegram polling error: {e}")
             await asyncio.sleep(5)
+
+
+async def handle_telegram_link(chat_id: int, code: str) -> str:
+    """Handle /link command to connect Telegram account"""
+    global telegram_link_codes
+    
+    # Check if code exists and is valid
+    if code not in telegram_link_codes:
+        return "❌ Ungültiger oder abgelaufener Code.\n\nBitte generiere einen neuen Code in der Web-App."
+    
+    link_data = telegram_link_codes[code]
+    
+    # Check expiration
+    if datetime.now(timezone.utc) > link_data['expires_at']:
+        del telegram_link_codes[code]
+        return "❌ Code ist abgelaufen.\n\nBitte generiere einen neuen Code in der Web-App."
+    
+    user_id = link_data['user_id']
+    
+    # Save chat_id to user
+    from bson import ObjectId
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"telegram_chat_id": str(chat_id)}}
+    )
+    
+    # Remove used code
+    del telegram_link_codes[code]
+    
+    # Log
+    await db.log(user_id, "INFO", f"Telegram-Konto verknüpft (Chat ID: {str(chat_id)[:5]}...)")
+    
+    return """✅ <b>Telegram erfolgreich verknüpft!</b>
+
+Du erhältst jetzt Benachrichtigungen für:
+• 🟢 Trade geöffnet
+• 🔴 Trade geschlossen
+• 🧠 KI Smart Exit Entscheidungen
+• 📊 Tägliche Zusammenfassung (21:00 Uhr)
+
+<b>Befehle:</b>
+/status - Offene Positionen
+/balance - Wallet-Stand
+/profit - Heutiger Profit
+/ki - KI Status
+/help - Alle Befehle"""
 
 
 async def daily_summary_scheduler():
@@ -2014,5 +2075,72 @@ async def send_summary_now(current_user: dict = Depends(get_current_user)):
     
     await send_daily_summary_to_all(int(chat_id))
     return {"message": "Zusammenfassung gesendet!"}
+
+
+# ============ TELEGRAM ACCOUNT LINKING ============
+
+# In-memory storage for temporary linking codes (expires after 10 min)
+telegram_link_codes: Dict[str, Dict] = {}
+
+@app.get("/api/telegram/link-code")
+async def get_telegram_link_code(current_user: dict = Depends(get_current_user)):
+    """Generate a temporary code for linking Telegram account"""
+    import secrets
+    
+    user_id = current_user['user_id']
+    
+    # Generate a 6-character alphanumeric code
+    code = secrets.token_hex(3).upper()  # e.g., "A1B2C3"
+    
+    # Store with expiration (10 minutes)
+    telegram_link_codes[code] = {
+        'user_id': user_id,
+        'created_at': datetime.now(timezone.utc),
+        'expires_at': datetime.now(timezone.utc) + timedelta(minutes=10)
+    }
+    
+    # Clean up old codes
+    now = datetime.now(timezone.utc)
+    expired = [c for c, v in telegram_link_codes.items() if v['expires_at'] < now]
+    for c in expired:
+        del telegram_link_codes[c]
+    
+    return {
+        "code": code,
+        "expires_in_minutes": 10,
+        "instructions": f"Sende /link {code} an den ReeTrade Bot in Telegram"
+    }
+
+
+@app.get("/api/telegram/link-status")
+async def get_telegram_link_status(current_user: dict = Depends(get_current_user)):
+    """Check if Telegram is linked for this user"""
+    user_id = current_user['user_id']
+    
+    # Check if user has telegram_chat_id
+    user = await db.users.find_one({"_id": __import__('bson').ObjectId(user_id)})
+    
+    if user and user.get('telegram_chat_id'):
+        return {
+            "linked": True,
+            "chat_id": user['telegram_chat_id'][:5] + "..." if len(user['telegram_chat_id']) > 5 else user['telegram_chat_id']
+        }
+    
+    return {"linked": False, "chat_id": None}
+
+
+@app.post("/api/telegram/unlink")
+async def unlink_telegram(current_user: dict = Depends(get_current_user)):
+    """Unlink Telegram account"""
+    user_id = current_user['user_id']
+    
+    await db.users.update_one(
+        {"_id": __import__('bson').ObjectId(user_id)},
+        {"$unset": {"telegram_chat_id": ""}}
+    )
+    
+    await db.log(user_id, "INFO", "Telegram-Konto getrennt")
+    
+    return {"message": "Telegram-Konto getrennt", "linked": False}
 
 

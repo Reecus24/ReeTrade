@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, TrendingDown, RefreshCw, Check, X, MessageCircle
+  Key, Search, Coins, TrendingUp, TrendingDown, RefreshCw, Check, X, MessageCircle, Link, Unlink, Copy
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -30,6 +30,11 @@ const SettingsTab = () => {
   const [showFuturesKeysInput, setShowFuturesKeysInput] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState({ configured: false, bot_active: false });
   
+  // Telegram Linking State
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [telegramLinkCode, setTelegramLinkCode] = useState(null);
+  const [generatingCode, setGeneratingCode] = useState(false);
+  
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
   const [availableFuturesCoins, setAvailableFuturesCoins] = useState([]);
@@ -51,6 +56,7 @@ const SettingsTab = () => {
     fetchKeysStatus();
     fetchSettings();
     fetchTelegramStatus();
+    fetchTelegramLinkStatus();
   }, []);
 
   useEffect(() => {
@@ -88,6 +94,44 @@ const SettingsTab = () => {
       const response = await axios.get(`${BACKEND_URL}/api/telegram/status`, getAuthHeaders());
       setTelegramStatus(response.data);
     } catch (error) {}
+  };
+
+  const fetchTelegramLinkStatus = async () => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/telegram/link-status`, getAuthHeaders());
+      setTelegramLinked(response.data.linked);
+    } catch (error) {}
+  };
+
+  const generateLinkCode = async () => {
+    setGeneratingCode(true);
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/telegram/link-code`, getAuthHeaders());
+      setTelegramLinkCode(response.data);
+      toast.success('Code generiert! Gültig für 10 Minuten.');
+    } catch (error) {
+      toast.error('Fehler beim Generieren des Codes');
+    } finally {
+      setGeneratingCode(false);
+    }
+  };
+
+  const copyCodeToClipboard = () => {
+    if (telegramLinkCode?.code) {
+      navigator.clipboard.writeText(`/link ${telegramLinkCode.code}`);
+      toast.success('In Zwischenablage kopiert!');
+    }
+  };
+
+  const unlinkTelegram = async () => {
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/unlink`, {}, getAuthHeaders());
+      setTelegramLinked(false);
+      setTelegramLinkCode(null);
+      toast.success('Telegram-Konto getrennt');
+    } catch (error) {
+      toast.error('Fehler beim Trennen');
+    }
   };
 
   const testTelegram = async () => {
@@ -323,13 +367,20 @@ const SettingsTab = () => {
             <MessageCircle className="w-5 h-5 text-blue-400" />
             Telegram Benachrichtigungen
           </h3>
-          <Badge className={telegramStatus.bot_active ? 'bg-green-500/10 text-green-500' : 'bg-zinc-500/10 text-zinc-500'}>
-            {telegramStatus.bot_active ? 'Aktiv' : 'Nicht konfiguriert'}
+          <Badge className={telegramLinked ? 'bg-green-500/10 text-green-500' : 'bg-zinc-500/10 text-zinc-500'}>
+            {telegramLinked ? 'Verknüpft' : 'Nicht verknüpft'}
           </Badge>
         </div>
         
-        {telegramStatus.bot_active ? (
+        {telegramLinked ? (
           <div className="space-y-3">
+            <div className="p-3 bg-green-950/30 border border-green-900/30 rounded-lg">
+              <p className="text-sm text-green-400 flex items-center gap-2">
+                <Check className="w-4 h-4" />
+                Dein Telegram-Konto ist verknüpft!
+              </p>
+            </div>
+            
             <p className="text-sm text-zinc-400">
               Du erhältst Benachrichtigungen bei:
             </p>
@@ -337,19 +388,95 @@ const SettingsTab = () => {
               <li>• Trade geöffnet/geschlossen</li>
               <li>• Stop-Loss / Take-Profit</li>
               <li>• KI Smart Exit Entscheidungen</li>
-              <li>• Tägliche Zusammenfassung</li>
+              <li>• Tägliche Zusammenfassung (21:00 Uhr)</li>
             </ul>
             <p className="text-sm text-zinc-400 mt-2">
               <strong>Befehle:</strong> /status, /profit, /balance, /trades, /ki
             </p>
-            <Button 
-              onClick={testTelegram}
-              variant="outline"
-              size="sm"
-              className="mt-2"
-            >
-              Test-Nachricht senden
-            </Button>
+            
+            <div className="flex gap-2 mt-3">
+              <Button 
+                onClick={testTelegram}
+                variant="outline"
+                size="sm"
+                data-testid="test-telegram-btn"
+              >
+                Test-Nachricht senden
+              </Button>
+              <Button 
+                onClick={unlinkTelegram}
+                variant="outline"
+                size="sm"
+                className="text-red-400 border-red-800 hover:bg-red-950"
+                data-testid="unlink-telegram-btn"
+              >
+                <Unlink className="w-4 h-4 mr-1" />
+                Trennen
+              </Button>
+            </div>
+          </div>
+        ) : telegramStatus.bot_active ? (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              Verknüpfe dein Telegram-Konto, um Benachrichtigungen zu erhalten.
+            </p>
+            
+            {!telegramLinkCode ? (
+              <Button 
+                onClick={generateLinkCode}
+                disabled={generatingCode}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                data-testid="generate-link-code-btn"
+              >
+                <Link className="w-4 h-4 mr-2" />
+                {generatingCode ? 'Generiere...' : 'Telegram verknüpfen'}
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-4 bg-blue-950/50 border border-blue-800 rounded-lg">
+                  <p className="text-sm text-zinc-400 mb-2">
+                    Sende diesen Befehl an <strong>@ReeTrade_Bot</strong> in Telegram:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 p-3 bg-zinc-900 rounded font-mono text-lg text-blue-300">
+                      /link {telegramLinkCode.code}
+                    </code>
+                    <Button 
+                      onClick={copyCodeToClipboard}
+                      variant="outline"
+                      size="sm"
+                      data-testid="copy-code-btn"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-2">
+                    Code gültig für {telegramLinkCode.expires_in_minutes} Minuten
+                  </p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={fetchTelegramLinkStatus}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    data-testid="check-link-status-btn"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Status prüfen
+                  </Button>
+                  <Button 
+                    onClick={generateLinkCode}
+                    variant="outline"
+                    size="sm"
+                    data-testid="regenerate-code-btn"
+                  >
+                    Neuer Code
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-sm text-zinc-500">
