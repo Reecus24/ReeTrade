@@ -16,6 +16,7 @@ from ai_engine_v2 import (
 )
 from ml_data_collector import get_ml_collector
 from ki_learning_engine import get_ki_engine
+from smart_exit_engine import SmartExitEngine, check_position_exit, PositionContext
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +33,43 @@ class MultiUserTradingWorker:
         self.ai_engine = ai_engine_v2  # AI Trading Engine V2
         self.ml_collector = get_ml_collector(db)  # ML Data Collector für Training
         self.ki_engine = get_ki_engine(db)  # KI Learning Engine
+        self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für intelligente Exits
         # Coin rotation: track which batch of coins to scan next
         self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
+    
+    def _calculate_rsi(self, closes: list, period: int = 14) -> float:
+        """Berechne RSI aus Schlusskursen"""
+        if len(closes) < period + 1:
+            return 50.0
+        
+        deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+        gains = [d if d > 0 else 0 for d in deltas]
+        losses = [-d if d < 0 else 0 for d in deltas]
+        
+        avg_gain = sum(gains[-period:]) / period
+        avg_loss = sum(losses[-period:]) / period
+        
+        if avg_loss == 0:
+            return 100.0
+        
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
+    
+    def _calculate_ema(self, closes: list, period: int) -> float:
+        """Berechne EMA aus Schlusskursen"""
+        if len(closes) < period:
+            return closes[-1] if closes else 0
+        
+        multiplier = 2 / (period + 1)
+        ema = sum(closes[:period]) / period
+        
+        for price in closes[period:]:
+            ema = (price - ema) * multiplier + ema
+        
+        return ema
     
     def calculate_used_budget(self, account: PaperAccount) -> float:
         """Calculate total notional of all open positions"""
@@ -280,7 +313,7 @@ class MultiUserTradingWorker:
                 should_exit = False
                 exit_reason = ""
                 
-                # ============ PARTIAL PROFIT LOGIC (NEW) ============
+                # ============ PARTIAL PROFIT LOGIC ============
                 partial_enabled = profile.get('partial_profit_enabled', False)
                 partial_trigger = profile.get('partial_profit_trigger_pct', 8.0)
                 partial_close_pct = profile.get('partial_profit_close_pct', 50.0)
@@ -307,16 +340,108 @@ class MultiUserTradingWorker:
                         self._selling_positions.discard(partial_key)
                     continue  # Skip full exit check this iteration
                 
-                # ============ STOP LOSS CHECK ============
-                if current_price <= position.stop_loss:
+                # ============ SMART EXIT ANALYSIS (KI-gesteuert) ============
+                # Hole erweiterte Marktdaten für intelligente Analyse
+                try:
+                    # Hole KI-Lernzustand für diesen User
+                    ki_state = await self.ki_engine.get_ki_state(user_id)
+                    
+                    # Hole zusätzliche Indikatoren für Smart Analysis
+                    klines = await mexc.get_klines(position.symbol, "1h", limit=50)
+                    closes = [float(k[4]) for k in klines]
+                    
+                    # Berechne Indikatoren
+                    rsi = self._calculate_rsi(closes) if len(closes) >= 14 else 50
+                    momentum_1h = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) >= 2 else 0
+                    momentum_4h = ((closes[-1] - closes[-5]) / closes[-5] * 100) if len(closes) >= 5 else 0
+                    
+                    # EMA Berechnung
+                    ema20 = self._calculate_ema(closes, 20) if len(closes) >= 20 else current_price
+                    price_vs_ema20 = ((current_price - ema20) / ema20 * 100)
+                    
+                    # Kerzen-Analyse
+                    last_candle = klines[-1] if klines else None
+                    candle_type = "neutral"
+                    if last_candle:
+                        open_p, close_p = float(last_candle[1]), float(last_candle[4])
+                        if close_p > open_p * 1.005:
+                            candle_type = "bullish"
+                        elif close_p < open_p * 0.995:
+                            candle_type = "bearish"
+                    
+                    # Zähle rote/grüne Kerzen
+                    red_count = 0
+                    for i in range(-1, -6, -1):
+                        if i < -len(klines):
+                            break
+                        k = klines[i]
+                        if float(k[4]) < float(k[1]):
+                            red_count += 1
+                        else:
+                            break
+                    
+                    # Erstelle Marktdaten für Smart Exit
+                    market_data = {
+                        'price': current_price,
+                        'pnl_pct': pnl_pct,
+                        'rsi': rsi,
+                        'adx': 25,  # Wird später berechnet
+                        'momentum_1h': momentum_1h,
+                        'momentum_4h': momentum_4h,
+                        'price_vs_ema20': price_vs_ema20,
+                        'volume_ratio': float(ticker.get('volume', 0)) / max(float(ticker.get('quoteVolume', 1)), 1),
+                        'last_candle_type': candle_type,
+                        'consecutive_red_candles': red_count
+                    }
+                    
+                    # Position-Daten
+                    position_data = {
+                        'symbol': position.symbol,
+                        'entry_price': position.entry_price,
+                        'quantity': position.qty,
+                        'entry_time': position.entry_time,
+                        'stop_loss': position.stop_loss,
+                        'take_profit': position.take_profit
+                    }
+                    
+                    # Smart Exit Analyse
+                    exit_signal = await check_position_exit(position_data, market_data, self.db, ki_state)
+                    
+                    # Wenn Smart Exit empfiehlt zu verkaufen
+                    if exit_signal.should_exit:
+                        should_exit = True
+                        exit_reason = f"🧠 KI-EXIT ({exit_signal.exit_type}): {exit_signal.reasoning[0] if exit_signal.reasoning else 'Smart Analysis'}"
+                        
+                        # Log die KI-Entscheidung
+                        await self.db.log(user_id, "WARNING", 
+                            f"[SMART EXIT] {position.symbol} | Confidence: {exit_signal.confidence}% | Type: {exit_signal.exit_type}")
+                        for reason in exit_signal.reasoning[:3]:
+                            await self.db.log(user_id, "INFO", f"  → {reason}")
+                        
+                        # KI-Log eintragen
+                        await self.ki_engine.log_decision(user_id, {
+                            'type': 'SMART_EXIT',
+                            'symbol': position.symbol,
+                            'exit_type': exit_signal.exit_type,
+                            'confidence': exit_signal.confidence,
+                            'pnl_at_exit': pnl_pct,
+                            'reasons': exit_signal.reasoning
+                        })
+                
+                except Exception as smart_err:
+                    logger.warning(f"Smart Exit error for {position.symbol}: {smart_err}")
+                    # Fallback auf normale SL/TP Checks
+                
+                # ============ FALLBACK: STOP LOSS CHECK ============
+                if not should_exit and current_price <= position.stop_loss:
                     should_exit = True
                     if position.sl_moved_to_entry:
                         exit_reason = f"🔄 BREAK-EVEN EXIT @ {current_price:.4f}"
                     else:
                         exit_reason = f"🛑 STOP LOSS @ {current_price:.4f}"
                 
-                # ============ TAKE PROFIT CHECK ============
-                elif current_price >= position.take_profit:
+                # ============ FALLBACK: TAKE PROFIT CHECK ============
+                elif not should_exit and current_price >= position.take_profit:
                     should_exit = True
                     if position.partial_profit_taken:
                         exit_reason = f"🎯 FINAL TP (nach Teilgewinn) @ {current_price:.4f}"

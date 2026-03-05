@@ -237,7 +237,7 @@ const SettingsTab = () => {
         )}
       </div>
 
-      {/* MEXC FUTURES API Keys - Separate */}
+      {/* MEXC FUTURES API Keys - Temporarily disabled
       <div className="p-4 bg-zinc-950 border border-purple-900/50 rounded-lg">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -296,6 +296,7 @@ const SettingsTab = () => {
           </div>
         )}
       </div>
+      */}
 
       {/* Basic Settings */}
       <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">

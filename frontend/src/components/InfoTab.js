@@ -52,12 +52,12 @@ export default function InfoTab() {
       </Card>
 
       {/* Trading Modes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <Card className="bg-zinc-900 border-green-800">
           <CardHeader>
             <CardTitle className="text-lg text-white flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-500" />
-              SPOT Trading
+              SPOT Trading (Aktuell aktiv)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -79,38 +79,61 @@ export default function InfoTab() {
                 <span>Ideal für BULLISH Märkte</span>
               </li>
             </ul>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900 border-orange-800">
-          <CardHeader>
-            <CardTitle className="text-lg text-white flex items-center gap-2">
-              <Zap className="w-5 h-5 text-orange-500" />
-              FUTURES Trading (Hebel)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-zinc-300">
-              <li className="flex items-start gap-2">
-                <Zap className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                <span>2x-20x Hebel verfügbar</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <TrendingDown className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                <span>Short möglich (auf fallende Kurse setzen)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <Shield className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                <span>Isolated Margin - Verlust begrenzt auf Position</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
-                <span>Liquidationsrisiko bei zu hohem Hebel</span>
-              </li>
-            </ul>
+            <div className="mt-4 p-3 bg-purple-900/20 border border-purple-800 rounded-lg">
+              <p className="text-sm text-purple-300">
+                <Brain className="w-4 h-4 inline mr-1" />
+                <strong>Smart Exit KI:</strong> Die KI überwacht deine Positionen und kann intelligent früher verkaufen wenn sich der Markt ändert.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Smart Exit Engine - NEU */}
+      <Card className="bg-gradient-to-r from-cyan-900/30 to-purple-900/30 border-cyan-700">
+        <CardHeader>
+          <CardTitle className="text-lg text-white flex items-center gap-2">
+            <Brain className="w-5 h-5 text-cyan-400" />
+            Intelligente Exit-Strategie
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-zinc-300">
+            Die KI hält sich <strong className="text-white">nicht starr an Stop-Loss und Take-Profit</strong>. 
+            Sie analysiert kontinuierlich den Markt und entscheidet selbstständig:
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-zinc-900/50 p-4 rounded-lg">
+              <h4 className="font-medium text-green-400 mb-2">Kann FRÜHER verkaufen wenn:</h4>
+              <ul className="text-sm text-zinc-400 space-y-1">
+                <li>• Trend dreht sich um (Trendumkehr erkannt)</li>
+                <li>• Momentum nachlässt</li>
+                <li>• Volumen stark fällt</li>
+                <li>• Mehrere rote Kerzen in Folge</li>
+                <li>• RSI zeigt überkauft + negatives Momentum</li>
+              </ul>
+            </div>
+            <div className="bg-zinc-900/50 p-4 rounded-lg">
+              <h4 className="font-medium text-blue-400 mb-2">Kann LÄNGER halten wenn:</h4>
+              <ul className="text-sm text-zinc-400 space-y-1">
+                <li>• Trade läuft gut (über TP hinaus)</li>
+                <li>• Momentum weiterhin positiv</li>
+                <li>• RSI noch nicht überkauft</li>
+                <li>• Trend weiterhin stark</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="p-3 bg-yellow-900/20 border border-yellow-800 rounded-lg">
+            <p className="text-sm text-yellow-300">
+              <AlertTriangle className="w-4 h-4 inline mr-1" />
+              <strong>Lernfähig:</strong> Die KI merkt sich ihre Exit-Entscheidungen und lernt aus Fehlern. 
+              War ein früher Exit falsch? Sie passt ihre Parameter für die Zukunft an!
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* KI Entscheidungsprozess */}
       <Card className="bg-zinc-900 border-zinc-700">
@@ -125,7 +148,7 @@ export default function InfoTab() {
             <div className="flex-1 bg-zinc-800/50 p-4 rounded-lg text-center">
               <BarChart3 className="w-8 h-8 text-blue-400 mx-auto mb-2" />
               <p className="font-medium text-white">Markt analysieren</p>
-              <p className="text-xs text-zinc-500">RSI, ADX, ATR, Volumen</p>
+              <p className="text-xs text-zinc-500">RSI, ADX, ATR, Volumen, Momentum</p>
             </div>
             
             <ArrowRight className="w-6 h-6 text-zinc-600 hidden md:block" />
@@ -140,16 +163,16 @@ export default function InfoTab() {
             
             <div className="flex-1 bg-zinc-800/50 p-4 rounded-lg text-center">
               <Target className="w-8 h-8 text-green-400 mx-auto mb-2" />
-              <p className="font-medium text-white">Entscheidung</p>
-              <p className="text-xs text-zinc-500">SPOT / FUTURES / SKIP</p>
+              <p className="font-medium text-white">Entry Entscheidung</p>
+              <p className="text-xs text-zinc-500">KAUFEN / WARTEN</p>
             </div>
             
             <ArrowRight className="w-6 h-6 text-zinc-600 hidden md:block" />
             
             <div className="flex-1 bg-zinc-800/50 p-4 rounded-lg text-center">
-              <Coins className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
-              <p className="font-medium text-white">Position Sizing</p>
-              <p className="text-xs text-zinc-500">% vom Portfolio</p>
+              <RefreshCw className="w-8 h-8 text-cyan-400 mx-auto mb-2" />
+              <p className="font-medium text-white">Smart Exit</p>
+              <p className="text-xs text-zinc-500">Kontinuierliche Überwachung</p>
             </div>
           </div>
         </CardContent>

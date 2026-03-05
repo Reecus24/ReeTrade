@@ -342,6 +342,26 @@ class KILearningEngine:
             "recent_lessons": state.learning_log[-5:] if state.learning_log else [],
             "recent_mistakes": state.recent_mistakes[-3:] if state.recent_mistakes else []
         }
+    
+    async def log_decision(self, user_id: str, decision: Dict):
+        """Logge eine KI-Entscheidung für Transparenz"""
+        state = await self.get_ki_state(user_id)
+        
+        log_entry = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": decision.get('type', 'DECISION'),
+            "symbol": decision.get('symbol'),
+            "details": decision
+        }
+        
+        state.learning_log.append(log_entry)
+        
+        # Halte nur die letzten 100 Log-Einträge
+        state.learning_log = state.learning_log[-100:]
+        
+        await self.save_ki_state(state)
+        
+        logger.info(f"[KI] Logged decision for {user_id}: {decision.get('type')} - {decision.get('symbol')}")
 
 
 # Global instance

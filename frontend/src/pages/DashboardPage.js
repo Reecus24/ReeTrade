@@ -449,9 +449,11 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsTrigger value="spot" className="data-[state=active]:text-green-500">
                   <TrendingUp className="w-4 h-4 mr-2" />SPOT
                 </TabsTrigger>
+                {/* FUTURES Tab temporarily disabled - coming soon
                 <TabsTrigger value="futures" className="data-[state=active]:text-yellow-500">
                   <Zap className="w-4 h-4 mr-2" />FUTURES
                 </TabsTrigger>
+                */}
                 <TabsTrigger value="ki" className="data-[state=active]:text-purple-500">
                   <Brain className="w-4 h-4 mr-2" />KI Log
                 </TabsTrigger>
@@ -471,6 +473,7 @@ const DashboardPage = ({ onLogout }) => {
                 <TabsContent value="spot">
                   <TradesTab marketType="spot" />
                 </TabsContent>
+                {/* FUTURES Tab temporarily disabled
                 <TabsContent value="futures">
                   <FuturesTab 
                     token={localStorage.getItem('auth_token')}
@@ -478,6 +481,7 @@ const DashboardPage = ({ onLogout }) => {
                     onSettingsUpdate={() => fetchStatus()}
                   />
                 </TabsContent>
+                */}
                 <TabsContent value="ki"><KILogTab /></TabsContent>
                 <TabsContent value="logs"><LogsTab logs={logs.filter(l => l.msg?.includes('[LIVE]'))} /></TabsContent>
               </>
