@@ -31,6 +31,7 @@ from strategy import TradingStrategy
 from risk_manager import RiskManager
 from ml_data_collector import get_ml_collector
 from ki_learning_engine import get_ki_engine
+from telegram_bot import TelegramBot, get_telegram_bot
 from models import PaperAccount, Position
 
 # Logging
@@ -44,13 +45,15 @@ logger = logging.getLogger(__name__)
 db = Database()
 worker: MultiUserTradingWorker = None
 worker_task: asyncio.Task = None
+telegram_bot: TelegramBot = None
+telegram_polling_task: asyncio.Task = None
 limiter = Limiter(key_func=get_remote_address)
 limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global worker, worker_task
+    global worker, worker_task, telegram_bot, telegram_polling_task
     
     # Startup
     logger.info("Starting ReeTrade Terminal API")
@@ -60,6 +63,14 @@ async def lifespan(app: FastAPI):
     worker = MultiUserTradingWorker(db)
     worker_task = asyncio.create_task(worker.start())
     
+    # Start Telegram bot if configured
+    tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if tg_token:
+        telegram_bot = get_telegram_bot(tg_token, db)
+        await telegram_bot.register_commands()
+        telegram_polling_task = asyncio.create_task(telegram_polling_loop())
+        logger.info("Telegram bot started")
+    
     yield
     
     # Shutdown
@@ -68,7 +79,59 @@ async def lifespan(app: FastAPI):
         await worker.stop()
     if worker_task:
         worker_task.cancel()
+    if telegram_polling_task:
+        telegram_polling_task.cancel()
     db.close()
+
+
+async def telegram_polling_loop():
+    """Polling loop für Telegram Befehle"""
+    global telegram_bot
+    
+    if not telegram_bot:
+        return
+    
+    offset = 0
+    default_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    
+    # Sende Startup-Nachricht
+    if default_chat_id:
+        await telegram_bot.send_message(
+            int(default_chat_id),
+            "🤖 <b>ReeTrade Bot gestartet!</b>\n\nTippe /help für alle Befehle."
+        )
+    
+    while True:
+        try:
+            updates = await telegram_bot.get_updates(offset)
+            
+            for update in updates:
+                offset = update['update_id'] + 1
+                
+                if 'message' in update and 'text' in update['message']:
+                    chat_id = update['message']['chat']['id']
+                    text = update['message']['text']
+                    
+                    # Finde user_id basierend auf chat_id
+                    user = await db.users.find_one({"telegram_chat_id": str(chat_id)})
+                    user_id = str(user['_id']) if user else None
+                    
+                    # Wenn kein User gefunden, verwende Default
+                    if not user_id and str(chat_id) == default_chat_id:
+                        # Finde ersten User mit Live-Mode
+                        first_user = await db.users.find_one({"live_mode_confirmed": True})
+                        user_id = str(first_user['_id']) if first_user else None
+                    
+                    if text.startswith('/'):
+                        response = await telegram_bot.handle_command(chat_id, text.split()[0], user_id)
+                        await telegram_bot.send_message(chat_id, response)
+            
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Telegram polling error: {e}")
+            await asyncio.sleep(5)
 
 app = FastAPI(
     title="ReeTrade Terminal API",
@@ -1763,3 +1826,61 @@ async def run_backtest(request: BacktestRequest, current_user: dict = Depends(ge
 async def root():
     """Health check"""
     return {"message": "ReeTrade Terminal API", "status": "healthy"}
+
+
+# ============ TELEGRAM ENDPOINTS ============
+
+@app.post("/api/telegram/test")
+async def test_telegram(current_user: dict = Depends(get_current_user)):
+    """Sende Test-Nachricht an Telegram"""
+    global telegram_bot
+    
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not telegram_bot or not chat_id:
+        raise HTTPException(status_code=400, detail="Telegram nicht konfiguriert")
+    
+    success = await telegram_bot.send_message(
+        int(chat_id),
+        "🧪 <b>Test erfolgreich!</b>\n\nReeTrade Terminal ist mit Telegram verbunden."
+    )
+    
+    if success:
+        return {"message": "Test-Nachricht gesendet!"}
+    else:
+        raise HTTPException(status_code=500, detail="Senden fehlgeschlagen")
+
+
+@app.get("/api/telegram/status")
+async def telegram_status(current_user: dict = Depends(get_current_user)):
+    """Telegram-Status abrufen"""
+    global telegram_bot
+    
+    token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    
+    return {
+        "configured": bool(token and chat_id),
+        "bot_active": telegram_bot is not None,
+        "chat_id": chat_id[:5] + "..." if chat_id else None
+    }
+
+
+@app.post("/api/telegram/notify/trade")
+async def send_trade_notification(
+    trade_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manuell eine Trade-Benachrichtigung senden"""
+    global telegram_bot
+    
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    if not telegram_bot or not chat_id:
+        return {"sent": False, "reason": "Telegram nicht konfiguriert"}
+    
+    if trade_data.get('type') == 'open':
+        await telegram_bot.notify_trade_opened(int(chat_id), trade_data)
+    else:
+        await telegram_bot.notify_trade_closed(int(chat_id), trade_data)
+    
+    return {"sent": True}
+

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
+import os
 from db_operations import Database
 from mexc_client import MexcClient
 from mexc_futures_client import MexcFuturesClient
@@ -17,6 +18,7 @@ from ai_engine_v2 import (
 from ml_data_collector import get_ml_collector
 from ki_learning_engine import get_ki_engine
 from smart_exit_engine import SmartExitEngine, check_position_exit, PositionContext
+from telegram_bot import get_telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +36,37 @@ class MultiUserTradingWorker:
         self.ml_collector = get_ml_collector(db)  # ML Data Collector für Training
         self.ki_engine = get_ki_engine(db)  # KI Learning Engine
         self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für intelligente Exits
+        
+        # Telegram Bot
+        tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        self.telegram = get_telegram_bot(tg_token, db) if tg_token else None
+        self.telegram_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
         # Coin rotation: track which batch of coins to scan next
         self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
+    
+    async def notify_telegram(self, notification_type: str, data: Dict):
+        """Sende Telegram-Benachrichtigung"""
+        if not self.telegram or not self.telegram_chat_id:
+            return
+        
+        try:
+            chat_id = int(self.telegram_chat_id)
+            
+            if notification_type == 'trade_opened':
+                await self.telegram.notify_trade_opened(chat_id, data)
+            elif notification_type == 'trade_closed':
+                await self.telegram.notify_trade_closed(chat_id, data)
+            elif notification_type == 'stop_loss':
+                await self.telegram.notify_stop_loss(chat_id, data)
+            elif notification_type == 'take_profit':
+                await self.telegram.notify_take_profit(chat_id, data)
+            elif notification_type == 'smart_exit':
+                await self.telegram.notify_smart_exit(chat_id, data)
+        except Exception as e:
+            logger.error(f"Telegram notification error: {e}")
     
     def _calculate_rsi(self, closes: list, period: int = 14) -> float:
         """Berechne RSI aus Schlusskursen"""
@@ -1489,6 +1517,17 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "WARNING",
                 f"[LIVE] ✅ ORDER CONFIRMED: {symbol} | Qty: {executed_qty} | Price: ${avg_price:.4f} | Notional: ${actual_notional:.2f}")
             
+            # === TELEGRAM BENACHRICHTIGUNG: Trade geöffnet ===
+            await self.notify_telegram('trade_opened', {
+                'symbol': symbol,
+                'side': 'BUY',
+                'quantity': executed_qty,
+                'entry_price': avg_price,
+                'value': actual_notional,
+                'stop_loss': actual_stop_loss,
+                'take_profit': actual_take_profit
+            })
+            
             await self.db.log(user_id, "INFO",
                 f"[LIVE] 📊 TRADE DETAILS | Stop: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
             
@@ -1609,6 +1648,50 @@ class MultiUserTradingWorker:
             
             await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
                 f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
+            
+            # === TELEGRAM BENACHRICHTIGUNG: Trade geschlossen ===
+            # Berechne Duration
+            duration_str = "?"
+            if hasattr(position, 'entry_time') and position.entry_time:
+                duration = datetime.now(timezone.utc) - position.entry_time
+                hours = int(duration.total_seconds() // 3600)
+                minutes = int((duration.total_seconds() % 3600) // 60)
+                duration_str = f"{hours}h {minutes}m"
+            
+            # Bestimme Benachrichtigungstyp
+            if "STOP" in reason.upper():
+                await self.notify_telegram('stop_loss', {
+                    'symbol': position.symbol,
+                    'entry_price': position.entry_price,
+                    'exit_price': actual_exit_price,
+                    'pnl': pnl,
+                    'pnl_pct': pnl_pct
+                })
+            elif "PROFIT" in reason.upper() or "TP" in reason.upper():
+                await self.notify_telegram('take_profit', {
+                    'symbol': position.symbol,
+                    'entry_price': position.entry_price,
+                    'exit_price': actual_exit_price,
+                    'pnl': pnl,
+                    'pnl_pct': pnl_pct
+                })
+            elif "SMART" in reason.upper() or "KI" in reason.upper():
+                await self.notify_telegram('smart_exit', {
+                    'symbol': position.symbol,
+                    'exit_type': 'smart_analysis',
+                    'confidence': 75,
+                    'reasons': [reason]
+                })
+            else:
+                await self.notify_telegram('trade_closed', {
+                    'symbol': position.symbol,
+                    'entry_price': position.entry_price,
+                    'exit_price': actual_exit_price,
+                    'pnl': pnl,
+                    'pnl_pct': pnl_pct,
+                    'exit_reason': reason,
+                    'duration': duration_str
+                })
             
             # ============ KI LEARNING: Record Result ============
             try:

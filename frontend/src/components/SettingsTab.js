@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, TrendingDown, RefreshCw, Check, X
+  Key, Search, Coins, TrendingUp, TrendingDown, RefreshCw, Check, X, MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +28,7 @@ const SettingsTab = () => {
   const [futuresConnected, setFuturesConnected] = useState(false);
   const [showKeysInput, setShowKeysInput] = useState(false);
   const [showFuturesKeysInput, setShowFuturesKeysInput] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState({ configured: false, bot_active: false });
   
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
@@ -49,6 +50,7 @@ const SettingsTab = () => {
   useEffect(() => {
     fetchKeysStatus();
     fetchSettings();
+    fetchTelegramStatus();
   }, []);
 
   useEffect(() => {
@@ -79,6 +81,22 @@ const SettingsTab = () => {
       setSpotConnected(response.data.spot_connected || response.data.connected);
       setFuturesConnected(response.data.futures_connected || false);
     } catch (error) {}
+  };
+
+  const fetchTelegramStatus = async () => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/telegram/status`, getAuthHeaders());
+      setTelegramStatus(response.data);
+    } catch (error) {}
+  };
+
+  const testTelegram = async () => {
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/test`, {}, getAuthHeaders());
+      toast.success('Test-Nachricht gesendet! Prüfe Telegram.');
+    } catch (error) {
+      toast.error('Telegram-Test fehlgeschlagen');
+    }
   };
 
   const fetchAvailableCoins = async () => {
@@ -297,6 +315,49 @@ const SettingsTab = () => {
         )}
       </div>
       */}
+
+      {/* Telegram Integration */}
+      <div className="p-4 bg-zinc-950 border border-blue-900/50 rounded-lg">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-blue-400" />
+            Telegram Benachrichtigungen
+          </h3>
+          <Badge className={telegramStatus.bot_active ? 'bg-green-500/10 text-green-500' : 'bg-zinc-500/10 text-zinc-500'}>
+            {telegramStatus.bot_active ? 'Aktiv' : 'Nicht konfiguriert'}
+          </Badge>
+        </div>
+        
+        {telegramStatus.bot_active ? (
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-400">
+              Du erhältst Benachrichtigungen bei:
+            </p>
+            <ul className="text-sm text-zinc-500 space-y-1">
+              <li>• Trade geöffnet/geschlossen</li>
+              <li>• Stop-Loss / Take-Profit</li>
+              <li>• KI Smart Exit Entscheidungen</li>
+              <li>• Tägliche Zusammenfassung</li>
+            </ul>
+            <p className="text-sm text-zinc-400 mt-2">
+              <strong>Befehle:</strong> /status, /profit, /balance, /trades, /ki
+            </p>
+            <Button 
+              onClick={testTelegram}
+              variant="outline"
+              size="sm"
+              className="mt-2"
+            >
+              Test-Nachricht senden
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Telegram ist auf dem Server nicht konfiguriert. 
+            Kontaktiere den Administrator.
+          </p>
+        )}
+      </div>
 
       {/* Basic Settings */}
       <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
