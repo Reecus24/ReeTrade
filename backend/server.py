@@ -740,16 +740,26 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         actual_positions_count = 0
         
         # Get all non-USDT token balances from MEXC
-        token_balances = [
-            b for b in balances 
-            if b.get('asset') != 'USDT' and (float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0)
-        ]
+        token_balances = []
+        for b in balances:
+            asset = b.get('asset', '')
+            if asset == 'USDT':
+                continue
+            try:
+                free = float(b.get('free', 0) or 0)
+                locked = float(b.get('locked', 0) or 0)
+                total = free + locked
+                if total > 0.000001:  # Minimum threshold
+                    token_balances.append({
+                        'asset': asset,
+                        'qty': total
+                    })
+            except (ValueError, TypeError):
+                continue
         
         for token_bal in token_balances:
-            asset = token_bal.get('asset', '')
-            token_qty = float(token_bal.get('free', 0)) + float(token_bal.get('locked', 0))
-            if token_qty <= 0:
-                continue
+            asset = token_bal['asset']
+            token_qty = token_bal['qty']
                 
             symbol = f"{asset}USDT"
             try:
@@ -776,7 +786,7 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             for pos in live_account.open_positions:
                 # Check if we already counted this from MEXC balances
                 asset = pos.symbol.replace('USDT', '')
-                already_counted = any(b.get('asset') == asset for b in token_balances if float(b.get('free', 0)) + float(b.get('locked', 0)) > 0)
+                already_counted = any(tb['asset'] == asset for tb in token_balances)
                 
                 if not already_counted:
                     try:
