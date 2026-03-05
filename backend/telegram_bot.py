@@ -215,37 +215,40 @@ class TelegramBot:
     async def handle_command(self, chat_id: int, command: str, user_id: str) -> str:
         """Verarbeite einen Befehl und gib Antwort zurück"""
         
-        if command == "/start" or command == "/help":
+        # Lowercase für case-insensitive matching
+        cmd = command.lower()
+        
+        if cmd == "/start" or cmd == "/help":
             return self._get_help_text()
         
-        elif command == "/status":
+        elif cmd == "/status":
             return await self._get_status(user_id)
         
-        elif command == "/profit":
+        elif cmd == "/profit":
             return await self._get_profit(user_id, "today")
         
-        elif command == "/profit_week":
+        elif cmd == "/profit_week":
             return await self._get_profit(user_id, "week")
         
-        elif command == "/profit_month":
+        elif cmd == "/profit_month":
             return await self._get_profit(user_id, "month")
         
-        elif command == "/balance":
+        elif cmd == "/balance":
             return await self._get_balance(user_id)
         
-        elif command == "/trades":
+        elif cmd == "/trades":
             return await self._get_recent_trades(user_id)
         
-        elif command == "/ki":
+        elif cmd == "/ki":
             return await self._get_ki_status(user_id)
         
-        elif command == "/summary":
+        elif cmd == "/summary":
             return await self._get_daily_summary(user_id)
         
-        elif command == "/stop":
+        elif cmd == "/stop":
             return await self._pause_bot(user_id)
         
-        elif command == "/resume":
+        elif cmd == "/resume":
             return await self._resume_bot(user_id)
         
         else:
@@ -285,19 +288,35 @@ class TelegramBot:
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
         
+        if not user_id:
+            return "❌ Kein User verknüpft."
+        
         try:
-            account = await self.db.get_live_account(user_id)
-            if not account or not account.positions:
+            account_doc = await self.db.live_accounts.find_one({"user_id": user_id})
+            
+            if not account_doc:
+                account_doc = await self.db.paper_accounts.find_one({"user_id": user_id})
+            
+            if not account_doc:
+                return "📭 Kein Account gefunden"
+            
+            positions = account_doc.get('positions', [])
+            
+            if not positions:
                 return "📭 Keine offenen Positionen"
             
-            text = f"📊 <b>OFFENE POSITIONEN</b> ({len(account.positions)})\n\n"
+            text = f"📊 <b>OFFENE POSITIONEN</b> ({len(positions)})\n\n"
             
-            for pos in account.positions[:10]:
-                pnl_pct = ((pos.current_price - pos.entry_price) / pos.entry_price * 100) if hasattr(pos, 'current_price') else 0
-                emoji = "🟢" if pnl_pct >= 0 else "🔴"
-                text += f"{emoji} <b>{pos.symbol}</b>\n"
-                text += f"   Entry: ${pos.entry_price:.6f}\n"
-                text += f"   PnL: {'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%\n\n"
+            for pos in positions[:10]:
+                if isinstance(pos, dict):
+                    symbol = pos.get('symbol', '?')
+                    entry = float(pos.get('entry_price', 0))
+                    current = float(pos.get('current_price', entry))
+                    pnl_pct = ((current - entry) / entry * 100) if entry > 0 else 0
+                    emoji = "🟢" if pnl_pct >= 0 else "🔴"
+                    text += f"{emoji} <b>{symbol}</b>\n"
+                    text += f"   Entry: ${entry:.6f}\n"
+                    text += f"   PnL: {'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%\n\n"
             
             return text
         except Exception as e:
@@ -308,6 +327,9 @@ class TelegramBot:
         """Hole Profit für einen Zeitraum"""
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
+        
+        if not user_id:
+            return "❌ Kein User verknüpft."
         
         try:
             now = datetime.now(timezone.utc)
@@ -322,16 +344,22 @@ class TelegramBot:
                 start = now - timedelta(days=30)
                 title = "DIESER MONAT"
             
-            trades = await self.db.get_trades(user_id, limit=1000)
+            # Hole Trades direkt aus Collection
+            cursor = self.db.trades.find({"user_id": user_id}).sort("ts", -1).limit(1000)
+            trades = await cursor.to_list(1000)
             
             # Filter nach Zeitraum
-            period_trades = [t for t in trades if t.get('exit_time') and t['exit_time'] >= start]
+            period_trades = []
+            for t in trades:
+                exit_time = t.get('exit_time') or t.get('ts')
+                if exit_time and exit_time >= start:
+                    period_trades.append(t)
             
             if not period_trades:
                 return f"📊 <b>PROFIT {title}</b>\n\nKeine Trades in diesem Zeitraum"
             
-            total_pnl = sum(t.get('pnl', 0) for t in period_trades)
-            winners = sum(1 for t in period_trades if t.get('pnl', 0) > 0)
+            total_pnl = sum(float(t.get('pnl', 0)) for t in period_trades)
+            winners = sum(1 for t in period_trades if float(t.get('pnl', 0)) > 0)
             losers = len(period_trades) - winners
             win_rate = (winners / len(period_trades) * 100) if period_trades else 0
             
@@ -356,23 +384,46 @@ class TelegramBot:
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
         
+        if not user_id:
+            return "❌ Kein User verknüpft. Bitte in der App einloggen."
+        
         try:
-            account = await self.db.get_live_account(user_id)
-            if not account:
-                return "❌ Kein Account gefunden"
+            # Versuche live_accounts Collection
+            account_doc = await self.db.live_accounts.find_one({"user_id": user_id})
+            
+            if not account_doc:
+                # Fallback: paper_accounts
+                account_doc = await self.db.paper_accounts.find_one({"user_id": user_id})
+            
+            if not account_doc:
+                return """
+💰 <b>WALLET BALANCE</b>
+
+Noch kein Account gefunden.
+Bitte starte den Bot in der App.
+"""
+            
+            balance = float(account_doc.get('balance', 0))
+            positions = account_doc.get('positions', [])
             
             # Berechne Positions-Wert
-            positions_value = sum(p.qty * p.entry_price for p in account.positions) if account.positions else 0
-            total = account.balance + positions_value
+            positions_value = 0
+            for p in positions:
+                if isinstance(p, dict):
+                    qty = float(p.get('qty', 0))
+                    entry = float(p.get('entry_price', 0))
+                    positions_value += qty * entry
+            
+            total = balance + positions_value
             
             return f"""
 💰 <b>WALLET BALANCE</b>
 
-<b>Verfügbar:</b> ${account.balance:.2f}
+<b>Verfügbar:</b> ${balance:.2f}
 <b>In Positionen:</b> ${positions_value:.2f}
 <b>Gesamt:</b> ${total:.2f}
 
-<b>Offene Positionen:</b> {len(account.positions) if account.positions else 0}
+<b>Offene Positionen:</b> {len(positions)}
 """
         except Exception as e:
             logger.error(f"Balance error: {e}")
@@ -383,8 +434,12 @@ class TelegramBot:
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
         
+        if not user_id:
+            return "❌ Kein User verknüpft."
+        
         try:
-            trades = await self.db.get_trades(user_id, limit=5)
+            cursor = self.db.trades.find({"user_id": user_id}).sort("ts", -1).limit(5)
+            trades = await cursor.to_list(5)
             
             if not trades:
                 return "📜 Noch keine Trades"
@@ -392,7 +447,7 @@ class TelegramBot:
             text = "📜 <b>LETZTE 5 TRADES</b>\n\n"
             
             for t in trades[:5]:
-                pnl = t.get('pnl', 0)
+                pnl = float(t.get('pnl', 0))
                 emoji = "🟢" if pnl >= 0 else "🔴"
                 text += f"{emoji} <b>{t.get('symbol', '?')}</b>\n"
                 text += f"   PnL: {'+' if pnl >= 0 else ''}${pnl:.2f}\n"
@@ -407,6 +462,9 @@ class TelegramBot:
         """Hole KI Status"""
         if not self.db:
             return "❌ Datenbank nicht verfügbar"
+        
+        if not user_id:
+            return "❌ Kein User verknüpft."
         
         try:
             # Hole KI State aus DB
@@ -424,7 +482,7 @@ Die KI übernimmt nach 10 Trades.
 """
             
             trade_count = ki_data.get('total_trades', 0)
-            phase = "KI AKTIV" if trade_count >= 10 else "Datensammlung"
+            phase = "KI AKTIV ✅" if trade_count >= 10 else "Datensammlung"
             confidence = ki_data.get('ki_confidence', 0.5) * 100
             
             return f"""
@@ -434,9 +492,9 @@ Die KI übernimmt nach 10 Trades.
 <b>Trades:</b> {trade_count}/10
 <b>Confidence:</b> {confidence:.0f}%
 
-<b>Gelernte Parameter:</b>
-• RSI angepasst: {ki_data.get('adjusted_rsi', 'Nein')}
-• Stop-Loss optimiert: {ki_data.get('adjusted_sl', 'Nein')}
+<b>Lernfortschritt:</b>
+• Gesammelte Daten: {trade_count} Trades
+• KI-Entscheidungen: {'Aktiv' if trade_count >= 10 else 'Wartet'}
 """
         except Exception as e:
             logger.error(f"KI status error: {e}")

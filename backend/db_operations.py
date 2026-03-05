@@ -26,6 +26,8 @@ class Database:
         self.daily_metrics = self.db.daily_metrics
         self.audit_logs = self.db.audit_logs
         self.symbol_pauses = self.db.symbol_pauses
+        self.ki_states = self.db.ki_states
+        self.live_accounts = self.db.live_accounts
     
     async def initialize(self):
         # Initialize database indexes
