@@ -1274,6 +1274,8 @@ class MultiUserTradingWorker:
                 # Get 15m klines for SL/TP calculation
                 klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
                 if len(klines_15m) < 50:
+                    await self.db.log(user_id, "WARNING", 
+                        f"[SKIP] {symbol}: Nicht genug 15m Klines ({len(klines_15m)} < 50)")
                     continue
                 
                 # ============ MINIMUM MOVE FILTER ============
