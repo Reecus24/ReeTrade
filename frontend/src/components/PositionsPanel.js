@@ -222,6 +222,7 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                   <div className="text-base text-zinc-300 font-mono-cyber">
                     <span className="text-zinc-500">Qty:</span> {formatQty(pos.qty)} 
                     <span className="text-zinc-500 ml-3">Entry:</span> {formatCurrency(pos.entry_price)}
+                    <span className="text-cyan-400 ml-3 font-cyber">= {entryValue.toFixed(2)} $</span>
                   </div>
                   {hasCurrentPrice && (
                     <div className="text-base font-mono-cyber mt-2">
