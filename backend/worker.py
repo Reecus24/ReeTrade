@@ -1257,6 +1257,16 @@ class MultiUserTradingWorker:
             best_ai_decision = signal_candidates[0].get('ai_decision') if signal_candidates else None
             
             for candidate in signal_candidates:
+                # ============ MAX POSITIONS CHECK IN DER SCHLEIFE ============
+                # Hole aktuelle Positions-Anzahl (kann sich während der Schleife ändern)
+                account = await self.db.get_live_account(user_id)
+                positions_count = len(account.open_positions) if account and account.open_positions else 0
+                
+                if positions_count >= settings.max_positions:
+                    await self.db.log(user_id, "INFO", 
+                        f"[LIVE] ⛔ Max Positionen erreicht ({positions_count}/{settings.max_positions}) - Stoppe weitere Käufe")
+                    break  # Keine weiteren Trades!
+                
                 symbol = candidate['symbol']
                 candidate_ai = candidate.get('ai_decision')
                 
@@ -1409,6 +1419,13 @@ class MultiUserTradingWorker:
     ) -> bool:
         """Open a live position on MEXC with optional AI position sizing"""
         try:
+            # ============ KRITISCHE SICHERHEITSPRÜFUNG: MAX POSITIONS ============
+            positions_count = len(account.open_positions) if account and account.open_positions else 0
+            if positions_count >= settings.max_positions:
+                await self.db.log(user_id, "WARNING", 
+                    f"[LIVE] ❌ BLOCKED IN open_live_position: Max Positionen erreicht ({positions_count}/{settings.max_positions}) - Kein Kauf von {symbol}")
+                return False
+            
             # SAFETY CHECK: Verify we don't already own this symbol
             if account and account.open_positions:
                 owned = {pos.symbol for pos in account.open_positions}
