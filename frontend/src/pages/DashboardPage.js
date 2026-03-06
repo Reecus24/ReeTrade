@@ -185,6 +185,79 @@ const RLStatusPanel = () => {
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* EXPLOITATION READINESS - NEU */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {rlStatus?.learning_status && (
+        <div className={`mb-4 p-3 border ${
+          rlStatus.learning_status.is_exploration_phase 
+            ? 'border-purple-500/50 bg-purple-500/10' 
+            : rlStatus.learning_status.is_transitioning 
+              ? 'border-yellow-500/50 bg-yellow-500/10'
+              : 'border-green-500/50 bg-green-500/10'
+        }`} data-testid="exploitation-readiness">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">
+                {rlStatus.learning_status.is_exploration_phase ? '🎲' : 
+                 rlStatus.learning_status.is_transitioning ? '📈' : '🎯'}
+              </span>
+              <span className={`text-sm font-cyber uppercase ${
+                rlStatus.learning_status.is_exploration_phase ? 'text-purple-400' :
+                rlStatus.learning_status.is_transitioning ? 'text-yellow-400' : 'text-green-400'
+              }`}>
+                {rlStatus.learning_status.phase === 'exploration' ? 'LERNPHASE' :
+                 rlStatus.learning_status.phase === 'transition' ? 'ÜBERGANG' : 'EXPLOITATION'}
+              </span>
+            </div>
+            <span className="text-xs text-zinc-500 font-mono-cyber">
+              {rlStatus.learning_status.learning_progress_pct?.toFixed(0)}% FORTSCHRITT
+            </span>
+          </div>
+          
+          {/* Status Message */}
+          <p className="text-xs text-zinc-400 font-mono-cyber mb-2">
+            {rlStatus.learning_status.status_message}
+          </p>
+          
+          {/* Progress Bar */}
+          <div className="h-2 bg-black/50 rounded-full overflow-hidden mb-2">
+            <div 
+              className={`h-full transition-all ${
+                rlStatus.learning_status.is_exploration_phase ? 'bg-purple-500' :
+                rlStatus.learning_status.is_transitioning ? 'bg-yellow-500' : 'bg-green-500'
+              }`}
+              style={{ width: `${rlStatus.learning_status.learning_progress_pct || 0}%` }}
+            />
+          </div>
+          
+          {/* Details */}
+          <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+            <div>
+              <p className="text-zinc-500">EPSILON</p>
+              <p className="text-white font-cyber">{((rlStatus.epsilon || 1) * 100).toFixed(0)}%</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">EXPLOITATION AB</p>
+              <p className="text-cyan-400 font-cyber">&lt;{rlStatus.learning_status.exploitation_threshold}%</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">NOCH ~TRADES</p>
+              <p className="text-yellow-400 font-cyber">{rlStatus.learning_status.trades_until_exploitation || '0'}</p>
+            </div>
+          </div>
+          
+          {/* Warning bei hoher Exploration */}
+          {rlStatus.learning_status.is_exploration_phase && (
+            <div className="mt-2 p-2 bg-purple-500/10 border border-purple-500/30 rounded">
+              <p className="text-[10px] text-purple-300 font-mono-cyber">
+                ⚠️ Hohe Exploration – Statistiken sind noch nicht stabil. Die KI lernt hauptsächlich durch zufällige Aktionen.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Learning Progress (kompakt) */}
       <div className="mb-4 p-3 bg-black/30 border border-purple-500/20">
         <div className="flex justify-between text-xs mb-2">
@@ -295,106 +368,100 @@ const RLStatusPanel = () => {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* 4. SELL SOURCE BREAKDOWN */}
+      {/* 4. SELL SOURCE BREAKDOWN - MIT COUNT + PROZENT */}
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
       <div className="mb-3 border border-purple-500/20 bg-black/30" data-testid="sell-sources">
         <div className="p-2 border-b border-purple-500/20">
           <span className="text-[10px] text-purple-400 font-mono-cyber uppercase tracking-wider">SELL SOURCES</span>
         </div>
         <div className="p-3">
-          {/* Visual Bars */}
+          {/* Visual Bars mit Count + Prozent */}
           <div className="space-y-2">
             {/* Exploitation */}
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-zinc-500 w-16">EXPLOIT</span>
+              <span className="text-[9px] text-zinc-500 w-14">EXPLOIT</span>
               <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-blue-500 transition-all"
                   style={{ width: `${sellSources.percentages?.exploitation || 0}%` }}
                 />
               </div>
-              <span className="text-xs font-cyber text-blue-400 w-12 text-right">
-                {(sellSources.percentages?.exploitation || 0).toFixed(0)}%
+              <span className="text-xs font-mono-cyber text-blue-400 w-20 text-right">
+                {sellSources.counts?.exploitation || 0} ({(sellSources.percentages?.exploitation || 0).toFixed(0)}%)
               </span>
             </div>
             
             {/* Random Exploration */}
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-zinc-500 w-16">RANDOM</span>
+              <span className="text-[9px] text-zinc-500 w-14">RANDOM</span>
               <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-purple-500 transition-all"
                   style={{ width: `${sellSources.percentages?.random_exploration || 0}%` }}
                 />
               </div>
-              <span className="text-xs font-cyber text-purple-400 w-12 text-right">
-                {(sellSources.percentages?.random_exploration || 0).toFixed(0)}%
+              <span className="text-xs font-mono-cyber text-purple-400 w-20 text-right">
+                {sellSources.counts?.random_exploration || 0} ({(sellSources.percentages?.random_exploration || 0).toFixed(0)}%)
               </span>
             </div>
             
             {/* Time Limit */}
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-zinc-500 w-16">TIME</span>
+              <span className="text-[9px] text-zinc-500 w-14">TIME</span>
               <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-yellow-500 transition-all"
                   style={{ width: `${sellSources.percentages?.time_limit || 0}%` }}
                 />
               </div>
-              <span className="text-xs font-cyber text-yellow-400 w-12 text-right">
-                {(sellSources.percentages?.time_limit || 0).toFixed(0)}%
+              <span className="text-xs font-mono-cyber text-yellow-400 w-20 text-right">
+                {sellSources.counts?.time_limit || 0} ({(sellSources.percentages?.time_limit || 0).toFixed(0)}%)
               </span>
             </div>
             
             {/* Emergency */}
             <div className="flex items-center gap-2">
-              <span className="text-[9px] text-zinc-500 w-16">EMERG</span>
+              <span className="text-[9px] text-zinc-500 w-14">EMERG</span>
               <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-red-500 transition-all"
                   style={{ width: `${sellSources.percentages?.emergency || 0}%` }}
                 />
               </div>
-              <span className="text-xs font-cyber text-red-400 w-12 text-right">
-                {(sellSources.percentages?.emergency || 0).toFixed(0)}%
+              <span className="text-xs font-mono-cyber text-red-400 w-20 text-right">
+                {sellSources.counts?.emergency || 0} ({(sellSources.percentages?.emergency || 0).toFixed(0)}%)
               </span>
-            </div>
-          </div>
-          
-          {/* Counts */}
-          <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-purple-500/20 text-center">
-            <div>
-              <p className="text-xs font-cyber text-blue-400">{sellSources.counts?.exploitation || 0}</p>
-              <p className="text-[8px] text-zinc-600">EXPLOIT</p>
-            </div>
-            <div>
-              <p className="text-xs font-cyber text-purple-400">{sellSources.counts?.random_exploration || 0}</p>
-              <p className="text-[8px] text-zinc-600">RANDOM</p>
-            </div>
-            <div>
-              <p className="text-xs font-cyber text-yellow-400">{sellSources.counts?.time_limit || 0}</p>
-              <p className="text-[8px] text-zinc-600">TIME</p>
-            </div>
-            <div>
-              <p className="text-xs font-cyber text-red-400">{sellSources.counts?.emergency || 0}</p>
-              <p className="text-[8px] text-zinc-600">EMERG</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* 5. PERFORMANCE METRICS */}
+      {/* 5. PERFORMANCE METRICS - MIT "VORLÄUFIG" BADGE */}
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
       <div className="mb-3 border border-green-500/20 bg-black/30" data-testid="performance">
-        <div className="p-2 border-b border-green-500/20">
+        <div className="p-2 border-b border-green-500/20 flex items-center justify-between">
           <span className="text-[10px] text-green-400 font-mono-cyber uppercase tracking-wider">PERFORMANCE</span>
+          {(tradeCounts.total || 0) < 20 && (
+            <span className="px-2 py-0.5 bg-yellow-500/20 border border-yellow-500/40 text-[9px] text-yellow-400 font-mono-cyber">
+              VORLÄUFIG ({tradeCounts.total || 0}/20)
+            </span>
+          )}
         </div>
+        
+        {/* Warning bei zu wenig Daten */}
+        {(tradeCounts.total || 0) < 20 && (
+          <div className="px-3 py-2 bg-yellow-500/5 border-b border-yellow-500/20">
+            <p className="text-[10px] text-yellow-400/80 font-mono-cyber">
+              ⚠️ Zu wenig Daten für zuverlässige Statistiken. Mindestens 20 Trades empfohlen.
+            </p>
+          </div>
+        )}
         
         {/* Win Rate & Trade Counts */}
         <div className="grid grid-cols-3 gap-px bg-green-500/10">
           <div className="bg-black p-2 text-center">
-            <p className={`text-xl font-cyber ${(performance.win_rate_pct || 0) >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+            <p className={`text-xl font-cyber ${(tradeCounts.total || 0) < 20 ? 'text-zinc-500' : (performance.win_rate_pct || 0) >= 50 ? 'text-green-400' : 'text-red-400'}`}>
               {(performance.win_rate_pct || 0).toFixed(1)}%
             </p>
             <p className="text-[9px] text-zinc-500">WIN RATE</p>
@@ -412,15 +479,19 @@ const RLStatusPanel = () => {
         {/* Avg Win/Loss */}
         <div className="grid grid-cols-3 gap-px bg-green-500/10 border-t border-green-500/20">
           <div className="bg-black p-2 text-center">
-            <p className="text-sm font-cyber text-green-400">${(performance.avg_win_usdt || 0).toFixed(4)}</p>
+            <p className={`text-sm font-cyber ${(tradeCounts.total || 0) < 20 ? 'text-zinc-500' : 'text-green-400'}`}>
+              ${(performance.avg_win_usdt || 0).toFixed(4)}
+            </p>
             <p className="text-[9px] text-zinc-500">AVG WIN</p>
           </div>
           <div className="bg-black p-2 text-center">
-            <p className="text-sm font-cyber text-red-400">${Math.abs(performance.avg_loss_usdt || 0).toFixed(4)}</p>
+            <p className={`text-sm font-cyber ${(tradeCounts.total || 0) < 20 ? 'text-zinc-500' : 'text-red-400'}`}>
+              ${Math.abs(performance.avg_loss_usdt || 0).toFixed(4)}
+            </p>
             <p className="text-[9px] text-zinc-500">AVG LOSS</p>
           </div>
           <div className="bg-black p-2 text-center">
-            <p className={`text-sm font-cyber ${(performance.profit_factor || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+            <p className={`text-sm font-cyber ${(tradeCounts.total || 0) < 20 ? 'text-zinc-500' : (performance.profit_factor || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
               {(performance.profit_factor || 0).toFixed(2)}
             </p>
             <p className="text-[9px] text-zinc-500">PROFIT FACTOR</p>

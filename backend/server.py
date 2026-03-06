@@ -2366,6 +2366,27 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
     rl_ai = get_rl_trading_ai(db)
     status = rl_ai.get_status()
     
+    # Berechne Lernfortschritt und Exploitation Readiness
+    epsilon = status.get('exploration_pct', 100) / 100  # 0-1
+    total_trades = status['total_trades']
+    
+    # Exploitation wird dominant ab epsilon < 0.5 (50%)
+    exploitation_threshold = 0.5
+    is_exploration_phase = epsilon > 0.8
+    is_transitioning = 0.5 <= epsilon <= 0.8
+    is_exploitation_ready = epsilon < exploitation_threshold
+    
+    # Geschätzter Lernfortschritt (0-100%)
+    # Basiert auf: Trades (max 50 für 50%) + Epsilon-Reduktion (max 50%)
+    trade_progress = min(total_trades / 100, 0.5) * 100  # 50% aus Trades
+    epsilon_progress = (1 - epsilon) * 50  # 50% aus Epsilon-Reduktion
+    learning_progress = trade_progress + epsilon_progress
+    
+    # Geschätzte Trades bis Exploitation dominant
+    # Epsilon decay: epsilon = max(0.1, 1.0 - trades * decay_rate)
+    # Bei decay_rate ~0.01 braucht man ~50 Trades für 50% Exploitation
+    trades_until_exploitation = max(0, int((epsilon - exploitation_threshold) / 0.01)) if epsilon > exploitation_threshold else 0
+    
     return {
         "model_type": status['model_type'],
         "total_trades": status['total_trades'],
@@ -2373,9 +2394,27 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
         "win_rate": status['win_rate'],
         "win_rate_pct": f"{status['win_rate']*100:.1f}%",
         "exploration_pct": status['exploration_pct'],
+        "epsilon": epsilon,
         "is_learning": status['is_learning'],
         "memory_size": status['memory_size'],
         "active_episodes": status['active_episodes'],
+        
+        # Neuer Lernstatus
+        "learning_status": {
+            "phase": "exploration" if is_exploration_phase else ("transition" if is_transitioning else "exploitation"),
+            "is_exploration_phase": is_exploration_phase,
+            "is_transitioning": is_transitioning,
+            "is_exploitation_ready": is_exploitation_ready,
+            "learning_progress_pct": round(learning_progress, 1),
+            "trades_until_exploitation": trades_until_exploitation,
+            "exploitation_threshold": exploitation_threshold * 100,
+            "status_message": (
+                "🎲 Lernphase – KI exploriert hauptsächlich random" if is_exploration_phase else
+                "📈 Übergangsphase – KI lernt aktiv" if is_transitioning else
+                "🎯 Exploitation-Modus – KI nutzt gelerntes Wissen"
+            )
+        },
+        
         "message": f"RL-KI: {status['total_trades']} Trades, {status['win_rate']*100:.1f}% Win-Rate, {status['exploration_pct']:.0f}% Exploration"
     }
 
