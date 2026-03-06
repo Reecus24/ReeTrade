@@ -2,9 +2,21 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
+import { Button } from './ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
+import { toast } from 'sonner';
 import { 
   Brain, AlertTriangle, 
-  Target, Activity, Zap, Clock, RefreshCw
+  Target, Activity, Zap, Clock, RefreshCw, RotateCcw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -21,6 +33,8 @@ export default function KILogTab() {
   const [stats, setStats] = useState(null);
   const [rlStatus, setRlStatus] = useState(null);
   const [error, setError] = useState(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -41,6 +55,25 @@ export default function KILogTab() {
       setError(err.response?.data?.detail || 'Fehler beim Laden');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetRL = async () => {
+    setResetting(true);
+    try {
+      const res = await axios.post(`${API}/api/rl/reset`, {}, getAuthHeaders());
+      toast.success('RL-KI wurde erfolgreich zurückgesetzt!', {
+        description: `Alte Stats: ${res.data.old_stats.trades} Trades, ${(res.data.old_stats.win_rate * 100).toFixed(1)}% Win-Rate`
+      });
+      setShowResetDialog(false);
+      // Refresh data
+      await fetchData();
+    } catch (err) {
+      toast.error('Reset fehlgeschlagen', {
+        description: err.response?.data?.detail || 'Unbekannter Fehler'
+      });
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -87,6 +120,16 @@ export default function KILogTab() {
           <Badge className={`cyber-badge ${rlStatus?.is_learning ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 animate-pulse' : 'bg-green-500/20 text-green-400 border border-green-500/50'}`}>
             {rlStatus?.is_learning ? 'LEARNING' : 'TRAINED'}
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowResetDialog(true)}
+            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 font-mono-cyber"
+            data-testid="reset-rl-btn"
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            RESET
+          </Button>
         </div>
 
         {/* Learning Progress */}
@@ -349,6 +392,51 @@ export default function KILogTab() {
           </div>
         </div>
       )}
+
+      {/* Reset Confirmation Dialog */}
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent className="bg-zinc-900 border border-red-500/30">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-400 font-cyber flex items-center gap-2">
+              <RotateCcw className="w-5 h-5" />
+              RL-KI ZURÜCKSETZEN
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400 font-mono-cyber space-y-3">
+              <p>⚠️ <strong>ACHTUNG:</strong> Dies löscht alle gelernten Daten!</p>
+              <ul className="list-disc list-inside text-sm space-y-1">
+                <li>Replay Buffer ({rlStatus?.memory_size || 0} Erfahrungen)</li>
+                <li>Neural Networks (alle gelernten Gewichte)</li>
+                <li>Trade-Statistiken ({rlStatus?.total_trades || 0} Trades)</li>
+                <li>Win-Rate ({winRate.toFixed(1)}%)</li>
+              </ul>
+              <p className="text-green-400">✅ Ein Backup wird automatisch erstellt.</p>
+              <p>Die KI startet dann mit 100% Exploration und lernt von Grund auf neu.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700">
+              Abbrechen
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleResetRL}
+              disabled={resetting}
+              className="bg-red-500/20 text-red-400 border border-red-500 hover:bg-red-500/30"
+            >
+              {resetting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  RESET LÄUFT...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  JA, ZURÜCKSETZEN
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1677,6 +1677,44 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.post("/api/rl/reset")
+async def reset_rl_model(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Setzt die RL-KI komplett zurück für einen sauberen Neustart.
+    
+    ACHTUNG: Dies löscht alle gelernten Daten!
+    - Replay Buffer (alle Erfahrungen)
+    - Neural Networks (alle gelernten Gewichte)
+    - Trade-Statistiken
+    - Epsilon wird auf 1.0 zurückgesetzt
+    
+    Ein Backup wird automatisch erstellt.
+    """
+    from rl_trading_ai import get_rl_trading_ai
+    
+    user_id = current_user['user_id']
+    
+    # Log the reset action
+    await db.log(user_id, "WARNING", "[RL] 🔄 MODEL RESET angefordert vom Benutzer")
+    
+    # Get the RL AI instance and reset it
+    rl_ai = get_rl_trading_ai(db)
+    result = rl_ai.reset_model(reason=f"User {user_id} requested reset via API")
+    
+    await db.log(user_id, "WARNING", f"[RL] ✅ MODEL RESET abgeschlossen! Alte Stats: {result['old_stats']['trades']} Trades, {result['old_stats']['win_rate']*100:.1f}% Win-Rate")
+    
+    return {
+        "success": result['success'],
+        "message": "RL-KI wurde erfolgreich zurückgesetzt!",
+        "old_stats": result['old_stats'],
+        "new_stats": result['new_stats'],
+        "backup_created": result.get('backup_path') is not None,
+        "info": "Die KI startet jetzt mit 100% Exploration und lernt von Grund auf neu."
+    }
+
+
 @app.get("/api/rl/trading-stats")
 async def get_rl_trading_stats(
     current_user: dict = Depends(get_current_user),

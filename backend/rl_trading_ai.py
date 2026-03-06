@@ -573,6 +573,80 @@ class RLTradingAI:
         except Exception as e:
             logger.warning(f"[RL] ⚠️ Konnte Model nicht laden: {e} - starte neu")
     
+    def reset_model(self, reason: str = "Manual Reset"):
+        """
+        Setzt die RL-KI komplett zurück für einen sauberen Neustart.
+        
+        Wird zurückgesetzt:
+        - Replay Buffer (alle Erfahrungen)
+        - Neural Networks (alle gelernten Gewichte)
+        - Q-Table
+        - Trade-Statistiken
+        - Epsilon auf 1.0 (volle Exploration)
+        - Exit-Statistiken
+        
+        NICHT zurückgesetzt:
+        - Die aktuellen offenen Episoden (werden bei Abschluss ignoriert)
+        """
+        logger.info(f"[RL] 🔄 MODEL RESET gestartet: {reason}")
+        
+        # 1. Brain zurücksetzen
+        old_trades = self.brain.total_trades
+        old_winrate = self.brain.win_rate
+        old_memory = len(self.brain.memory)
+        
+        # Neuen Brain erstellen
+        self.brain = QLearningBrain()
+        
+        # 2. Exit-Statistiken zurücksetzen
+        self.exit_stats = {
+            'exploration_sells': 0,
+            'exploitation_sells': 0,
+            'emergency_sells': 0,
+            'time_limit_sells': 0,
+            'total_hold_time_exploration': 0,
+            'total_hold_time_exploitation': 0,
+            'sell_prob_sum': 0,
+            'sell_prob_count': 0,
+        }
+        
+        # 3. Exploration-Cooldown zurücksetzen
+        self.last_exploration_check = {}
+        
+        # 4. Alte Model-Datei löschen
+        try:
+            if os.path.exists(self.MODEL_PATH):
+                # Backup erstellen
+                backup_path = self.MODEL_PATH.replace('.pkl', f'_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pkl')
+                os.rename(self.MODEL_PATH, backup_path)
+                logger.info(f"[RL] 📦 Backup erstellt: {backup_path}")
+        except Exception as e:
+            logger.warning(f"[RL] Backup-Fehler: {e}")
+        
+        # 5. Neues leeres Model speichern
+        self._save_model()
+        
+        logger.info("[RL] ✅ MODEL RESET abgeschlossen!")
+        logger.info(f"[RL] 📊 Vorher: {old_trades} Trades, {old_winrate:.1%} Win-Rate, {old_memory} Memory")
+        logger.info("[RL] 📊 Nachher: 0 Trades, 0% Win-Rate, 0 Memory")
+        logger.info("[RL] 🎯 Epsilon: 1.0 (100% Exploration)")
+        
+        return {
+            'success': True,
+            'old_stats': {
+                'trades': old_trades,
+                'win_rate': old_winrate,
+                'memory': old_memory
+            },
+            'new_stats': {
+                'trades': 0,
+                'win_rate': 0,
+                'memory': 0,
+                'epsilon': 1.0
+            },
+            'backup_path': backup_path if 'backup_path' in dir() else None
+        }
+    
     def _save_model(self):
         """Speichere Modell MIT Memory UND Neural Networks"""
         try:
