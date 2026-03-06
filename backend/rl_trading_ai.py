@@ -980,12 +980,20 @@ class RLTradingAI:
         # ============ PHASE 4: NORMALE ENTSCHEIDUNG (>180s oder niedrige Exploration) ============
         
         if is_exploration_phase:
-            # Exploration: Aber SELL ist trotzdem konservativ (20% statt 40%)
-            # Exploration fokussiert auf BUY/HOLD, nicht auf SELL
-            sell_prob = 0.2  # Nur 20% Chance für random SELL
+            # Exploration: SELL-Wahrscheinlichkeit steigt mit Haltezeit
+            # Damit die KI auch längere Haltezeiten explorieren kann!
             
-            if random.random() < sell_prob:
-                reason = f"🎲 EXPLORATION SELL: Random (20%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={epsilon:.2f}"
+            # Base: 2% pro Minute nach 180s
+            # Bei 3 Min (180s) = 0%, 4 Min (240s) = 2%, 5 Min (300s) = 4%, etc.
+            # Hard Exit ist bei 10 Min (600s) ohnehin
+            minutes_over_guard = max(0, (hold_seconds - EXPLORATION_SELL_SECONDS) / 60)
+            sell_prob_per_check = min(0.05, 0.005 + minutes_over_guard * 0.01)  # 0.5% + 1% pro Minute, max 5%
+            
+            # Alternative: Time-weighted probability
+            # Je länger gehalten, desto höher die SELL-Chance (aber immer noch niedrig)
+            
+            if random.random() < sell_prob_per_check:
+                reason = f"🎲 EXPLORATION SELL: Random ({sell_prob_per_check*100:.1f}%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={epsilon:.2f}"
                 logger.info(f"[RL] {symbol}: {reason}")
                 return {
                     'should_sell': True,
@@ -998,7 +1006,7 @@ class RLTradingAI:
                     'sell_source': 'random_exploration'
                 }
             else:
-                reason = f"🎲 EXPLORATION HOLD: Random (80%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s"
+                reason = f"🎲 EXPLORATION HOLD: Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s (sell_prob={sell_prob_per_check*100:.1f}%)"
                 return {
                     'should_sell': False,
                     'confidence': 0,
