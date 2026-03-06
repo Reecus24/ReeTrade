@@ -773,12 +773,12 @@ class MultiUserTradingWorker:
             # ═══════════════════════════════════════════════════════════════════════════
             # OPTIMIZED MID-CAP TRADING UNIVERSE
             # - Curated list of liquid mid-cap coins
-            # - Dynamic liquidity filter (Volume > 20M, Spread < 0.20%)
-            # - Active trading set: 15-20 coins
+            # - Dynamic liquidity filter (Volume > 5M, Spread < 0.50%)
+            # - Active trading set: 20 coins per batch
             # ═══════════════════════════════════════════════════════════════════════════
-            COIN_UNIVERSE_SIZE = 40  # Pool size
-            MIN_VOLUME_24H = 20_000_000  # 20M USDT minimum
-            MAX_SPREAD_PCT = 0.20  # 0.20% max spread
+            COIN_UNIVERSE_SIZE = 50  # Pool size
+            MIN_VOLUME_24H = 5_000_000  # 5M USDT minimum (MEXC has lower volume than Binance)
+            MAX_SPREAD_PCT = 0.50  # 0.50% max spread (more lenient)
             
             momentum_pairs = await mexc.get_momentum_universe(
                 quote="USDT", 
