@@ -43,11 +43,11 @@ class MultiUserTradingWorker:
         # ============ ANTI-OVERTRADING SETTINGS ============
         # Minimum Move Filter: Verhindert Trades mit zu kleinen erwarteten Bewegungen
         self.TRADING_COST_PCT = 0.205  # ~0.1% Maker/Taker fees + ~0.1% Slippage
-        self.MIN_MOVE_MULTIPLIER = 1.5  # Mindestens 1.5x Trading-Kosten
-        self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.31%
+        self.MIN_MOVE_MULTIPLIER = 2.0  # Mindestens 2x Trading-Kosten (mehr Puffer)
+        self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.41%
         
         # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
-        self.TRADE_COOLDOWN_SECONDS = 90  # 90 Sekunden = 1.5 Minuten zwischen Trades
+        self.TRADE_COOLDOWN_SECONDS = 180  # 3 Minuten zwischen Trades (kontrolliertes Lernen)
         
         # Dedupe für Log-Benachrichtigungen
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
