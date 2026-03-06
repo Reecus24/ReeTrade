@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from 'sonner';
-import { TrendingUp, TrendingDown, X, Loader2, AlertTriangle, RefreshCw, Layers } from 'lucide-react';
+import { TrendingUp, TrendingDown, X, Loader2, AlertTriangle, RefreshCw, Layers, Trash2 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -141,16 +141,25 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
     );
   }
 
-  const totalCurrentValue = positions.reduce((sum, pos) => {
+  // Separate active positions from dust positions
+  const activePositions = positions.filter(pos => !pos.is_dust);
+  const dustPositions = positions.filter(pos => pos.is_dust);
+
+  const totalCurrentValue = activePositions.reduce((sum, pos) => {
     return sum + (pos.current_price && pos.current_price > 0 ? pos.current_price * pos.qty : pos.entry_price * pos.qty);
   }, 0);
-  const totalEntryValue = positions.reduce((sum, pos) => sum + (pos.entry_price * pos.qty), 0);
+  const totalEntryValue = activePositions.reduce((sum, pos) => sum + (pos.entry_price * pos.qty), 0);
   const totalPnl = totalCurrentValue - totalEntryValue;
   const totalPnlPct = totalEntryValue > 0 ? (totalPnl / totalEntryValue) * 100 : 0;
 
+  // Dust total value
+  const dustTotalValue = dustPositions.reduce((sum, pos) => {
+    return sum + (pos.current_price && pos.current_price > 0 ? pos.current_price * pos.qty : pos.entry_price * pos.qty);
+  }, 0);
+
   return (
     <div className="space-y-4 mb-6" data-testid="positions-panel">
-      {/* Header */}
+      {/* Header - Only count active positions */}
       <div className="cyber-panel p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -159,7 +168,10 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
             </div>
             <div>
               <h3 className="font-cyber text-lg text-green-400 tracking-widest uppercase">
-                POSITIONS <span className="text-zinc-400">({positions.length})</span>
+                POSITIONS <span className="text-zinc-400">({activePositions.length})</span>
+                {dustPositions.length > 0 && (
+                  <span className="text-zinc-600 text-sm ml-2">+{dustPositions.length} Dust</span>
+                )}
               </h3>
               <p className="text-base text-zinc-300 font-mono-cyber">
                 Total: <span className="text-white text-lg">{totalCurrentValue.toFixed(2)} $</span>
@@ -182,8 +194,8 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
         </div>
       </div>
       
-      {/* Position Cards */}
-      {positions.map((pos, idx) => {
+      {/* Active Position Cards */}
+      {activePositions.map((pos, idx) => {
         const hasCurrentPrice = pos.current_price && pos.current_price > 0;
         const grossPnlAmount = hasCurrentPrice ? (pos.current_price - pos.entry_price) * pos.qty : null;
         const grossPnlPct = hasCurrentPrice ? ((pos.current_price - pos.entry_price) / pos.entry_price) * 100 : null;
@@ -276,6 +288,53 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
           </div>
         );
       })}
+
+      {/* DUST POSITIONS SECTION */}
+      {dustPositions.length > 0 && (
+        <div className="cyber-panel p-4 border-zinc-700/50 bg-zinc-900/30" data-testid="dust-positions">
+          <div className="flex items-center gap-2 mb-3">
+            <Trash2 className="w-4 h-4 text-zinc-500" />
+            <h4 className="font-cyber text-sm text-zinc-500 tracking-widest uppercase">
+              DUST / RESTBESTÄNDE ({dustPositions.length})
+            </h4>
+            <span className="text-xs text-zinc-600 font-mono-cyber ml-auto">
+              ~{dustTotalValue.toFixed(4)} $
+            </span>
+          </div>
+          
+          <div className="space-y-2">
+            {dustPositions.map((pos, idx) => {
+              const value = pos.current_price > 0 ? pos.current_price * pos.qty : pos.entry_price * pos.qty;
+              return (
+                <div 
+                  key={pos.id || `dust-${idx}`}
+                  className="flex items-center justify-between py-2 px-3 bg-black/30 border border-zinc-800"
+                  data-testid={`dust-${pos.symbol}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-cyber text-zinc-400">{pos.symbol.replace('USDT', '')}</span>
+                    <span className="text-xs text-zinc-600 font-mono-cyber">
+                      {pos.qty?.toFixed(6)} Stk
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-zinc-500 font-mono-cyber">
+                      ~{value.toFixed(4)} $
+                    </span>
+                    <Badge className="cyber-badge text-xs bg-zinc-800 text-zinc-500 border border-zinc-700">
+                      DUST
+                    </Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <p className="text-xs text-zinc-600 font-mono-cyber mt-3 italic">
+            Diese Bestände sind zu klein zum Verkaufen (unter Min. Notional). Sie werden ignoriert.
+          </p>
+        </div>
+      )}
 
       {/* Sell Confirmation Dialog */}
       <AlertDialog open={sellDialog.open} onOpenChange={(open) => !open && setSellDialog({ open: false, position: null, loading: false })}>

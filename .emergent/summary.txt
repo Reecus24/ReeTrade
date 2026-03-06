@@ -1,162 +1,208 @@
-<analysis>**original_problem_statement:**
-The user's goal is to create a sophisticated, autonomous Reinforcement Learning (RL) AI for high-frequency SPOT trading on the MEXC exchange. The project has evolved through multiple iterations to address bugs and refine the AI's intelligence.
+<analysis>Analyse der LLM-Nachrichtenhistorie und Übergabezusammenfassung.
 
-Initial requirements included a self-learning RL AI, a Cyberpunk UI, and secure Telegram integration. The development process has been a tight feedback loop of the user observing the AI's live behavior, identifying logical flaws, and providing detailed specifications for fixes and new features.
+**original_problem_statement:**
+Der ursprüngliche Plan war die Entwicklung eines autonomen Reinforcement Learning (RL) Trading-Bots für die MEXC-Börse. Das Projekt durchlief mehrere Iterationen, in denen Fehler behoben und Funktionen hinzugefügt wurden, darunter eine Cyberpunk-Benutzeroberfläche, eine Belohnungsfunktion basierend auf dem Netto-PnL und Sicherheitsmechanismen.
 
-Key features and fixes implemented include:
-- A shift to a 10-minute maximum hold time with a 90-second minimum hold to prevent destructive flip-trading.
-- A reward system based on *net PnL* after accounting for fees and estimated slippage, making the AI learn from real-world outcomes.
-- Integration of orderbook microstructure data (spread, imbalance) into the AI's decision-making state.
-- Fixes for critical bugs like incorrect PnL calculations,  errors (via a robust OrderSizer), and  errors (via a distributed lock).
-- Implementation of advanced RL techniques like Prioritized Experience Replay (PER).
-- Addition of safety features like an Exploration Guard to make selling less random, and a global Buy Cooldown to prevent overtrading.
-- A comprehensive RL Trading Stats dashboard to provide deep insights into the AI's performance and behavior.
+Wichtige Änderungen während dieser Sitzung:
+- **Großes Refactoring:** Auf Wunsch des Benutzers wurden die Funktionen für Paper-Trading, Leverage/Futures und der globale Cooldown-Mechanismus vollständig aus dem Front- und Backend entfernt.
+- **Überarbeitung der Scan-Logik:** Die ursprüngliche Logik, die die Top-20-Coins nach Volumen scannte, wurde durch ein kuratiertes Universum von ca. 42 Mid-Cap-Coins ersetzt. Dies wurde weiter verfeinert zu einem zweistufigen System mit bevorzugten (hohe Liquidität) und Fallback-Coins.
+- **Anpassung der KI-Logik:** Der Filter, der nur BULLISH-Coins für das RL-Training zuließ, wurde entfernt. Stattdessen wurde ein Volatilitätsfilter eingeführt, damit die KI von allen Marktbedingungen lernen kann, was für kurzfristiges Trading (10-Minuten-Haltezeit) entscheidend ist.
+- **Wiedereinführung von Telegram:** Die Telegram-Integration wurde komplett neu implementiert, diesmal als benutzerspezifische Funktion, bei der jeder Benutzer sein Konto über einen eindeutigen Code verknüpfen kann.
+- **Neue Funktionsanforderung:** Der Benutzer wünscht sich eine Live-Anzeige des aktuellen Kurses und des nicht realisierten Gewinns/Verlusts (PnL) für offene Positionen.
 
-The user also requested a script to clear the trading history and AI model on their production server to start fresh.
-
-**User's preferred language**: The user's primary language is **German**. The next agent MUST respond in German only.
+**User's preferred language**: Die Hauptsprache des Benutzers ist **Deutsch**. Der nächste Agent MUSS ausschließlich auf Deutsch antworten.
 
 **what currently exists?**
-A full-stack application (React/FastAPI/MongoDB) with a sophisticated RL trading bot. The bot's core logic has been significantly enhanced to address earlier simplistic behaviors. It now operates on a  reward system, uses orderbook data for decisions, and incorporates multiple safety guards (90s min hold, 180s sell exploration guard, 10-min hard exit, global buy cooldown). Critical bugs related to order sizing and Telegram conflicts have been fixed. A comprehensive new backend endpoint () and a corresponding frontend dashboard panel have been created to provide detailed performance analytics.
+Eine Full-Stack-Anwendung (React/FastAPI/MongoDB), die einen RL-Trading-Bot für den MEXC-SPOT-Handel betreibt. Der Bot verwendet ein zweistufiges Filtersystem (Preferred/Fallback) basierend auf Liquidität und einen zusätzlichen Volatilitätsfilter, um sein Handelsuniversum zu definieren. Das KI-Modell und sein Speicher (Erfahrungen) werden dauerhaft in  gespeichert. Eine große Menge an Code für Futures, Paper-Trading und Cooldowns wurde entfernt. Eine neue, benutzerspezifische Telegram-Integration wurde implementiert, ist aber noch fehlerhaft. Der Benutzer betreibt die Anwendung auf einem Live-Hetzner-Server.
 
 **Last working item**:
--   **Last item agent was working:** The user requested a comprehensive RL Trading Stats system to be displayed on the dashboard. The agent implemented a new backend endpoint () and a new frontend component in  to fetch and display these metrics, including hold times, PnL breakdowns, fee analysis, sell source distribution, and a Health Status indicator.
--   **Status:** USER VERIFICATION PENDING
--   **Agent Testing Done:** Y (API endpoint was tested via ).
--   **Which testing method agent to use?** Frontend testing agent. The agent should call the testing agent to verify the new statistics panel is correctly displayed and populated with data in the UI. Alternatively, use the screenshot tool to show the updated dashboard to the user for visual confirmation.
+-   **Last item agent was working:** Der Agent arbeitete an drei Themen gleichzeitig:
+    1.  **Hauptaufgabe (In Arbeit):** Implementierung der Live-Anzeige von Preis und PnL für offene Positionen (Benutzeranfrage). Der Agent hat festgestellt, dass das Frontend die Daten anzeigen kann, aber das Backend sie im -Endpunkt nicht bereitstellt. Die Implementierung im Backend wurde begonnen.
+    2.  **Problem (Benutzerverifizierung ausstehend):** Der Bot scannte nur 2 Coins. Der Agent ersetzte den zu strengen BULLISH-Filter durch einen Volatilitätsfilter. Die Code-Änderungen wurden vom Benutzer auf den Server geladen, aber es wurde noch nicht bestätigt, ob der Bot nun wie erwartet mehr Coins scannt, da der Live-Modus möglicherweise deaktiviert war.
+    3.  **Problem (Blockiert):** Die Telegram-Code-Verknüpfung funktioniert nicht. Der Agent begann mit der Fehlersuche, wurde aber durch die anderen Probleme unterbrochen.
+-   **Status:** IN PROGRESS
+-   **Agent Testing Done:** N
+-   **Which testing method agent to use?** Backend-Logs und -Skripte zur Überprüfung der Datenbank und der neuen Scan-Logik. Frontend-Screenshot-Tool, um die neue Live-Preis-Anzeige zu verifizieren.
 -   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: User Verification of Recent Major Changes (P0)**
+-   **Issue 1: Telegram-Verknüpfungscode funktioniert nicht (P0)**
+-   **Issue 2: Frontend hängt bei INITIALIZING SYSTEM... (P1)**
+-   **Issue 3: Überprüfung der neuen Coin-Scan-Logik (P2)**
 
 **Issues Detail:**
--   **Issue 1:** User Verification of Recent Major Changes
-    -   **Attempted fixes:** The last session included numerous critical fixes and features: the flip-trading prevention logic (90s hold + exploration guard), the realistic PnL estimation for AI decisions, the global buy cooldown, and the advanced stats dashboard. The agent has implemented all of these.
+-   **Issue 1:** Telegram-Verknüpfungscode funktioniert nicht
+    -   **Attempted fixes:** Der Agent hat den Benutzer gebeten, die -Sammlung in der Datenbank zu überprüfen, um zu sehen, ob Codes generiert werden. Die Untersuchung wurde jedoch nicht abgeschlossen.
     -   **Next debug checklist:**
-        1.  Present the newly implemented RL Trading Stats dashboard to the user for review. A screenshot would be ideal.
-        2.  Confirm with the user that the AI's behavior has improved and it is no longer flip-trading (selling immediately after the minimum hold time).
-        3.  Confirm the global buy cooldown is working as expected.
-    -   **Why fix this issue and what will be achieved with the fix?** This is not a bug fix, but a crucial verification step. User confirmation is required to ensure the recent, complex changes meet their expectations and have solved the reported problems before moving on to new tasks.
+        1.  Überprüfen Sie die -Logik, um sicherzustellen, dass der -Befehl einen Code generiert und in der -Sammlung in der  speichert.
+        2.  Überprüfen Sie den -Endpunkt in , um sicherzustellen, dass er korrekt nach dem Code in der Datenbank sucht und den  im -Dokument des Benutzers speichert.
+        3.  Stellen Sie sicher, dass die Umgebungsvariable für den Telegram Bot Token auf dem Server des Benutzers korrekt gesetzt ist.
+    -   **Why fix this issue and what will be achieved with the fix?** Die Telegram-Benachrichtigungen sind eine Kernfunktion für den Benutzer. Die Behebung dieses Problems stellt die Kommunikationsverbindung wieder her.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on other issue:** None
+
+-   **Issue 2:** Frontend hängt bei INITIALIZING SYSTEM...
+    -   **Attempted fixes:** Der Agent hat einen  im Backend behoben, der durch das Entfernen von Code verursacht wurde. Es wurde mehrfach vermutet, dass das Problem auf einen veralteten Frontend-Build zurückzuführen ist, der noch gelöschte API-Endpunkte aufruft (z. B. ).
+    -   **Next debug checklist:**
+        1.  Weisen Sie den Benutzer an, auf seinem Server den folgenden Befehl auszuführen: .
+        2.  Bitten Sie den Benutzer, den Browser-Cache mit Strg+F5 (Hard Refresh) zu leeren.
+        3.  Wenn das Problem weiterhin besteht, überprüfen Sie die Browser-Entwicklerkonsole (F12) auf Netzwerkfehler (z. B. 404) und die Backend-Logs (-- No entries --) auf neue Fehler.
+    -   **Why fix this issue and what will be achieved with the fix?** Dies ist ein Showstopper, da die gesamte Web-Anwendung für den Benutzer unbenutzbar ist. Die Behebung stellt die Funktionalität der Benutzeroberfläche wieder her.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** Frontend
+    -   **Blocked on other issue:** None
+
+-   **Issue 3:** Überprüfung der neuen Coin-Scan-Logik
+    -   **Attempted fixes:** Der BULLISH-Filter wurde durch einen Volatilitätsfilter in  ersetzt. Der Benutzer hat den Code aktualisiert.
+    -   **Next debug checklist:**
+        1.  Bitten Sie den Benutzer, sicherzustellen, dass Live Trading in der Web-App aktiviert ist.
+        2.  Bitten Sie den Benutzer, die Backend-Logs mit  zu überprüfen.
+        3.  Erwarten Sie Log-Einträge wie  oder , wobei Y deutlich größer als 2 sein sollte.
+    -   **Why fix this issue and what will be achieved with the fix?** Stellt sicher, dass die KI genügend Handelsmöglichkeiten hat, um effektiv zu lernen und zu handeln.
     -   **Status:** USER VERIFICATION PENDING
-    -   **Is recurring issue?** N/A
-    -   **Should Test frontend/backend/both after fix?** Frontend (for the dashboard). The AI behavior needs to be observed by the user on their live system.
-    -   **Blocked on other issue:** None.
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** Backend
+    -   **Blocked on other issue:** Issue 2 (Benutzer muss die UI verwenden können, um Live-Trading zu aktivieren).
 
 **In progress Task List**:
--   None.
+-   **Task 1:** Live-Preis und PnL für offene Positionen anzeigen
+    -   **Where to resume:** Bearbeiten Sie den -Endpunkt in . Für jede offene Position in  muss der aktuelle Ticker-Preis von der MEXC-API abgerufen und als  zum Positions-Objekt hinzugefügt werden, bevor die Antwort gesendet wird.
+    -   **What will be achieved with this?** Der Benutzer kann den Live-Erfolg seiner offenen Trades direkt im Dashboard verfolgen.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on something:** Issue 2 (Das Frontend muss funktionieren, um die Änderung zu sehen).
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   **P1: Implement Paper Trading Mode:** A crucial feature for safely training and observing the RL agent without financial risk.
-    -   **P2: Institutional-Grade Enhancements (from user msg #63):**
-        -   **Regime/Volatility Awareness:** Add market volatility/regime as an input feature for the RL model to learn when *not* to trade.
-        -   **Data Quality/Outlier Handling:** Mark and potentially exclude trades with abnormal slippage or spreads from the training replay buffer.
-    -   **P3: stepSize Discovery:** Implement a per-symbol  cache as a future-proofing measure against sporadic  errors.
-
+    -   **P1: Institutional-Grade Erweiterungen:** Regime-/Volatilitäts-Bewusstsein für das Modell, Umgang mit Datenqualität/Ausreißern im Replay-Buffer.
+    -   **P2:  Discovery:** Zwischenspeichern der  pro Symbol.
 -   **Future Tasks:**
-    -   Re-enable Futures Trading (on hold).
-    -   Add an Admin Tab for user management.
-    -   Implement Email Verification & Password Reset.
+    -   Admin-Tab für Benutzerverwaltung.
+    -   E-Mail-Verifizierung & Passwort-Reset.
 
 **Completed work in this session**
--   **Critical Flip-Trading Fix:**
-    -   Increased minimum hold time to 90 seconds in .
-    -   Added an Exploration Guard to prevent random s between 90-180 seconds.
-    -   Added a Flip Penalty to the reward function for trades shorter than 60 seconds.
--   **AI Decision Logic Fix:**
-    -   Modified  in  to use an  based on best bid price and costs, ensuring the AI learns from realistic outcomes.
--   **Feature: Advanced RL Stats Dashboard:**
-    -   Created a new comprehensive endpoint  in .
-    -   Completely overhauled the frontend  to display detailed metrics like PnL comparisons, sell source breakdown, profit factor, and a health status indicator.
--   **Feature: Global Buy Cooldown:**
-    -   Implemented a global  in  to prevent overtrading.
-    -   Added API and UI elements in  and  to display the cooldown status.
--   **Bug Fix: :**
-    -   Implemented a MongoDB TTL-based distributed lock () to ensure only one service instance polls the Telegram API.
--   **Bug Fix:  (Order Sizing):**
-    -   Overhauled  to use  from MEXC's exchange info, resolving issues with .
--   **RL Model Improvement (PER):**
-    -   Implemented Prioritized Experience Replay in  for more efficient learning.
--   **Data Integration (Orderbook & MFE/MAE):**
-    -   Integrated orderbook data (spread, imbalance) and MFE/MAE tracking into the AI's state and database logs (, , ).
--   **User Support:**
-    -   Created  and guided the user through server environment issues to successfully clear their production database for a fresh start.
+-   **Feature:** Die Scan-Logik wurde komplett überarbeitet, um ein kuratiertes Mid-Cap-Universum mit einem zweistufigen Liquiditätsfilter (Preferred/Fallback) zu verwenden.
+-   **Feature:** Der starre BULLISH-Trendfilter wurde durch einen flexibleren Volatilitätsfilter ersetzt, damit die KI aus allen Marktbedingungen lernen kann.
+-   **Refactoring:** Code für Paper-Trading, Leverage/Futures und den globalen Cooldown-Mechanismus wurde umfassend aus dem gesamten Projekt entfernt.
+-   **Refactoring:** Eine neue, benutzerspezifische Telegram-Integration wurde implementiert.
+-   **Bug Fix:** Es wurde ein kritischer Fehler behoben, der dazu führte, dass die KI den Scanvorgang einstellte, wenn die anfängliche Coin-Liste leer war.
+-   **Bug Fix:** Mehrere Fehler im Zusammenhang mit dem großen Refactoring wurden behoben, darunter ein .
+-   **Deployment Support:** Umfangreiche Echtzeit-Hilfe bei der Behebung von Serverproblemen des Benutzers (Systemd-Dienste, Port-Konflikte, DB-Updates).
 
 **Earlier issues found/mentioned but not fixed**
--   None. The agent was diligent in addressing all issues raised by the user in this session.
+-   Keine, die nicht bereits in der Liste der anstehenden Probleme aufgeführt sind.
 
 **Known issue recurrence from previous fork**
--   **:** Although a distributed lock was implemented, the error briefly reappeared in user logs. The agent theorized it was a lingering session, but it remains a low-level risk to monitor. Status is considered RESOLVED, but with caution.
--   **User Deployment/Server Management Difficulties:** The user repeatedly struggled with basic server operations like activating the Python virtual environment. This is a point of friction that could be eased by creating wrapper scripts for common tasks (, ).
+-   **Schwierigkeiten des Benutzers bei der Serververwaltung:** Dies war in dieser Sitzung ein Hauptthema. Der Benutzer benötigte durchgehend detaillierte, kopierfähige Befehle für , -- No entries --,  und Current Mongosh Log ID:	69ab07f1b2fd924cf6591666
+Connecting to:		mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.7.0
+Using MongoDB:		7.0.30
+Using Mongosh:		2.7.0
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+
+To help improve our products, anonymous usage data is collected and sent to MongoDB periodically (https://www.mongodb.com/legal/privacy-policy).
+You can opt-out by running the disableTelemetry() command.
+
+------
+   The server generated these startup warnings when booting
+   2026-03-06T16:59:24.703+00:00: Using the XFS filesystem is strongly recommended with the WiredTiger storage engine. See http://dochub.mongodb.org/core/prodnotes-filesystem
+   2026-03-06T16:59:25.857+00:00: Access control is not enabled for the database. Read and write access to data and configuration is unrestricted
+   2026-03-06T16:59:25.859+00:00: You are running this process as the root user, which is not recommended
+   2026-03-06T16:59:25.859+00:00: Soft rlimits for open file descriptors too low
+------
+
+test> . Dies bleibt ein erheblicher Reibungspunkt und verlangsamt die Entwicklung.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Reinforcement Learning (RL):** Q-Learning with a Neural Network () and Prioritized Experience Replay (PER).
--   **High-Frequency Trading Concepts:** The AI is being tuned for a 10-minute horizon, using microstructure data like orderbook imbalance and spread.
--   **Net PnL Reward Shaping:** The core learning driver is now , which includes estimated fees and slippage, forcing the AI to learn real-world profitability.
--   **Distributed Locking:** A MongoDB collection with a TTL index is used to implement a leader election pattern, ensuring only one process runs the Telegram polling loop.
+-   **Zweistufiges Universum-Filtering:** Der Bot priorisiert eine Preferred-Liste von Coins (hohe Liquidität, enger Spread) und greift nur bei Bedarf auf eine Fallback-Liste zurück.
+-   **Volatilitäts-basierter Scan:** Der Scanner wählt Coins basierend auf der jüngsten Preisbewegung aus, nicht auf einem langfristigen Trend. Dies ist für kurzfristiges RL-Trading besser geeignet.
+-   **Umfassendes Code-Refactoring:** Entfernung wichtiger, aber nicht mehr benötigter Funktionen (Futures, Cooldown, Paper Trading).
+-   **Benutzerspezifische Telegram-Verknüpfung:** Die neue Implementierung unterstützt mehrere Benutzer, die ihre Konten über einen einzigartigen Code verknüpfen.
 
 **key DB schema**
--   **trades:** Heavily expanded to include , , , , , , , , , , and more.
--   **distributed_locks:** New collection to manage the leader election lock for the Telegram bot. Fields: , , . A TTL index is set on .
+-   **settings (in reetrade_db):** Enthält jetzt . Felder wie  und  wurden entfernt. Das Feld  wurde bereinigt.
+-   **telegram_link_codes (in reetrade_db):** Neue Sammlung zur Speicherung temporärer Codes () für die Verknüpfung von Benutzerkonten.
+-   **buy_cooldowns (in reetrade_db):** Diese Sammlung ist veraltet und wird nicht mehr verwendet.
+
+**changes in tech stack**
+-   Keine.
 
 **All files of reference**
--   : Contains all core AI logic (buy/sell decisions, reward function, exploration guards).
--   : Contains the main trading loops that orchestrate the AI, data fetching, and order execution.
--   : Contains the new, complex  endpoint.
--   : Contains the new UI for displaying the advanced RL statistics.
--   : Contains the corrected logic for formatting order quantities.
--   : Contains the leader election implementation.
+-   : Muss für die Live-Preis-Anzeige und die Fehlersuche bei der Telegram-API bearbeitet werden.
+-   : Enthält die neue Scan-Logik, deren Funktion überprüft werden muss.
+-   : Enthält die Logik zur Codegenerierung für die Telegram-Verknüpfung.
+-    und : Relevante Dateien für die Anzeige des Live-Preises.
 
 **Areas that need refactoring**:
--   **User Workflow Scripts:** The user's difficulties on their server suggest that creating simple wrapper bash scripts (e.g., , ) in the project root would be a significant quality-of-life improvement.
+-   Ein -Skript zur Automatisierung des manuellen und fehleranfälligen Bereitstellungsprozesses des Benutzers (, Unknown command: "build"
+
+To see a list of supported npm commands, run:
+  npm help, , ) wäre eine enorme Qualitätsverbesserung.
+-   Die -Datei ist trotz der Bereinigung immer noch groß. Eine Aufteilung in FastAPI-Router würde die Wartbarkeit verbessern.
 
 **key api endpoints**
--   : (NEW) Provides comprehensive, aggregated trading statistics for the specified period.
--   : (NEW) Returns the status of the global buy cooldown.
+-   **HINZUGEFÜGT:**
+    -   : Verknüpft ein Benutzerkonto mit einem Telegram-Chat-ID über einen Code.
+    -   : Hebt die Verknüpfung auf.
+-   **ENTFERNT:**
+    -   Alle Endpunkte im Zusammenhang mit Futures ().
+    -   Alle Endpunkte im Zusammenhang mit dem Cooldown ().
 
 **Critical Info for New Agent**
--   **Your immediate priority is user verification.** The last session involved many complex changes. You must show the user the new stats dashboard and confirm that the AI's trading behavior has improved before proceeding. Use a screenshot.
--   **Communicate exclusively in German.**
--   The user is the domain expert. They will provide detailed, well-thought-out specifications based on live AI behavior. Your job is to implement these specs precisely.
--   Be prepared to provide explicit, copy-paste-ready commands for any server-side operations, as the user is not a Linux expert.
+-   **Kommunizieren Sie ausschließlich auf Deutsch.**
+-   **Prioritäten:**
+    1.  **Blocker beheben:** Bringen Sie das Frontend wieder zum Laufen (). Ohne das ist der Benutzer blockiert.
+    2.  **Bestehende Probleme lösen:** Beheben Sie die nicht funktionierende Telegram-Verknüpfung ().
+    3.  **Benutzer-Feedback einholen:** Überprüfen Sie mit dem Benutzer, ob die neue Coin-Scan-Logik wie erwartet funktioniert ().
+    4.  **Neue Funktion implementieren:** Setzen Sie die Arbeit an der Anzeige von Live-Preis und PnL fort ().
+-   **Umfeld:** Seien Sie auf die Unterstützung des Benutzers bei der Serververwaltung auf seinem Hetzner-Server vorbereitet. Stellen Sie präzise, kopierfähige Befehle bereit. Der Benutzer ist kein Linux-Experte.
 
 **documents and test reports created in this job**
--    was created/updated.
--    was created to help the user.
+-    wurde aktualisiert.
 
 **Last 10 User Messages and any pending HUMAN messages**
-- The last 10 messages cover a series of rapid-fire feature requests and bug reports, all of which have been implemented by the agent.
-1.  **Request for advanced RL stats system:** Implemented, but pending user verification.
-2.  **Question on how to SSH into server:** Answered.
-3.  **Request for global buy cooldown:** Implemented.
-4.  **Request for stats in dashboard:** Implemented.
-5.  **Critical Fix Request (AI decision on net PnL & sell exploration guard):** Implemented.
-6.  **Critical Bug Report (Flip-trading):** Implemented a 4-point fix.
-7.  **Question about Telegram errors:** Explained it's log spam and doesn't block trading.
-8.  **User wants to launch, ignoring old trade data confusion:** Agent proceeded.
-9.  **User corrects agent on time, proving trades are old:** Acknowledged.
-10. **User reports history is not cleared:** Investigated and resolved by guiding user to run reset script correctly.
+10. **User:** Fragt, warum die KI auch wirklich lernt und ob Daten bei einem  gelöscht werden.
+9.  **Agent:** Erklärt die Persistenz des Models in  und dass  ein Überschreiben verhindert.
+8.  **User:** Meldet, dass der Telegram-Code nicht funktioniert und dass nur 2 Coins gescannt werden (zeigt Screenshot).
+7.  **Agent:** Beginnt mit der Fehlersuche für beide Probleme.
+6.  **User:** Besteht darauf, dass die KI nicht nur bullishe Coins handeln soll, da sie aus allen Marktbedingungen lernen muss.
+5.  **Agent:** Stimmt zu und schlägt vor, den Trendfilter durch einen Volatilitätsfilter zu ersetzen.
+4.  **User:** Bittet um eine Live-Verfolgung des Kurses in der Positionsübersicht.
+3.  **Agent:** Beginnt mit der Implementierung der Live-Preis-Funktion.
+2.  **User:** Meldet, dass das Frontend immer noch bei INITIALIZING SYSTEM... hängt.
+1.  **User:** Meldet . (Problem wurde behoben).
 
-All requests have been addressed; the next step is verification of the latest work.
+**Pending Human Messages:** Der Benutzer wartet auf eine Lösung für das hängende Frontend, die nicht funktionierende Telegram-Verknüpfung und die Implementierung der Live-Preis-Anzeige.
 
 **Project Health Check:**
--   **Mocked:**  was tested in the agent's environment, but the actual clearing happened on the user's production server.
--   **Broken:** None. The application is running, and all known critical bugs have been addressed.
+-   **Broken:**
+    -   Die Telegram-Verknüpfung ist defekt.
+    -   Das Frontend ist unbenutzbar und hängt im Ladebildschirm.
+-   **Mocked:** None.
 
 **3rd Party Integrations**
--   **MEXC Exchange API:** Primary integration for all trading operations.
--   **Telegram Bot API:** Used for notifications; now protected by a distributed lock to prevent conflicts.
--   **scikit-learn:** Used for the RL AI's  model.
--   **Hetzner Cloud:** The user's production hosting environment.
+-   MEXC Exchange API
+-   Telegram Bot API
+-   scikit-learn
+-   Hetzner Cloud (Deployment-Umgebung des Benutzers)
 
 **Testing status**
 -   **Testing agent used after significant changes:** NO
 -   **Troubleshoot agent used after agent stuck in loop:** NO
 -   **Test files created:** NO
--   **Known regressions:** None. The recent work was aimed at fixing regressions and undesirable emergent behaviors.
+-   **Known regressions:** Die Benutzeroberfläche ist nach dem letzten Backend-Refactoring nicht mehr funktionsfähig.
 
 **Credentials to test flow:**
--   User registration is open on the frontend. Create a new user for testing. All trading is done via the user's API keys configured on their server, which are not available to the agent. Testing is limited to UI, API responses, and observing logs.</analysis>
+-   Der Agent hat keinen direkten Zugriff auf die MEXC-API-Schlüssel des Benutzers. Das Testen beschränkt sich auf API-Antworten, Logs und die direkte Überprüfung der Datenbank auf dem Server des Benutzers.
+
+**What agent forgot to execute**
+-   Der Agent hat es versäumt, den Benutzer anzuweisen, das Frontend nach den umfangreichen API-Änderungen im Backend neu zu erstellen (). Dies ist die wahrscheinlichste Ursache für die aktuell blockierte Benutzeroberfläche.
+-   Die Fehlersuche für die Telegram-Integration wurde begonnen, aber nicht abgeschlossen, da der Fokus auf andere Probleme gelenkt wurde.
+-   Die anfängliche Entfernung des Futures-Codes war unvollständig und erforderte Nachbesserungen, was beim Benutzer zu Frustration führte.</analysis>

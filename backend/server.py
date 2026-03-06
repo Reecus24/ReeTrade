@@ -371,7 +371,9 @@ async def get_status(current_user: dict = Depends(get_current_user)):
     }
 
 async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
-    """Add current prices AND real MEXC balances to positions for live PnL display"""
+    """Add current prices, real MEXC balances, AND dust status to positions for live PnL display"""
+    from order_sizer import order_sizer
+    
     if not positions:
         return []
     
@@ -393,6 +395,14 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
                         mexc_balances[asset] = total
                 except:
                     pass
+            
+            # Update order_sizer filters for dust detection
+            try:
+                exchange_info = await mexc.get_exchange_info()
+                order_sizer.update_symbol_filters(exchange_info)
+            except Exception as e:
+                logger.warning(f"Could not update exchange filters: {e}")
+                
         except Exception:
             pass
     
@@ -411,14 +421,29 @@ async def enrich_positions_with_prices(positions: list, user_id: str) -> list:
                 pos_dict['qty_synced'] = True  # Flag that we synced from MEXC
         
         # Try to get current price
+        current_price = 0
         if mexc:
             try:
                 ticker = await mexc.get_ticker_24h(pos.symbol)
-                pos_dict['current_price'] = float(ticker.get('lastPrice', 0))
+                current_price = float(ticker.get('lastPrice', 0))
+                pos_dict['current_price'] = current_price
             except Exception:
                 pos_dict['current_price'] = 0
         else:
             pos_dict['current_price'] = 0
+        
+        # DUST DETECTION: Check if position is too small to sell
+        qty = pos_dict.get('qty', 0)
+        if current_price > 0 and qty > 0:
+            dust_status = order_sizer.get_dust_status(pos.symbol, qty, current_price)
+            pos_dict['is_dust'] = dust_status['is_dust']
+            pos_dict['can_sell'] = dust_status['can_sell']
+            pos_dict['dust_reason'] = dust_status.get('reason')
+            pos_dict['estimated_notional'] = dust_status.get('estimated_notional', 0)
+        else:
+            pos_dict['is_dust'] = False
+            pos_dict['can_sell'] = True
+            pos_dict['dust_reason'] = None
         
         enriched.append(pos_dict)
     
@@ -980,16 +1005,26 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         ]
         
         # Serialize open_positions from local DB (source of truth for frontend)
+        # Include LIVE current prices from MEXC
         open_positions_serialized = []
         if live_account and live_account.open_positions:
             for pos in live_account.open_positions:
+                # Hole aktuellen Preis von MEXC
+                current_price = None
+                try:
+                    ticker = await mexc.get_ticker_24h(pos.symbol)
+                    if ticker:
+                        current_price = float(ticker.get('lastPrice', 0))
+                except:
+                    current_price = None
+                
                 open_positions_serialized.append({
                     'id': str(pos.id) if hasattr(pos, 'id') else None,
                     'symbol': pos.symbol,
                     'side': pos.side,
                     'qty': pos.qty,
                     'entry_price': pos.entry_price,
-                    'current_price': getattr(pos, 'current_price', None),
+                    'current_price': current_price,
                     'stop_loss': getattr(pos, 'stop_loss', None),
                     'take_profit': getattr(pos, 'take_profit', None),
                     'entry_time': pos.entry_time.isoformat() if hasattr(pos, 'entry_time') and pos.entry_time else None
@@ -1129,6 +1164,8 @@ async def manual_sell_position(
     current_user: dict = Depends(get_current_user)
 ):
     """Manually sell a live position at current market price"""
+    from order_sizer import order_sizer
+    
     user_id = current_user['user_id']
     account = await db.get_live_account(user_id)
     
@@ -1158,11 +1195,21 @@ async def manual_sell_position(
     
     mexc = MexcClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
     
+    # Get current price first
+    ticker = await mexc.get_ticker_24h(request.symbol)
+    current_price = float(ticker['lastPrice'])
+    
+    # DUST CHECK: Block sell for dust positions
+    is_dust, dust_details = order_sizer.is_dust_position(position.symbol, position.qty, current_price)
+    if is_dust:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Dust-Position kann nicht verkauft werden: {dust_details.get('reason')} "
+                   f"(Wert: ~${dust_details.get('estimated_notional', 0):.4f})"
+        )
+    
     # If not confirmed, return position details for confirmation
     if not request.confirm:
-        ticker = await mexc.get_ticker_24h(request.symbol)
-        current_price = float(ticker['lastPrice'])
-        
         pnl = (current_price - position.entry_price) * position.qty
         pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
         
@@ -1181,16 +1228,23 @@ async def manual_sell_position(
             'warning': '⚠️ ACHTUNG: Dies wird die Position auf MEXC zum aktuellen Marktpreis verkaufen!'
         }
     
-    # Execute real sell on MEXC
-    ticker = await mexc.get_ticker_24h(request.symbol)
-    current_price = float(ticker['lastPrice'])
-    
+    # Execute real sell on MEXC (current_price already fetched above)
     try:
+        # Use order_sizer to format quantity properly
+        is_valid, msg, formatted_qty = order_sizer.prepare_sell_quantity(
+            symbol=request.symbol,
+            available_qty=position.qty,
+            current_price=current_price
+        )
+        
+        if not is_valid or formatted_qty is None:
+            raise HTTPException(status_code=400, detail=f"Verkauf nicht möglich: {msg}")
+        
         order_result = await mexc.place_order(
             symbol=request.symbol,
             side="SELL",
             order_type="MARKET",
-            quantity=position.qty
+            quantity=formatted_qty
         )
         order_id = order_result.get('orderId')
         
@@ -1203,6 +1257,8 @@ async def manual_sell_position(
         if not order_id:
             raise HTTPException(status_code=500, detail="MEXC Order fehlgeschlagen - keine Order ID")
             
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"MEXC Sell Fehler: {str(e)}")
     

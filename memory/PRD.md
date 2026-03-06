@@ -212,3 +212,66 @@ If Instance A dies:
   - Instance B acquires lock
   - Becomes new leader
 ```
+
+---
+
+## Changelog (Dezember 2025)
+
+### Dust-Handling Feature ✅ (06.03.2026)
+
+**Problem**: Restbestände (Dust) im Portfolio, die zu klein sind um verkauft zu werden (unter minQty/minNotional), erzeugen "SELL FAILED 400" Fehler und verfälschen die Trading-Statistiken.
+
+**Lösung**: Vollständiges Dust-Detection und -Handling System implementiert.
+
+#### Änderungen:
+
+1. **Backend: `order_sizer.py`**
+   - Neue Methode `is_dust_position(symbol, qty, current_price)` → prüft ob Position zu klein
+   - Neue Methode `get_dust_status(symbol, qty, current_price)` → gibt UI-freundliche Details
+   - Prüfungen: qty < minQty, qty rounds to 0 (stepSize), notional < minNotional
+
+2. **Backend: `server.py`**
+   - `enrich_positions_with_prices()` fügt Dust-Status hinzu (`is_dust`, `can_sell`, `dust_reason`)
+   - `/api/positions/sell` blockiert Dust-Positionen mit klarer Fehlermeldung
+   - Exchange-Filter werden beim Enrichment aktualisiert
+
+3. **Backend: `worker.py`**
+   - `_close_spot_position()` prüft auf Dust VOR dem SELL-Versuch
+   - Dust wird sauber geloggt mit `[DUST]` Prefix (kein ERROR-Spam)
+   - Position bleibt als "Dust" erhalten, keine weiteren SELL-Versuche
+
+4. **Frontend: `PositionsPanel.js`**
+   - Trennung: `activePositions` vs `dustPositions`
+   - Header zeigt: "POSITIONS (X) +Y Dust"
+   - Separater "DUST / RESTBESTÄNDE" Bereich am Ende
+   - Dust-Positionen haben KEIN SELL-Button
+   - Info-Text: "Diese Bestände sind zu klein zum Verkaufen"
+
+#### Verhalten:
+- Dust-Positionen werden **nicht** als aktive Positionen gezählt
+- Dust-Positionen erzeugen **keine** SELL-Fehler mehr
+- Dust-Positionen beeinflussen **nicht** die Trading-Statistiken
+- KI ignoriert Dust bei RL-Signalen
+
+---
+
+## Backlog
+
+### P0 (Kritisch)
+- [x] Dust-Handling implementiert
+
+### P1 (Hoch)
+- [ ] Telegram-Verknüpfung debuggen (Code-Validierung)
+- [ ] Frontend "INITIALIZING SYSTEM..." Blocker (nach Refactoring)
+- [ ] Live-Preis und PnL Anzeige für offene Positionen
+
+### P2 (Mittel)
+- [ ] Coin-Scan-Logik verifizieren (>2 Coins)
+- [ ] "Institutional-Grade" Erweiterungen (Regime-Bewusstsein)
+- [ ] stepSize Discovery Caching
+
+### Future
+- [ ] Admin-Tab für Benutzerverwaltung
+- [ ] E-Mail-Verifizierung & Passwort-Reset
+- [ ] deploy.sh Automatisierungsskript
+- [ ] server.py Aufteilung in FastAPI-Router

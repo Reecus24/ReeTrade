@@ -1674,6 +1674,24 @@ class MultiUserTradingWorker:
     ):
         """Close a SPOT position with real SELL order - Enhanced with cost tracking"""
         try:
+            # ============ DUST DETECTION: Check if position is too small to sell ============
+            is_dust, dust_details = order_sizer.is_dust_position(
+                symbol=position.symbol,
+                qty=position.qty,
+                current_price=exit_price
+            )
+            
+            if is_dust:
+                # Log dust position once (not as error to avoid spam)
+                await self.db.log(user_id, "WARNING", 
+                    f"[DUST] ⚠️ {position.symbol} ist Dust (unverkäuflich): {dust_details.get('reason')} | "
+                    f"Qty: {position.qty:.8f} | Wert: ${dust_details.get('estimated_notional', 0):.4f} | "
+                    f"MinNotional: ${dust_details.get('min_notional', 1):.2f}")
+                
+                # Mark position as dust in DB (don't try to sell again)
+                # But don't remove it - it stays as "dust" until user manually handles it
+                return
+            
             # ============ P0 FIX: PROPER QUANTITY VALIDATION ============
             # Use prepare_sell_quantity to avoid 400 Bad Request errors
             is_valid, msg, formatted_qty = order_sizer.prepare_sell_quantity(
@@ -1683,8 +1701,8 @@ class MultiUserTradingWorker:
             )
             
             if not is_valid or formatted_qty is None or formatted_qty <= 0:
-                await self.db.log(user_id, "ERROR", 
-                    f"[LIVE] ❌ SELL BLOCKED: {position.symbol} - {msg} | Qty: {position.qty}")
+                await self.db.log(user_id, "WARNING", 
+                    f"[DUST] ⚠️ SELL BLOCKED: {position.symbol} - {msg} | Qty: {position.qty} (als Dust markiert)")
                 # Log filters for debugging
                 order_sizer.log_filters(position.symbol)
                 return

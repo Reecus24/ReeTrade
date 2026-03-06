@@ -217,6 +217,100 @@ class OrderSizer:
             )
         else:
             logger.warning(f"[OrderSizer] {symbol}: No filters cached!")
+    
+    def is_dust_position(
+        self, 
+        symbol: str, 
+        qty: float, 
+        current_price: float
+    ) -> Tuple[bool, Dict]:
+        """
+        Check if a position is "dust" (too small to sell)
+        
+        A position is dust if:
+        - qty < minQty (exchange minimum)
+        - qty rounds to 0 after stepSize
+        - notional < minNotional (typically 1-5 USDT)
+        
+        Returns:
+            Tuple[is_dust, details_dict]
+            
+        details_dict contains:
+            - reason: str (why it's dust)
+            - qty: float
+            - estimated_notional: float
+            - min_qty: float
+            - min_notional: float
+            - step_size: float
+        """
+        # Default filters if not cached
+        filters = self.symbol_filters.get(symbol, {})
+        min_qty = filters.get('minQty', 0.0001)
+        min_notional = filters.get('minNotional', 1.0)  # MEXC default
+        step_size = filters.get('stepSize', 0.0001)
+        
+        details = {
+            'symbol': symbol,
+            'qty': qty,
+            'estimated_notional': qty * current_price if current_price > 0 else 0,
+            'current_price': current_price,
+            'min_qty': min_qty,
+            'min_notional': min_notional,
+            'step_size': step_size,
+            'reason': None
+        }
+        
+        # Check 1: Quantity below minimum
+        if qty < min_qty:
+            details['reason'] = f"qty ({qty:.8f}) < minQty ({min_qty})"
+            logger.debug(f"[DUST] {symbol}: {details['reason']}")
+            return True, details
+        
+        # Check 2: Quantity rounds to zero after stepSize
+        rounded_qty = self.round_quantity(symbol, qty)
+        if rounded_qty is None or rounded_qty <= 0:
+            details['reason'] = f"qty ({qty:.8f}) rounds to 0 with stepSize ({step_size})"
+            details['rounded_qty'] = rounded_qty
+            logger.debug(f"[DUST] {symbol}: {details['reason']}")
+            return True, details
+        
+        # Check 3: Notional below minimum
+        notional = qty * current_price
+        if notional < min_notional:
+            details['reason'] = f"notional (${notional:.4f}) < minNotional (${min_notional})"
+            logger.debug(f"[DUST] {symbol}: {details['reason']}")
+            return True, details
+        
+        # Not dust - can be sold
+        return False, details
+    
+    def get_dust_status(
+        self, 
+        symbol: str, 
+        qty: float, 
+        current_price: float
+    ) -> Dict:
+        """
+        Get complete dust status for UI display
+        
+        Returns dict with:
+            - is_dust: bool
+            - can_sell: bool
+            - reason: str (only if dust)
+            - details: dict
+        """
+        is_dust, details = self.is_dust_position(symbol, qty, current_price)
+        
+        return {
+            'is_dust': is_dust,
+            'can_sell': not is_dust,
+            'reason': details.get('reason') if is_dust else None,
+            'estimated_notional': details.get('estimated_notional', 0),
+            'min_notional': details.get('min_notional', 1),
+            'min_qty': details.get('min_qty', 0),
+            'qty': qty,
+            'current_price': current_price
+        }
 
 
 # Global instance
