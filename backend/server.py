@@ -910,71 +910,25 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         usdt_total = usdt_free + usdt_locked
         
         # Calculate current value of positions (with live prices)
-        # First: Check actual token balances on MEXC (more accurate than local DB)
+        # ONLY count positions tracked by the bot (from local DB)
         invested_value = 0
         total_pnl = 0
         actual_positions_count = 0
         
-        # Get all non-USDT token balances from MEXC
-        token_balances = []
-        for b in balances:
-            asset = b.get('asset', '')
-            if asset == 'USDT':
-                continue
-            try:
-                free = float(b.get('free', 0) or 0)
-                locked = float(b.get('locked', 0) or 0)
-                total = free + locked
-                if total > 0.000001:  # Minimum threshold
-                    token_balances.append({
-                        'asset': asset,
-                        'qty': total
-                    })
-            except (ValueError, TypeError):
-                continue
-        
-        for token_bal in token_balances:
-            asset = token_bal['asset']
-            token_qty = token_bal['qty']
-                
-            symbol = f"{asset}USDT"
-            try:
-                ticker = await mexc.get_ticker_24h(symbol)
-                current_price = float(ticker.get('lastPrice', 0))
-                if current_price > 0:
-                    current_value = current_price * token_qty
-                    invested_value += current_value
-                    actual_positions_count += 1
-                    
-                    # Try to find entry price from local DB for PnL calculation
-                    local_pos = next(
-                        (p for p in (live_account.open_positions if live_account else []) if p.symbol == symbol),
-                        None
-                    )
-                    if local_pos:
-                        total_pnl += (current_price - local_pos.entry_price) * min(token_qty, local_pos.qty)
-            except Exception:
-                # Token might not have USDT pair, skip
-                pass
-        
-        # Also check local DB positions (in case MEXC balance is delayed)
+        # Get tracked positions from local DB and calculate their current value
         if live_account and live_account.open_positions:
             for pos in live_account.open_positions:
-                # Check if we already counted this from MEXC balances
-                asset = pos.symbol.replace('USDT', '')
-                already_counted = any(tb['asset'] == asset for tb in token_balances)
-                
-                if not already_counted:
-                    try:
-                        ticker = await mexc.get_ticker_24h(pos.symbol)
-                        current_price = float(ticker.get('lastPrice', pos.entry_price))
-                        current_value = current_price * pos.qty
-                        invested_value += current_value
-                        total_pnl += (current_price - pos.entry_price) * pos.qty
-                        actual_positions_count += 1
-                    except Exception:
-                        invested_value += pos.entry_price * pos.qty
-                        actual_positions_count += 1
+                try:
+                    ticker = await mexc.get_ticker_24h(pos.symbol)
+                    current_price = float(ticker.get('lastPrice', pos.entry_price))
+                    current_value = current_price * pos.qty
+                    invested_value += current_value
+                    total_pnl += (current_price - pos.entry_price) * pos.qty
+                    actual_positions_count += 1
+                except Exception:
+                    # Fallback to entry price if ticker fails
+                    invested_value += pos.entry_price * pos.qty
+                    actual_positions_count += 1
         
         total_pnl_pct = (total_pnl / invested_value * 100) if invested_value > 0 else 0
         
