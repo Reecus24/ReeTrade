@@ -1028,9 +1028,7 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             # AI max positions based on profile
             'ai_max_positions': get_ai_max_positions(settings),
             # AI Position Range based on available USDT
-            'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value),
-            # Futures data
-            'futures': await get_futures_balance_data(keys, settings)
+            'ai_position_range': calculate_ai_position_range(settings, usdt_free, invested_value)
         }
         
     except Exception as e:
@@ -1275,7 +1273,7 @@ async def sync_positions_with_mexc(current_user: dict = Depends(get_current_user
 @app.get("/api/metrics/daily_pnl")
 async def get_daily_pnl(
     days: int = 30,
-    market_type: Optional[str] = None,  # "spot" or "futures"
+    market_type: Optional[str] = None,  # Optional filter
     current_user: dict = Depends(get_current_user)
 ):
     """Get daily PnL aggregation for chart (LIVE only), optionally filtered by market type"""
@@ -1306,7 +1304,7 @@ async def get_daily_pnl(
 @app.get("/api/trades")
 async def get_trades_history(
     symbol: Optional[str] = None,
-    market_type: Optional[str] = None,  # "spot" or "futures"
+    market_type: Optional[str] = None,  # Optional filter
     limit: int = 200,
     offset: int = 0,
     current_user: dict = Depends(get_current_user)
