@@ -210,6 +210,7 @@ class MexcClient:
         """Place a new order (requires API keys)
         
         Order of parameters matters for MEXC signature!
+        For MARKET orders, we query the order status to get actual execution price.
         """
         # Use ordered dict to maintain parameter order
         from collections import OrderedDict
@@ -226,7 +227,28 @@ class MexcClient:
         if quote_order_qty:
             params['quoteOrderQty'] = str(quote_order_qty)
         
-        return await self._request("POST", "/api/v3/order", params=dict(params), signed=True)
+        result = await self._request("POST", "/api/v3/order", params=dict(params), signed=True)
+        
+        # For MARKET orders, query the order to get actual execution details
+        if order_type == "MARKET" and result.get('orderId'):
+            try:
+                import asyncio
+                await asyncio.sleep(0.5)  # Wait for order to fully execute
+                order_details = await self.get_order(symbol, str(result['orderId']))
+                
+                # Merge execution details into result
+                if order_details.get('cummulativeQuoteQty'):
+                    result['cummulativeQuoteQty'] = order_details['cummulativeQuoteQty']
+                if order_details.get('executedQty'):
+                    result['executedQty'] = order_details['executedQty']
+                if order_details.get('price') and order_details.get('price') != '0':
+                    result['price'] = order_details['price']
+                    
+                logger.info(f"[MEXC] Order {result['orderId']} details: qty={result.get('executedQty')}, quoteQty={result.get('cummulativeQuoteQty')}")
+            except Exception as e:
+                logger.warning(f"[MEXC] Could not fetch order details: {e}")
+        
+        return result
     
     async def get_order(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Query order status (requires API keys)"""
