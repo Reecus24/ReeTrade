@@ -502,7 +502,7 @@ class RLTradingAI:
     - Lernt aus Ergebnissen
     """
     
-    MODEL_PATH = "/tmp/reetrade_rl_brain.pkl"
+    MODEL_PATH = "/opt/reetrade/data/rl_brain.pkl"  # Persistent path
     
     def __init__(self, db=None):
         self.db = db
