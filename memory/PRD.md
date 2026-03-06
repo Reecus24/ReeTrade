@@ -21,6 +21,63 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
 - 32 Features inkl. spread, imbalance, microtrends
 - MFE/MAE Tracking
 
+### Exit-Strategie Analyse & Transparenz ✅ (März 2026)
+
+#### 1. Exit Source Breakdown
+- **Tracking aller Exit-Quellen**:
+  - `time_limit`: 10-Minuten Hard Exit
+  - `exploitation`: KI-basierte Entscheidung (Q[SELL] > Q[HOLD])
+  - `random_exploration`: Zufälliges Verkaufen während Lernphase
+  - `emergency`: Notfall-Exit bei hohem Verlust (<-5%)
+  
+- **Metriken pro Exit-Quelle**:
+  - Anzahl Exits
+  - Prozentsatz aller Exits
+  - Durchschnittliche Haltezeit
+
+#### 2. Exit Decision Logging
+- Jede Exit-Entscheidung wird geloggt mit:
+  - Symbol
+  - Hold-Time (Sekunden)
+  - Aktueller PnL %
+  - Q-Values (HOLD/BUY/SELL)
+  - Epsilon (Exploration Rate)
+  - Entscheidung (SELL/HOLD)
+  - Grund
+
+#### 3. Dashboard-Erweiterungen (`KILogTab.js`)
+- **Exit Source Breakdown Balkendiagramm**:
+  - Visuelle Darstellung aller 4 Exit-Quellen
+  - Prozentuale Verteilung
+  - Warnung wenn time_limit > 70%
+  
+- **Hold Time Distribution**:
+  - Buckets: <60s, 60-180s, 180-360s, 360-600s, >600s
+  - Visuelle Darstellung
+
+- **Key Metrics**:
+  - Total Exits
+  - Ø Hold Time
+  - Exploitation Ratio
+  - Ø Sell Probability
+
+- **Recent Exits Tabelle**:
+  - Symbol, Source, Hold, PnL, Q[SELL]
+
+- **Exit Decision Log**:
+  - Letzte 30 Entscheidungen mit Details
+
+#### 4. Backend-Änderungen
+- `rl_trading_ai.py`: Neue Methoden für Exit-Tracking
+  - `record_time_limit_exit()`
+  - `record_exit_detail()`
+  - `log_exit_decision()`
+  - Erweiterte `get_status()` mit vollständigen Exit-Stats
+
+- `worker.py`: Time-Limit Exits werden jetzt getrackt mit Q-Values
+
+- `server.py`: `/api/rl/status` gibt jetzt `exit_stats` zurück
+
 ### P0 Fixes ✅
 1. **SELL FAILED 400**: OrderSizer mit basePrecision
 2. **Orderbook Plausibility**: ask > bid, spread > 0 Validierung

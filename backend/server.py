@@ -1657,6 +1657,9 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
         "memory_size": status['memory_size'],
         "active_episodes": status['active_episodes'],
         
+        # ============ EXIT STATISTIKEN ============
+        "exit_stats": status.get('exit_stats', {}),
+        
         # Neuer Lernstatus
         "learning_status": {
             "phase": "exploration" if is_exploration_phase else ("transition" if is_transitioning else "exploitation"),

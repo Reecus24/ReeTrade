@@ -536,8 +536,33 @@ class MultiUserTradingWorker:
                 if hold_minutes >= HARD_EXIT_MINUTES:
                     should_exit = True
                     exit_reason = f"⏰ TIME_LIMIT: {hold_minutes:.1f}min >= {HARD_EXIT_MINUTES}min (PnL: {pnl_pct:+.2f}%)"
+                    
+                    # ============ TIME_LIMIT EXIT TRACKING ============
+                    # Hole Q-Values für Exit-Analyse (warum hat KI nicht vorher verkauft?)
+                    try:
+                        klines_for_q = await mexc.get_klines(position.symbol, "1m", limit=50)
+                        rl_state_for_q = await self.rl_ai.analyze_market(
+                            symbol=position.symbol,
+                            klines=klines_for_q,
+                            ticker=ticker,
+                            position={'entry_price': position.entry_price, 'entry_time': position.entry_time}
+                        )
+                        q_vals_at_exit = self.rl_ai.brain.get_q_values(rl_state_for_q.to_array())
+                        q_dict_at_exit = {'hold': float(q_vals_at_exit[0]), 'buy': float(q_vals_at_exit[1]), 'sell': float(q_vals_at_exit[2])}
+                    except Exception as q_err:
+                        logger.warning(f"Could not get Q-values for time_limit tracking: {q_err}")
+                        q_dict_at_exit = None
+                    
+                    # Track Time-Limit Exit in RL-AI
+                    self.rl_ai.record_time_limit_exit(
+                        symbol=position.symbol,
+                        hold_seconds=hold_seconds,
+                        pnl_pct=pnl_pct,
+                        q_values=q_dict_at_exit
+                    )
+                    
                     await self.db.log(user_id, "WARNING", 
-                        f"[HARD EXIT] {position.symbol} nach {hold_minutes:.1f}min | PnL: {pnl_pct:+.2f}%")
+                        f"[HARD EXIT] {position.symbol} nach {hold_minutes:.1f}min | PnL: {pnl_pct:+.2f}% | Q[SELL]={q_dict_at_exit['sell']:.3f if q_dict_at_exit else 'N/A'}")
                 
                 # ============ PARTIAL PROFIT LOGIC ============
                 if not should_exit:

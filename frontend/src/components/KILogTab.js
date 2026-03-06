@@ -182,54 +182,277 @@ export default function KILogTab() {
         </div>
       </div>
 
-      {/* Exit Statistics Panel */}
+      {/* Exit Statistics Panel - VOLLSTÄNDIGE EXIT-ANALYSE */}
       {rlStatus?.exit_stats && (
-        <div className="cyber-panel p-6">
+        <div className="cyber-panel p-6 space-y-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 flex items-center justify-center bg-orange-500/20 border border-orange-500/50">
               <Target className="w-5 h-5 text-orange-400" />
             </div>
-            <h3 className="font-cyber text-sm text-orange-400 tracking-widest uppercase">EXIT ANALYTICS</h3>
+            <div>
+              <h3 className="font-cyber text-sm text-orange-400 tracking-widest uppercase">EXIT SOURCE BREAKDOWN</h3>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Analyse der Exit-Gründe</p>
+            </div>
           </div>
           
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-black/50 border border-purple-500/20 p-3 text-center">
-              <p className="text-xl font-cyber text-purple-400">{rlStatus.exit_stats.exploration_sells || 0}</p>
-              <p className="text-[10px] text-zinc-600 font-mono-cyber">EXPLORATION SELLS</p>
+          {/* EXIT SOURCE BREAKDOWN - Prozentuale Verteilung */}
+          <div className="space-y-3">
+            {/* Time Limit Bar - KRITISCH wenn >70% */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-mono-cyber">
+                <span className={`${(rlStatus.exit_stats.pct_time_limit || 0) > 70 ? 'text-red-400' : 'text-yellow-400'}`}>
+                  ⏰ TIME LIMIT (10min Hard Exit)
+                </span>
+                <span className={`${(rlStatus.exit_stats.pct_time_limit || 0) > 70 ? 'text-red-400 font-bold' : 'text-yellow-400'}`}>
+                  {rlStatus.exit_stats.pct_time_limit || 0}%
+                </span>
+              </div>
+              <div className="h-4 bg-black/50 border border-zinc-800 overflow-hidden">
+                <div 
+                  className={`h-full transition-all ${(rlStatus.exit_stats.pct_time_limit || 0) > 70 ? 'bg-red-500' : 'bg-yellow-500/70'}`}
+                  style={{ width: `${rlStatus.exit_stats.pct_time_limit || 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                Ø Hold: {rlStatus.exit_stats.avg_hold_time_time_limit_s || 600}s | Anzahl: {rlStatus.exit_stats.time_limit_sells || 0}
+              </p>
+            </div>
+            
+            {/* Exploitation Bar - POSITIV */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-mono-cyber">
+                <span className="text-cyan-400">🧠 EXPLOITATION (KI-Entscheidung)</span>
+                <span className="text-cyan-400">{rlStatus.exit_stats.pct_exploitation || 0}%</span>
+              </div>
+              <div className="h-4 bg-black/50 border border-zinc-800 overflow-hidden">
+                <div 
+                  className="h-full bg-cyan-500/70 transition-all"
+                  style={{ width: `${rlStatus.exit_stats.pct_exploitation || 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                Ø Hold: {rlStatus.exit_stats.avg_hold_time_exploitation_s || 0}s | Anzahl: {rlStatus.exit_stats.exploitation_sells || 0}
+              </p>
+            </div>
+            
+            {/* Exploration Bar */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-mono-cyber">
+                <span className="text-purple-400">🎲 RANDOM EXPLORATION</span>
+                <span className="text-purple-400">{rlStatus.exit_stats.pct_exploration || 0}%</span>
+              </div>
+              <div className="h-4 bg-black/50 border border-zinc-800 overflow-hidden">
+                <div 
+                  className="h-full bg-purple-500/70 transition-all"
+                  style={{ width: `${rlStatus.exit_stats.pct_exploration || 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                Ø Hold: {rlStatus.exit_stats.avg_hold_time_exploration_s || 0}s | Anzahl: {rlStatus.exit_stats.exploration_sells || 0}
+              </p>
+            </div>
+            
+            {/* Emergency Bar */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-mono-cyber">
+                <span className="text-red-400">🚨 EMERGENCY</span>
+                <span className="text-red-400">{rlStatus.exit_stats.pct_emergency || 0}%</span>
+              </div>
+              <div className="h-4 bg-black/50 border border-zinc-800 overflow-hidden">
+                <div 
+                  className="h-full bg-red-500/70 transition-all"
+                  style={{ width: `${rlStatus.exit_stats.pct_emergency || 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                Ø Hold: {rlStatus.exit_stats.avg_hold_time_emergency_s || 0}s | Anzahl: {rlStatus.exit_stats.emergency_sells || 0}
+              </p>
+            </div>
+          </div>
+          
+          {/* Warning wenn Time Limit > 70% */}
+          {(rlStatus.exit_stats.pct_time_limit || 0) > 70 && (
+            <div className="p-3 border border-red-500/50 bg-red-500/10">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <p className="text-sm text-red-400 font-mono-cyber">
+                  WARNUNG: {rlStatus.exit_stats.pct_time_limit}% der Trades werden durch das 10-Minuten Zeitlimit beendet.
+                  Die KI trifft kaum aktive Exit-Entscheidungen!
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Key Metrics Grid */}
+          <div className="grid grid-cols-4 gap-3 mt-4">
+            <div className="bg-black/50 border border-zinc-800 p-3 text-center">
+              <p className="text-lg font-cyber text-white">{rlStatus.exit_stats.total_all_exits || 0}</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">TOTAL EXITS</p>
             </div>
             <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-              <p className="text-xl font-cyber text-cyan-400">{rlStatus.exit_stats.exploitation_sells || 0}</p>
-              <p className="text-[10px] text-zinc-600 font-mono-cyber">EXPLOITATION SELLS</p>
+              <p className="text-lg font-cyber text-cyan-400">{rlStatus.exit_stats.avg_hold_time_total_s || 0}s</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Ø HOLD TIME</p>
             </div>
-            <div className="bg-black/50 border border-red-500/20 p-3 text-center">
-              <p className="text-xl font-cyber text-red-400">{rlStatus.exit_stats.emergency_sells || 0}</p>
-              <p className="text-[10px] text-zinc-600 font-mono-cyber">EMERGENCY SELLS</p>
+            <div className="bg-black/50 border border-green-500/20 p-3 text-center">
+              <p className={`text-lg font-cyber ${(rlStatus.exit_stats.exploitation_ratio || 0) > 50 ? 'text-green-400' : 'text-yellow-400'}`}>
+                {rlStatus.exit_stats.exploitation_ratio || 0}%
+              </p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">EXPLOITATION RATIO</p>
             </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-black/30 p-3 border border-zinc-800">
-              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG SELL PROB</p>
-              <p className="text-lg font-mono-cyber text-white">{(rlStatus.exit_stats.avg_sell_probability_pct || 0).toFixed(2)}%</p>
-            </div>
-            <div className="bg-black/30 p-3 border border-zinc-800">
-              <p className="text-[10px] text-zinc-500 font-mono-cyber">EXPLOITATION RATIO</p>
-              <p className="text-lg font-mono-cyber text-cyan-400">{(rlStatus.exit_stats.exploitation_ratio || 0).toFixed(1)}%</p>
-            </div>
-            <div className="bg-black/30 p-3 border border-zinc-800">
-              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG HOLD (EXPLORATION)</p>
-              <p className="text-lg font-mono-cyber text-purple-400">{(rlStatus.exit_stats.avg_hold_time_exploration_s || 0).toFixed(0)}s</p>
-            </div>
-            <div className="bg-black/30 p-3 border border-zinc-800">
-              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG HOLD (EXPLOITATION)</p>
-              <p className="text-lg font-mono-cyber text-cyan-400">{(rlStatus.exit_stats.avg_hold_time_exploitation_s || 0).toFixed(0)}s</p>
+            <div className="bg-black/50 border border-purple-500/20 p-3 text-center">
+              <p className="text-lg font-cyber text-purple-400">{(rlStatus.exit_stats.avg_sell_probability_pct || 0).toFixed(2)}%</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Ø SELL PROB</p>
             </div>
           </div>
           
-          <p className="text-[10px] text-zinc-600 font-mono-cyber mt-3 italic">
-            Exploration-Check alle {rlStatus.exit_stats.exploration_check_interval_s || 30}s | 
-            Ziel: Exploitation Ratio {'>'} 50% = KI nutzt gelerntes Wissen
-          </p>
+          {/* Hold Time Distribution */}
+          {rlStatus.exit_stats.hold_distribution && (
+            <div className="mt-4">
+              <p className="text-xs text-zinc-500 font-mono-cyber mb-2">HOLD TIME DISTRIBUTION</p>
+              <div className="flex gap-1">
+                {Object.entries(rlStatus.exit_stats.hold_distribution).map(([bucket, count]) => (
+                  <div key={bucket} className="flex-1 text-center">
+                    <div 
+                      className="bg-cyan-500/30 border border-cyan-500/20 transition-all"
+                      style={{ 
+                        height: `${Math.max(4, (count / (rlStatus.exit_stats.total_all_exits || 1)) * 100)}px`,
+                        minHeight: '4px'
+                      }}
+                    />
+                    <p className="text-[9px] text-zinc-600 font-mono-cyber mt-1">{bucket}</p>
+                    <p className="text-[10px] text-cyan-400 font-mono-cyber">{count}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Interpretation */}
+          <div className="mt-4 p-3 bg-black/30 border border-zinc-800">
+            <p className="text-xs text-zinc-500 font-mono-cyber mb-1">INTERPRETATION</p>
+            <p className="text-xs text-zinc-400 font-mono-cyber">
+              {(rlStatus.exit_stats.pct_time_limit || 0) > 70 
+                ? '⚠️ Die KI ist zu PASSIV. Sie sollte lernen, profitable Trades VOR dem Hard Exit zu schließen.'
+                : (rlStatus.exit_stats.exploitation_ratio || 0) > 50
+                  ? '✅ Die KI nutzt aktiv gelerntes Wissen für Exit-Entscheidungen. Exploitation > Exploration = gutes Zeichen!'
+                  : '🎓 Die KI befindet sich noch in der Lernphase. Exploration wird mit der Zeit abnehmen.'
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Exit Decision Logs - Für Transparenz */}
+      {rlStatus?.exit_stats?.recent_exit_logs && rlStatus.exit_stats.recent_exit_logs.length > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-zinc-500/20 border border-zinc-500/50">
+              <Clock className="w-5 h-5 text-zinc-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-zinc-400 tracking-widest uppercase">EXIT DECISION LOG</h3>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Letzte Exit-Entscheidungen der KI</p>
+            </div>
+          </div>
+          
+          <ScrollArea className="h-48">
+            <div className="space-y-2">
+              {rlStatus.exit_stats.recent_exit_logs.slice().reverse().map((log, idx) => (
+                <div 
+                  key={idx} 
+                  className={`p-2 text-xs font-mono-cyber border ${
+                    log.decision === 'SELL' 
+                      ? 'bg-red-500/5 border-red-500/20' 
+                      : 'bg-black/30 border-zinc-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`font-bold ${log.decision === 'SELL' ? 'text-red-400' : 'text-zinc-400'}`}>
+                      {log.symbol} → {log.decision}
+                    </span>
+                    <span className="text-zinc-600">
+                      {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit', second: '2-digit'}) : ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-[10px]">
+                    <div>
+                      <span className="text-zinc-600">Hold:</span>
+                      <span className="text-zinc-300 ml-1">{log.hold_seconds}s</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-600">PnL:</span>
+                      <span className={`ml-1 ${log.current_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {log.current_pnl_pct?.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-600">ε:</span>
+                      <span className="text-purple-400 ml-1">{(log.epsilon * 100).toFixed(0)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-600">Q[S]:</span>
+                      <span className="text-cyan-400 ml-1">{log.q_values?.sell?.toFixed(2) || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      {/* Recent Exits - Detaillierte Analyse */}
+      {rlStatus?.exit_stats?.recent_exits && rlStatus.exit_stats.recent_exits.length > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-green-500/20 border border-green-500/50">
+              <Activity className="w-5 h-5 text-green-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-green-400 tracking-widest uppercase">LETZTE EXITS</h3>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Abgeschlossene Trades (letzte 20)</p>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono-cyber">
+              <thead>
+                <tr className="text-zinc-500 border-b border-zinc-800">
+                  <th className="text-left py-2">Symbol</th>
+                  <th className="text-left py-2">Source</th>
+                  <th className="text-right py-2">Hold</th>
+                  <th className="text-right py-2">PnL</th>
+                  <th className="text-right py-2">Q[SELL]</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rlStatus.exit_stats.recent_exits.slice().reverse().map((exit, idx) => (
+                  <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
+                    <td className="py-2 text-white">{exit.symbol}</td>
+                    <td className={`py-2 ${
+                      exit.source === 'time_limit' ? 'text-yellow-400' :
+                      exit.source === 'exploitation' ? 'text-cyan-400' :
+                      exit.source === 'random_exploration' ? 'text-purple-400' :
+                      exit.source === 'emergency' ? 'text-red-400' : 'text-zinc-400'
+                    }`}>
+                      {exit.source === 'time_limit' ? '⏰' :
+                       exit.source === 'exploitation' ? '🧠' :
+                       exit.source === 'random_exploration' ? '🎲' :
+                       exit.source === 'emergency' ? '🚨' : '❓'}
+                      {exit.source}
+                    </td>
+                    <td className="py-2 text-right text-zinc-300">{exit.hold_seconds}s</td>
+                    <td className={`py-2 text-right ${exit.pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {exit.pnl_pct >= 0 ? '+' : ''}{exit.pnl_pct?.toFixed(2)}%
+                    </td>
+                    <td className="py-2 text-right text-cyan-400">
+                      {exit.q_values?.sell?.toFixed(2) || '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
