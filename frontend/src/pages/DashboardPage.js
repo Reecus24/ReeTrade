@@ -933,15 +933,6 @@ const DashboardPage = ({ onLogout }) => {
             />
           )}
 
-          {/* Positions Panel */}
-          {settings.live_confirmed && (
-            <PositionsPanel 
-              positions={live_account?.open_positions || []} 
-              mode="live"
-              onSellComplete={() => { fetchStatus(); fetchBalance(); }}
-            />
-          )}
-
           {/* ═══ TABS ═══ */}
           <Tabs defaultValue="info" className="w-full mt-6">
             <TabsList className="bg-transparent border-b border-cyan-500/20 rounded-none p-0 h-auto gap-0">

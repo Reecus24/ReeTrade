@@ -950,6 +950,12 @@ async def update_settings(updates: SettingsUpdate, current_user: dict = Depends(
     # Convert to dict and remove None values
     updates_dict = {k: v for k, v in updates.model_dump().items() if v is not None}
     
+    # Map frontend field names to backend field names
+    if 'max_notional_usdt' in updates_dict:
+        updates_dict['live_max_order_usdt'] = updates_dict.pop('max_notional_usdt')
+    if 'min_notional_usdt' in updates_dict:
+        updates_dict['live_min_notional_usdt'] = updates_dict['min_notional_usdt']
+    
     if not updates_dict:
         raise HTTPException(status_code=400, detail="No updates provided")
     

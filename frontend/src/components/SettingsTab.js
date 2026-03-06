@@ -62,9 +62,16 @@ const SettingsTab = () => {
   const fetchSettings = async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/settings`, getAuthHeaders());
-      setSettings(response.data);
-      setSelectedSpotCoins(response.data.selected_spot_coins || []);
-      setSpotSelectAll(response.data.spot_trade_all !== false);
+      const data = response.data;
+      // Map backend field names to frontend field names
+      setSettings({
+        min_notional_usdt: data.live_min_notional_usdt || data.min_notional_usdt || 10,
+        max_notional_usdt: data.live_max_order_usdt || data.max_notional_usdt || 50,
+        max_positions: data.max_positions || 5,
+        buy_cooldown_seconds: data.buy_cooldown_seconds || 1200
+      });
+      setSelectedSpotCoins(data.selected_spot_coins || []);
+      setSpotSelectAll(data.spot_trade_all !== false);
     } catch (error) {
       console.error('Settings fetch error:', error);
     } finally {
