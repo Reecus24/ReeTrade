@@ -305,8 +305,8 @@ class MexcClient:
                 "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
                 "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT",
                 
-                # Tier 5: NEUE VOLATILERE COINS (10) - für bessere Bewegung
-                "PEPEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
+                # Tier 5: NEUE VOLATILERE COINS (9) - für bessere Bewegung
+                "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
                 "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT"
             ]
         
