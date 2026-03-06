@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText,
   Wifi, WifiOff, RefreshCw, LogOut, Wallet, Brain, Zap,
-  TrendingUp, Info, ChevronRight, Clock
+  TrendingUp, Info, ChevronRight, Clock, Target
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
@@ -850,7 +850,7 @@ const DashboardPage = ({ onLogout }) => {
                     </div>
 
                     {/* Quick Stats */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-3 mb-6">
                       <div className="p-3 border border-zinc-800 text-center">
                         <p className="text-xs text-zinc-600 font-mono-cyber">POSITIONS</p>
                         <p className="text-lg font-cyber text-white">
@@ -874,6 +874,80 @@ const DashboardPage = ({ onLogout }) => {
                         </p>
                       </div>
                     </div>
+
+                    {/* ═══════════════════════════════════════════════════════════════════════════ */}
+                    {/* OPEN POSITIONS - Direkt im Portfolio Panel */}
+                    {/* ═══════════════════════════════════════════════════════════════════════════ */}
+                    {(balance?.open_positions || live_account?.open_positions || []).length > 0 ? (
+                      <div className="border-t border-cyan-500/20 pt-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <TrendingUp className="w-4 h-4 text-cyan-400" />
+                          <span className="text-xs text-cyan-400 font-mono-cyber uppercase tracking-wider">
+                            Active Positions
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {(balance?.open_positions || live_account?.open_positions || []).map((pos, idx) => {
+                            const pnlPct = pos.unrealized_pnl_pct || ((pos.current_price - pos.entry_price) / pos.entry_price * 100);
+                            const pnlUsdt = pos.unrealized_pnl || ((pos.current_price - pos.entry_price) * pos.qty);
+                            const holdTime = pos.hold_duration_formatted || (pos.entry_time ? `${Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 60000)}m` : '-');
+                            
+                            return (
+                              <div 
+                                key={idx} 
+                                className={`p-3 border ${pnlPct >= 0 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}
+                                data-testid={`position-${pos.symbol}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  {/* Symbol & Entry */}
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 flex items-center justify-center border ${pnlPct >= 0 ? 'border-green-500/50 bg-green-500/10' : 'border-red-500/50 bg-red-500/10'}`}>
+                                      <span className="text-xs font-cyber text-white">
+                                        {pos.symbol?.replace('USDT', '').slice(0, 3)}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <p className="font-cyber text-sm text-white">{pos.symbol}</p>
+                                      <p className="text-[10px] text-zinc-500 font-mono-cyber">
+                                        ENTRY: ${pos.entry_price?.toFixed(pos.entry_price < 1 ? 6 : 2)} | QTY: {pos.qty?.toFixed(2)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Price & PnL */}
+                                  <div className="text-right">
+                                    <p className="text-xs text-zinc-500 font-mono-cyber mb-1">
+                                      NOW: ${pos.current_price?.toFixed(pos.current_price < 1 ? 6 : 2)}
+                                    </p>
+                                    <div className="flex items-center gap-2 justify-end">
+                                      <span className={`text-lg font-cyber ${pnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {pnlPct >= 0 ? '+' : ''}{pnlPct?.toFixed(2)}%
+                                      </span>
+                                      <span className={`text-xs font-mono-cyber ${pnlPct >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
+                                        ({pnlUsdt >= 0 ? '+' : ''}${pnlUsdt?.toFixed(4)})
+                                      </span>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Hold Time */}
+                                  <div className="text-center ml-4">
+                                    <Clock className="w-3 h-3 mx-auto text-zinc-500 mb-1" />
+                                    <p className="text-xs font-mono-cyber text-zinc-400">{holdTime}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border-t border-zinc-800 pt-4">
+                        <div className="flex items-center justify-center gap-2 py-6 text-zinc-600">
+                          <Target className="w-5 h-5" />
+                          <span className="text-sm font-mono-cyber">NO ACTIVE POSITIONS - AI SCANNING...</span>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-8">
