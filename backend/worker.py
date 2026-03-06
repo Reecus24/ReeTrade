@@ -479,18 +479,27 @@ class MultiUserTradingWorker:
                             should_exit = True
                             exit_reason = f"🧠 AI_EXIT: {rl_decision['reasoning']}"
                             
+                            # ============ ÄNDERUNG 4: BESSERES EXIT LOGGING ============
+                            q_vals = rl_decision.get('q_values', {})
+                            q_str = f"Q[H]={q_vals.get('hold', 0):.3f} Q[S]={q_vals.get('sell', 0):.3f}" if q_vals else "Q: N/A"
+                            
                             await self.db.log(user_id, "WARNING", 
                                 f"[RL EXIT] {position.symbol} | "
                                 f"Action: {rl_decision['action']} | "
-                                f"RSI: {rsi:.0f} | "
-                                f"Hold: {hold_seconds:.0f}s")
+                                f"Hold: {hold_seconds:.0f}s | "
+                                f"PnL: {pnl_pct:+.2f}% | "
+                                f"Exploration: {rl_decision.get('exploration', False)} | "
+                                f"ε: {self.rl_ai.brain.epsilon:.2f} | "
+                                f"{q_str}")
                             
                             # Telegram über RL-Entscheidung
                             await self.notify_telegram('smart_exit', {
                                 'symbol': position.symbol,
-                                'exit_type': 'rl_decision',
-                                'confidence': 100,
-                                'reasons': [rl_decision['reasoning']]
+                                'exit_type': rl_decision.get('exit_reason', 'ai_exit'),
+                                'confidence': rl_decision.get('confidence', 50),
+                                'reasons': [rl_decision['reasoning']],
+                                'hold_seconds': hold_seconds,
+                                'pnl_pct': pnl_pct
                             }, user_id)
                     
                     except Exception as smart_err:

@@ -826,8 +826,10 @@ class RLTradingAI:
         """
         Soll verkauft werden? - 100% KI-ENTSCHEIDUNG
         
-        Anti-Flip: 10 Sekunden Mindest-Haltezeit (nur gegen API-Spam)
-        Hard Exit: 10 Minuten wird in worker.py erzwungen
+        ANTI-FLIP PROTECTION:
+        - Mindest-Haltezeit: 90 Sekunden (verhindert Flip-Trading)
+        - Exploration Guard: Bei hohem Epsilon kein zufälliges SELL unter 90s
+        - Hard Exit: 10 Minuten wird in worker.py erzwungen
         """
         if not state.has_position:
             return {
@@ -835,7 +837,8 @@ class RLTradingAI:
                 'confidence': 0,
                 'reasoning': 'Keine Position vorhanden',
                 'action': 'HOLD',
-                'exploration': False
+                'exploration': False,
+                'q_values': None
             }
         
         pnl = state.position_pnl_pct
@@ -843,18 +846,39 @@ class RLTradingAI:
         hold_seconds = hold_hours * 3600
         hold_minutes = hold_hours * 60
         
-        # ============ ANTI-FLIP: 10 Sekunden ============
-        # Nur gegen API-Spam, keine Strategie-Einschränkung
-        MIN_HOLD_SECONDS = 10
+        # ============ ÄNDERUNG 1: MINDESTHALTEZEIT 90 SEKUNDEN ============
+        # Verhindert Flip-Trading durch Spread + Fees
+        MIN_HOLD_SECONDS = 90
+        
         if hold_seconds < MIN_HOLD_SECONDS:
+            # ============ ÄNDERUNG 2: EXPLORATION GUARD ============
+            # Während hoher Exploration: SELL nur bei Emergency
+            # Emergency = PnL < -5% (kritischer Verlust)
+            EMERGENCY_THRESHOLD = -5.0
+            
+            if pnl <= EMERGENCY_THRESHOLD:
+                # Emergency Exit erlaubt auch vor Mindesthaltezeit
+                return {
+                    'should_sell': True,
+                    'confidence': 100,
+                    'reasoning': f'🚨 EMERGENCY: PnL {pnl:.1f}% <= {EMERGENCY_THRESHOLD}% (Hold: {hold_seconds:.0f}s)',
+                    'action': 'SELL',
+                    'exploration': False,
+                    'exit_reason': 'emergency_exit',
+                    'q_values': None
+                }
+            
+            # Kein SELL vor Mindesthaltezeit (außer Emergency)
             return {
                 'should_sell': False,
                 'confidence': 0,
-                'reasoning': f'⏳ Anti-Flip: {hold_seconds:.0f}s < {MIN_HOLD_SECONDS}s',
+                'reasoning': f'⏳ Mindesthaltezeit: {hold_seconds:.0f}s < {MIN_HOLD_SECONDS}s | PnL: {pnl:+.2f}%',
                 'action': 'HOLD',
-                'exploration': False
+                'exploration': False,
+                'q_values': None
             }
         
+        # Ab hier: Mindesthaltezeit erreicht, normale KI-Entscheidung
         state_array = state.to_array()
         q_values = self.brain.get_q_values(state_array)
         
@@ -862,12 +886,12 @@ class RLTradingAI:
         is_exploration = random.random() < self.brain.epsilon
         
         if is_exploration:
-            # Exploration ohne starken Profit-Bias - KI soll selbst lernen
-            # Leichte Tendenz zu HOLD um Overtrading zu reduzieren
-            sell_prob = 0.4  # 40% SELL, 60% HOLD bei Exploration
+            # Exploration: Leichte Tendenz zu HOLD um Overtrading zu reduzieren
+            # 30% SELL, 70% HOLD - konservativer als vorher
+            sell_prob = 0.3
             
             action = Action.SELL if random.random() < sell_prob else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} | PnL: {pnl:+.2f}% | {hold_minutes:.1f}min"
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} | PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={self.brain.epsilon:.2f}"
             logger.info(f"[RL] {symbol}: {reason}")
         else:
             # Exploitation: Nutze gelerntes Wissen
@@ -883,7 +907,9 @@ class RLTradingAI:
             'confidence': confidence,
             'reasoning': reason,
             'action': Action.to_string(action),
-            'exploration': is_exploration
+            'exploration': is_exploration,
+            'exit_reason': 'ai_exit' if action == Action.SELL else None,
+            'q_values': {'hold': float(q_values[0]), 'buy': float(q_values[1]), 'sell': float(q_values[2])}
         }
     
     async def start_episode(self, symbol: str, state: MarketState, entry_price: float, entry_value: float = 0.0):
@@ -956,6 +982,16 @@ class RLTradingAI:
         
         # REWARD = Net PnL Prozent (KEINE Zeit-Multiplikatoren!)
         reward = net_pnl_pct
+        
+        # ============ ÄNDERUNG 3: FLIP-PENALTY ============
+        # Trades unter 60 Sekunden bekommen Straf-Penalty
+        # Das lehrt die KI: ultra short trades = negative reward
+        FLIP_THRESHOLD_SECONDS = 60
+        FLIP_PENALTY = 0.15  # 0.15% Strafe für Flip-Trades
+        
+        if duration_seconds < FLIP_THRESHOLD_SECONDS:
+            reward -= FLIP_PENALTY
+            logger.warning(f"[RL] ⚠️ {symbol}: FLIP-PENALTY! Duration {duration_seconds:.0f}s < {FLIP_THRESHOLD_SECONDS}s | Reward: {reward:+.3f}%")
         
         # Logging
         cost_info = f"Fees: ${fees_paid:.4f}, Slip: ${slippage_cost:.4f}" if fees_paid > 0 or slippage_cost > 0 else "Costs: estimated"
