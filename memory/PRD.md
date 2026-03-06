@@ -10,7 +10,7 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
 
 ## Implementiert
 
-### Phase 1: Critical Fixes ✅ (Dezember 2025)
+### Phase 1: Critical Fixes ✅
 1. **Mindest-Haltezeit**: 2min → 10s (Anti-Flip)
 2. **Hard Exit**: 10 Minuten Maximum
 3. **Reward System**: Zeit-Bonus entfernt → Net PnL nach Kosten
@@ -20,80 +20,69 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
 7. **Active Set**: 100 → 20 Coins
 8. **Epsilon**: End 0.05, Decay 0.995
 
-### Phase 2: Orderbook & Microstructure ✅ (Dezember 2025)
+### Phase 2: Orderbook & Microstructure ✅
 1. **Orderbook API** (mexc_client.py):
    - `get_orderbook()` - Raw depth data
-   - `get_orderbook_snapshot()` - Processed snapshot with aggregates
+   - `get_orderbook_snapshot()` - Processed snapshot with plausibility checks
 
-2. **MarketState erweitert** (32 Features):
-   - `spread_pct` - Bid-Ask Spread %
-   - `mid_price` - (best_bid + best_ask) / 2
-   - `orderbook_imbalance` - bid_vol / ask_vol
-   - `bid_volume_sum`, `ask_volume_sum` - Top 5 Levels
-   - `return_30s`, `return_60s`, `return_180s` - Microtrend Returns
-   - `volatility_1m` - 1-Minute realized volatility
+2. **MarketState erweitert** (32 Features)
 
-3. **Trade Logging erweitert**:
-   - Orderbook context at entry
-   - Spread, Imbalance stored
+3. **Orderbook Plausibility Fix** ✅:
+   - Validates ask > bid
+   - Validates spread_abs > 0
+   - Returns None for invalid orderbooks
+   - Correct spread_pct calculation
 
-### Phase 3: MFE/MAE Tracking ✅ (Dezember 2025)
-1. **Position Tracking**:
-   - `max_price_seen` - Updated every exit check
-   - `min_price_seen` - Updated every exit check
+### Phase 3: MFE/MAE Tracking ✅
+- Position tracking: max_price_seen, min_price_seen
+- Trade record: mfe, mae, max_price_during_trade
 
-2. **Trade Record**:
-   - `mfe` - Max Favorable Excursion %
-   - `mae` - Max Adverse Excursion %
-   - `max_price_during_trade`
-   - `min_price_during_trade`
+### P0 Fixes (Dezember 2025) ✅
 
-### Frühere Fixes ✅
-- PnL Bug: cummulativeQuoteQty für MARKET Orders
-- Telegram Bot: Lokale DB als Source of Truth
-- UI Konsistenz: Open Positions Count
+#### SELL FAILED 400 Fix ✅
+- **Root Cause**: MEXC has no explicit LOT_SIZE filters, uses basePrecision
+- **Fix**: OrderSizer now derives stepSize from basePrecision
+- **Formula**: `stepSize = 10^(-basePrecision)`
+- **Validation**: `prepare_sell_quantity()` validates before SELL orders
+
+#### Orderbook Plausibility Fix ✅
+- **Issue**: spread=0.0000% was invalid
+- **Fix**: Proper validation (ask > bid, spread > 0)
+- **Result**: BTC spread now shows 0.000014%, DOGE shows 0.01%
 
 ## Aktiver Backlog
 
-### P0 - Kritisch
-- [x] Orderbook Integration (Top 5 Levels) ✅
-- [x] Microtrend Returns (30s, 60s, 180s) ✅
-- [x] MFE/MAE Tracking ✅
-
 ### P1 - Wichtig
-- [ ] SELL FAILED 400 für SKYUSDT (Lot Size)
-- [ ] Telegram 409 Conflict Fix
+- [ ] Telegram 409 Conflict (single polling instance)
 - [ ] Prioritized Experience Replay
 
 ### P2 - Nice-to-have
 - [ ] Paper Trading Modus
-- [ ] Backend Code Cleanup (Futures entfernen)
-- [ ] Admin Tab
-- [ ] Volatility/Regime Awareness als Feature
-
-## Tech Stack
-- Backend: Python/FastAPI
-- Frontend: React
-- Database: MongoDB
-- AI: scikit-learn (MLPRegressor)
-- Exchange: MEXC SPOT API
-- Notifications: Telegram
+- [ ] Backend Code Cleanup
+- [ ] Volatility/Regime Awareness
 
 ## Key Files
-- `backend/worker.py` - Trading Loop (Exit checks mit MFE/MAE)
-- `backend/rl_trading_ai.py` - RL AI (32 Features inkl. Orderbook)
-- `backend/mexc_client.py` - MEXC API (inkl. Orderbook)
-- `backend/models.py` - Data Models (Trade, Position erweitert)
+- `backend/worker.py` - Trading Loop
+- `backend/rl_trading_ai.py` - RL AI (32 Features)
+- `backend/mexc_client.py` - MEXC API + Orderbook
+- `backend/order_sizer.py` - Order validation ✅ FIXED
+- `backend/models.py` - Data Models
 
-## Feature Matrix
+## OrderSizer Logic
 
-| Feature | Status | File |
-|---------|--------|------|
-| 10min Hard Exit | ✅ | worker.py |
-| Net PnL Reward | ✅ | rl_trading_ai.py |
-| Fee Calculation | ✅ | worker.py |
-| Orderbook API | ✅ | mexc_client.py |
-| Spread/Imbalance | ✅ | rl_trading_ai.py |
-| Microtrend Returns | ✅ | rl_trading_ai.py |
-| MFE/MAE Tracking | ✅ | worker.py, models.py |
-| Trade Logging | ✅ | worker.py |
+```python
+# Step size from MEXC basePrecision:
+stepSize = 10^(-basePrecision)
+
+# Round DOWN to stepSize:
+rounded_qty = floor(qty / stepSize) * stepSize
+
+# Validation:
+- rounded_qty >= minQty (= stepSize)
+- rounded_qty * price >= minNotional (= 1 USDT)
+```
+
+## Test Results
+- SKYUSDT (basePrecision=2): 656.123456 → 656.12 ✅
+- BTCUSDT (basePrecision=8): 0.001234567 → 0.00123456 ✅
+- ETHUSDT (basePrecision=5): 0.12345678 → 0.12345 ✅

@@ -1574,12 +1574,23 @@ class MultiUserTradingWorker:
     ):
         """Close a SPOT position with real SELL order - Enhanced with cost tracking"""
         try:
-            # Place REAL SELL order
-            await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {position.qty}")
+            # ============ P0 FIX: PROPER QUANTITY VALIDATION ============
+            # Use prepare_sell_quantity to avoid 400 Bad Request errors
+            is_valid, msg, formatted_qty = order_sizer.prepare_sell_quantity(
+                symbol=position.symbol,
+                available_qty=position.qty,
+                current_price=exit_price
+            )
             
-            formatted_qty = order_sizer.round_quantity(position.symbol, position.qty)
-            if formatted_qty is None or formatted_qty <= 0:
-                formatted_qty = position.qty
+            if not is_valid or formatted_qty is None or formatted_qty <= 0:
+                await self.db.log(user_id, "ERROR", 
+                    f"[LIVE] ❌ SELL BLOCKED: {position.symbol} - {msg} | Qty: {position.qty}")
+                # Log filters for debugging
+                order_sizer.log_filters(position.symbol)
+                return
+            
+            await self.db.log(user_id, "WARNING", 
+                f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {formatted_qty} (original: {position.qty})")
             
             order_result = await mexc.place_order(
                 symbol=position.symbol,

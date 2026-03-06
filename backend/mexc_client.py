@@ -140,15 +140,18 @@ class MexcClient:
                 'timestamp': int (ms),
                 'best_bid_price': float,
                 'best_ask_price': float,
-                'spread': float,
-                'spread_pct': float,
+                'spread_abs': float,  # Absolute spread
+                'spread_pct': float,  # Spread as percentage of mid_price
                 'mid_price': float,
                 'top5_bids': [{'price': float, 'qty': float}, ...],
                 'top5_asks': [{'price': float, 'qty': float}, ...],
                 'bid_volume_sum': float,
                 'ask_volume_sum': float,
                 'orderbook_imbalance': float,  # bid_vol / ask_vol
+                'is_valid': bool  # Plausibility check passed
             }
+            
+        Returns None if orderbook is invalid (ask <= bid, spread <= 0)
         """
         try:
             raw = await self.get_orderbook(symbol, limit=levels)
@@ -157,6 +160,7 @@ class MexcClient:
             asks = raw.get('asks', [])
             
             if not bids or not asks:
+                logger.warning(f"[Orderbook] {symbol}: Empty bids or asks")
                 return None
             
             # Parse bids and asks
@@ -166,9 +170,28 @@ class MexcClient:
             best_bid = top_bids[0]['price'] if top_bids else 0
             best_ask = top_asks[0]['price'] if top_asks else 0
             
-            spread = best_ask - best_bid
-            mid_price = (best_bid + best_ask) / 2 if (best_bid + best_ask) > 0 else 0
-            spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0
+            # ============ P0 FIX: PLAUSIBILITY CHECKS ============
+            # Check 1: Ask must be > Bid
+            if best_ask <= best_bid:
+                logger.warning(f"[Orderbook] {symbol}: INVALID ask({best_ask}) <= bid({best_bid}) - discarding")
+                return None
+            
+            # Check 2: Both prices must be positive
+            if best_bid <= 0 or best_ask <= 0:
+                logger.warning(f"[Orderbook] {symbol}: INVALID prices bid={best_bid}, ask={best_ask}")
+                return None
+            
+            # Calculate spread
+            spread_abs = best_ask - best_bid
+            mid_price = (best_bid + best_ask) / 2
+            
+            # Check 3: Spread must be positive
+            if spread_abs <= 0:
+                logger.warning(f"[Orderbook] {symbol}: INVALID spread_abs={spread_abs} <= 0")
+                return None
+            
+            # Calculate spread percentage correctly
+            spread_pct = (spread_abs / mid_price) * 100 if mid_price > 0 else 0
             
             bid_volume_sum = sum(b['qty'] for b in top_bids)
             ask_volume_sum = sum(a['qty'] for a in top_asks)
@@ -177,22 +200,31 @@ class MexcClient:
             epsilon = 0.0001
             orderbook_imbalance = bid_volume_sum / max(ask_volume_sum, epsilon)
             
+            # Log for debugging (every 100th call or on issues)
+            logger.debug(
+                f"[Orderbook] {symbol}: "
+                f"bid={best_bid:.8f}, ask={best_ask:.8f}, "
+                f"spread_abs={spread_abs:.8f}, spread_pct={spread_pct:.6f}%, "
+                f"mid={mid_price:.8f}, imbalance={orderbook_imbalance:.2f}"
+            )
+            
             return {
                 'symbol': symbol,
                 'timestamp': int(time.time() * 1000),
                 'best_bid_price': best_bid,
                 'best_ask_price': best_ask,
-                'spread': spread,
+                'spread_abs': spread_abs,
                 'spread_pct': spread_pct,
                 'mid_price': mid_price,
                 'top5_bids': top_bids,
                 'top5_asks': top_asks,
                 'bid_volume_sum': bid_volume_sum,
                 'ask_volume_sum': ask_volume_sum,
-                'orderbook_imbalance': orderbook_imbalance
+                'orderbook_imbalance': orderbook_imbalance,
+                'is_valid': True
             }
         except Exception as e:
-            logger.warning(f"Orderbook snapshot error for {symbol}: {e}")
+            logger.warning(f"[Orderbook] {symbol}: Error - {e}")
             return None
     
     async def get_top_pairs(self, quote: str = "USDT", limit: int = 20) -> List[str]:
