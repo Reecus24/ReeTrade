@@ -1029,10 +1029,10 @@ const DashboardPage = ({ onLogout }) => {
                       <div className="bg-black/50 border border-green-500/20 p-4">
                         <p className="text-xs text-green-400 mb-1 font-mono-cyber">TOTAL</p>
                         <p className="text-2xl font-cyber text-white">
-                          {formatCurrency(
+                          {formatCurrency(balance.total_value || (
                             (balance.budget?.usdt_free || balance.cash || 0) + 
                             (balance.invested_value || balance.budget?.used_budget || 0)
-                          )}
+                          ))}
                         </p>
                         <p className={`text-xs mt-1 font-mono-cyber ${(balance.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                           PNL: {(balance.total_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(balance.total_pnl || 0)}

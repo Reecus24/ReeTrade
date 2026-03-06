@@ -909,7 +909,28 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         usdt_locked = float(usdt_balance.get('locked', 0))
         usdt_total = usdt_free + usdt_locked
         
-        # Calculate current value of positions (with live prices)
+        # ============ TOTAL MEXC VALUE (alle Assets) ============
+        # Berechne den Gesamtwert ALLER Assets auf MEXC (nicht nur Bot-Positionen)
+        total_mexc_value = usdt_total  # Start mit USDT
+        
+        for b in balances:
+            asset = b.get('asset', '')
+            if asset == 'USDT':
+                continue
+            try:
+                free = float(b.get('free', 0) or 0)
+                locked = float(b.get('locked', 0) or 0)
+                total_qty = free + locked
+                if total_qty > 0.000001:
+                    symbol = f"{asset}USDT"
+                    ticker = await mexc.get_ticker_24h(symbol)
+                    current_price = float(ticker.get('lastPrice', 0))
+                    if current_price > 0:
+                        total_mexc_value += current_price * total_qty
+            except Exception:
+                pass  # Skip assets without USDT pair
+        
+        # ============ BOT-TRACKED POSITIONS (für PnL) ============
         # ONLY count positions tracked by the bot (from local DB)
         invested_value = 0
         total_pnl = 0
@@ -989,7 +1010,8 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
             'last_updated': datetime.now(timezone.utc).isoformat(),
             'error': None,
             # Portfolio Summary
-            'invested_value': round(invested_value, 2),
+            'invested_value': round(invested_value, 2),  # Nur Bot-Positionen
+            'total_value': round(total_mexc_value, 2),   # GESAMTES MEXC Konto
             'total_pnl': round(total_pnl, 4),
             'total_pnl_pct': round(total_pnl_pct, 2),
             # Budget info (simplified - no reserve)
