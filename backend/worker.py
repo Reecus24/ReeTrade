@@ -24,11 +24,17 @@ logger = logging.getLogger(__name__)
 class MultiUserTradingWorker:
     """Background worker for multi-user LIVE automated trading with RL-AI"""
     
+    # ═══════════════════════════════════════════════════════════════════════════
+    # GLOBAL BUY COOLDOWN - Anti-Overtrading Safety
+    # ═══════════════════════════════════════════════════════════════════════════
+    BUY_COOLDOWN_SECONDS = 1200  # 20 Minuten zwischen BUY Orders
+    
     def __init__(self, db: Database):
         self.db = db
         self.running = False
         self.user_initial_equity: Dict[str, float] = {}
         self.user_last_trade_time: Dict[str, datetime] = {}
+        self.user_last_buy_time: Dict[str, datetime] = {}  # NEW: Global Buy Cooldown
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
         self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für Fallback-Analyse
@@ -1205,6 +1211,22 @@ class MultiUserTradingWorker:
         if signal_candidates:
             signal_candidates.sort(key=lambda x: x['score'], reverse=True)
             
+            # ═══════════════════════════════════════════════════════════════════
+            # GLOBAL BUY COOLDOWN CHECK
+            # ═══════════════════════════════════════════════════════════════════
+            is_on_cooldown, remaining_seconds, last_buy = self.check_buy_cooldown(user_id)
+            
+            if is_on_cooldown:
+                minutes = remaining_seconds // 60
+                seconds = remaining_seconds % 60
+                await self.db.log(user_id, "WARNING", 
+                    f"[BUY COOLDOWN] ⏳ Skipping BUY - cooldown active | "
+                    f"Remaining: {minutes}m {seconds}s | "
+                    f"Next buy available at: {(last_buy + timedelta(seconds=self.BUY_COOLDOWN_SECONDS)).strftime('%H:%M:%S')}"
+                )
+                return  # Skip all BUY signals, continue with exit checks
+            # ═══════════════════════════════════════════════════════════════════
+            
             await self.db.log(user_id, "INFO", 
                 f"[LIVE] 🎯 {len(signal_candidates)} Signale! Wähle besten: " +
                 ", ".join([f"{c['symbol']}({c['score']:.1f})" for c in signal_candidates[:5]])
@@ -1252,6 +1274,7 @@ class MultiUserTradingWorker:
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
+                    self.set_last_buy_time(user_id)  # Set global buy cooldown
                     decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     # ============ RL LEARNING: Record Trade Entry ============
@@ -2104,3 +2127,55 @@ class MultiUserTradingWorker:
     async def stop(self):
         self.running = False
         logger.info("Multi-user trading worker stopped")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # GLOBAL BUY COOLDOWN METHODS
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def check_buy_cooldown(self, user_id: str) -> tuple:
+        """
+        Check if buy cooldown is active
+        
+        Returns:
+            (is_on_cooldown: bool, remaining_seconds: int, last_buy_time: datetime or None)
+        """
+        if user_id not in self.user_last_buy_time:
+            return False, 0, None
+        
+        last_buy = self.user_last_buy_time[user_id]
+        elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
+        remaining = self.BUY_COOLDOWN_SECONDS - elapsed
+        
+        if remaining > 0:
+            return True, int(remaining), last_buy
+        else:
+            return False, 0, last_buy
+    
+    def set_last_buy_time(self, user_id: str):
+        """Record timestamp of last BUY order"""
+        self.user_last_buy_time[user_id] = datetime.now(timezone.utc)
+        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.BUY_COOLDOWN_SECONDS}s")
+    
+    def get_buy_cooldown_status(self, user_id: str) -> dict:
+        """Get cooldown status for API/UI"""
+        is_active, remaining, last_buy = self.check_buy_cooldown(user_id)
+        
+        if is_active:
+            minutes = remaining // 60
+            seconds = remaining % 60
+            return {
+                "cooldown_active": True,
+                "remaining_seconds": remaining,
+                "remaining_formatted": f"{minutes}m {seconds}s",
+                "last_buy_time": last_buy.isoformat() if last_buy else None,
+                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+            }
+        else:
+            return {
+                "cooldown_active": False,
+                "remaining_seconds": 0,
+                "remaining_formatted": "Ready",
+                "last_buy_time": last_buy.isoformat() if last_buy else None,
+                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+            }
+
