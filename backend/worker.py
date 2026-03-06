@@ -872,11 +872,11 @@ class MultiUserTradingWorker:
             ), reverse=True)
             
             # ═══════════════════════════════════════════════════════════════════════════
-            # ACTIVE TRADING SET: 15-20 COINS
-            # Für fokussiertes RL-Training: weniger Coins, mehr Qualität
+            # ACTIVE TRADING SET: 40-60 COINS UNIVERSE, 15-20 PER BATCH
+            # Für fokussiertes RL-Training: alle liquiden Mid-Caps, Batch-Rotation
             # ═══════════════════════════════════════════════════════════════════════════
-            MAX_TRADABLE_COINS = 20  # Max 20 Coins für stabiles Training
-            self.COINS_PER_BATCH = 15  # 15 Coins pro Scan-Batch
+            MAX_TRADABLE_COINS = 45  # Alle ~42 curated Coins + etwas Buffer
+            self.COINS_PER_BATCH = 20  # 20 Coins pro Scan-Batch
             all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
             
             # Save first batch (20) as active, store all for rotation
