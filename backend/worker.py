@@ -49,6 +49,10 @@ class MultiUserTradingWorker:
         # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
         self.TRADE_COOLDOWN_SECONDS = 180  # 3 Minuten zwischen Trades (kontrolliertes Lernen)
         
+        # Telegram Bot (optional - wird später initialisiert)
+        self.telegram = None
+        self.telegram_chat_id = None
+        
         # Dedupe für Log-Benachrichtigungen
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
         self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
@@ -1988,15 +1992,18 @@ class MultiUserTradingWorker:
                     'pnl_pct': net_pnl_pct
                 }, user_id)
             else:
-                await self.notify_telegram('trade_closed', {
-                    'symbol': position.symbol,
-                    'entry_price': position.entry_price,
-                    'exit_price': actual_exit_price,
-                    'pnl': net_pnl,
-                    'pnl_pct': net_pnl_pct,
-                    'exit_reason': exit_reason_category,
-                    'duration': duration_str
-                }, user_id)
+                try:
+                    await self.notify_telegram('trade_closed', {
+                        'symbol': position.symbol,
+                        'entry_price': position.entry_price,
+                        'exit_price': actual_exit_price,
+                        'pnl': net_pnl,
+                        'pnl_pct': net_pnl_pct,
+                        'exit_reason': exit_reason_category,
+                        'duration': duration_str
+                    }, user_id)
+                except Exception as telegram_err:
+                    logger.debug(f"Telegram notification skipped: {telegram_err}")
             
             # ============ RL TRADING AI: Beende Episode und Lerne ============
             try:
