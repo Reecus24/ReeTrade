@@ -76,13 +76,20 @@ class OrderSizer:
             float: Rounded quantity, or None if below minQty
         """
         if symbol not in self.symbol_filters:
-            logger.warning(f"[OrderSizer] No filters for {symbol}, using raw qty {qty}")
-            return qty
+            logger.warning(f"[OrderSizer] ⚠️ No filters for {symbol}! Using SAFE DEFAULTS (maxQty=1000000)")
+            # SAFE DEFAULTS für Meme-Coins mit niedrigem Preis
+            filters = {
+                'minQty': 1,
+                'maxQty': 1000000,  # SAFE DEFAULT für Meme-Coins
+                'stepSize': 1,
+                'minNotional': 5
+            }
+            self.symbol_filters[symbol] = filters
         
         filters = self.symbol_filters[symbol]
         step_size = filters.get('stepSize', 1)
         min_qty = filters.get('minQty', 0)
-        max_qty = filters.get('maxQty', float('inf'))
+        max_qty = filters.get('maxQty', 1000000)  # SAFE DEFAULT
         
         # Round DOWN to stepSize using Decimal for precision
         try:
@@ -148,6 +155,7 @@ class OrderSizer:
         
         filters = self.symbol_filters[symbol]
         min_qty = filters.get('minQty', 0)
+        max_qty = filters.get('maxQty', float('inf'))
         min_notional = filters.get('minNotional', 5)
         step_size = filters.get('stepSize', 1)
         
@@ -156,6 +164,11 @@ class OrderSizer:
         
         if rounded_qty is None or rounded_qty <= 0:
             return False, f"Qty {qty} rounds to {rounded_qty} < minQty {min_qty}", None
+        
+        # KRITISCH: maxQty Prüfung (für Meme-Coins mit niedrigem Preis)
+        if rounded_qty > max_qty:
+            rounded_qty = max_qty
+            logger.warning(f"[OrderSizer] {symbol}: qty clamped to maxQty {max_qty}")
         
         # Calculate notional
         notional = rounded_qty * price
@@ -167,7 +180,7 @@ class OrderSizer:
         logger.info(
             f"[OrderSizer] {side} {symbol}: qty={qty:.8f} → {rounded_qty:.8f} | "
             f"price=${price:.8f} | notional=${notional:.4f} | "
-            f"minQty={min_qty}, stepSize={step_size}, minNotional={min_notional}"
+            f"minQty={min_qty}, maxQty={max_qty}, stepSize={step_size}, minNotional={min_notional}"
         )
         
         return True, "OK", rounded_qty
