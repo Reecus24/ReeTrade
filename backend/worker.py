@@ -794,10 +794,17 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "INFO", 
                 f"📊 {len(momentum_pairs)} Coins ({preferred_count} preferred, {fallback_count} fallback)")
             
+            # ═══════════════════════════════════════════════════════════════════════════
+            # FILTER FÜR RL-TRADING (10-Min Trades)
+            # KEIN Regime-Filter! Die KI braucht alle Marktbedingungen zum Lernen.
+            # Filter nur auf: Liquidität + kurzfristige Volatilität
+            # ═══════════════════════════════════════════════════════════════════════════
             filtered_pairs = []
-            skipped_bearish = 0
+            skipped_low_volatility = 0
             skipped_price_too_high = 0
             skipped_price_filter_examples = []
+            
+            MIN_VOLATILITY_1H = 0.3  # Minimum 0.3% Bewegung in letzter Stunde
             
             for pair_data in momentum_pairs:
                 symbol = pair_data['symbol']
@@ -834,49 +841,60 @@ class MultiUserTradingWorker:
                 is_optimal = potential_qty >= 1.0 or expected_position_size >= price * 0.05
                 
                 try:
-                    klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
+                    # ═══════════════════════════════════════════════════════════════════════════
+                    # VOLATILITÄTS-CHECK (statt Regime-Filter)
+                    # Für 10-Min RL-Trading brauchen wir Bewegung, nicht Trend-Richtung!
+                    # ═══════════════════════════════════════════════════════════════════════════
+                    klines_1h = await mexc.get_klines(symbol, interval="1h", limit=4)
                     
-                    if len(klines_4h) >= 200:
-                        regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
+                    if len(klines_1h) >= 2:
+                        # Berechne kurzfristige Volatilität (letzte 1-2 Stunden)
+                        recent_high = max(float(k[2]) for k in klines_1h[-2:])  # High
+                        recent_low = min(float(k[3]) for k in klines_1h[-2:])   # Low
+                        recent_close = float(klines_1h[-1][4])
                         
-                        # AI Aggressive: Accept ALL regimes (BULLISH prioritized, then SIDEWAYS, then BEARISH)
-                        # RL-AI Mode: Accept BULLISH and SIDEWAYS (not BEARISH)
-                        # Other modes: Only BULLISH
-                        acceptable_regimes = ["BULLISH"]
-                        if trading_mode == TradingMode.AI_AGGRESSIVE:
-                            acceptable_regimes = ["BULLISH", "SIDEWAYS", "BEARISH"]
-                        elif trading_mode == TradingMode.AI_MODERATE:
-                            acceptable_regimes = ["BULLISH", "SIDEWAYS"]
-                        elif trading_mode == TradingMode.RL_AI:
-                            # RL-AI: BULLISH und SIDEWAYS für mehr Trading-Opportunities
-                            acceptable_regimes = ["BULLISH", "SIDEWAYS"]
+                        # Volatilität in % = (High - Low) / Close * 100
+                        volatility_pct = ((recent_high - recent_low) / recent_close) * 100 if recent_close > 0 else 0
                         
-                        if regime in acceptable_regimes:
-                            # Priority score: BULLISH=3, SIDEWAYS=2, BEARISH=1
-                            regime_priority = {"BULLISH": 3, "SIDEWAYS": 2, "BEARISH": 1}.get(regime, 0)
-                            filtered_pairs.append({
-                                **pair_data,
-                                'regime': regime,
-                                'regime_priority': regime_priority,
-                                'adx': regime_ctx.get('adx', 0),
-                                'potential_qty': potential_qty,
-                                'is_optimal': is_optimal
-                            })
-                            
-                            # Get up to 100 coins for full rotation
-                            if len(filtered_pairs) >= 100:
-                                break
-                        else:
-                            skipped_bearish += 1
+                        # Nur Coins mit ausreichender Bewegung (min 0.3% in letzter Stunde)
+                        if volatility_pct < MIN_VOLATILITY_1H:
+                            skipped_low_volatility += 1
+                            continue
+                        
+                        # Alle liquiden Coins mit Volatilität akzeptieren - KEIN Regime-Filter!
+                        filtered_pairs.append({
+                            **pair_data,
+                            'volatility_1h': volatility_pct,
+                            'potential_qty': potential_qty,
+                            'is_optimal': is_optimal
+                        })
+                        
+                        # Get up to 100 coins for full rotation
+                        if len(filtered_pairs) >= 100:
+                            break
+                    else:
+                        # Fallback: Akzeptiere Coin ohne Volatilitäts-Check
+                        filtered_pairs.append({
+                            **pair_data,
+                            'volatility_1h': 0,
+                            'potential_qty': potential_qty,
+                            'is_optimal': is_optimal
+                        })
+                        
                 except Exception as e:
-                    logger.warning(f"Error checking regime for {symbol}: {e}")
-                    continue
+                    logger.warning(f"Error checking volatility for {symbol}: {e}")
+                    # Bei Fehler trotzdem hinzufügen (Liquidität ist bereits geprüft)
+                    filtered_pairs.append({
+                        **pair_data,
+                        'volatility_1h': 0,
+                        'potential_qty': potential_qty,
+                        'is_optimal': is_optimal
+                    })
             
-            # Sort: Prioritize by regime (BULLISH > SIDEWAYS > BEARISH), then optimal coins, then by ADX
+            # Sort: Prioritize by volatility (mehr Bewegung = besser für RL), dann optimal coins
             filtered_pairs.sort(key=lambda x: (
-                x.get('regime_priority', 0),  # BULLISH=3, SIDEWAYS=2, BEARISH=1
-                x.get('is_optimal', False), 
-                x.get('adx', 0)
+                x.get('volatility_1h', 0),  # Höhere Volatilität zuerst
+                x.get('is_optimal', False)
             ), reverse=True)
             
             # ═══════════════════════════════════════════════════════════════════════════
@@ -902,24 +920,24 @@ class MultiUserTradingWorker:
             self.user_coin_batch[user_id] = 0
             self.user_all_coins[user_id] = all_tradable_symbols
             
-            # Detailed logging
-            bullish_count = sum(1 for p in filtered_pairs if p.get('regime') == 'BULLISH')
-            sideways_count = sum(1 for p in filtered_pairs if p.get('regime') == 'SIDEWAYS')
+            # Detailed logging - Volatilität statt Regime
+            high_vol_count = sum(1 for p in filtered_pairs if p.get('volatility_1h', 0) >= 1.0)
+            med_vol_count = sum(1 for p in filtered_pairs if 0.3 <= p.get('volatility_1h', 0) < 1.0)
             
-            regime_info = f"{bullish_count} BULLISH"
-            if sideways_count > 0:
-                regime_info += f" + {sideways_count} SIDEWAYS"
+            vol_info = f"{high_vol_count} high-vol (>1%)"
+            if med_vol_count > 0:
+                vol_info += f" + {med_vol_count} med-vol"
             
             total_batches = (len(all_tradable_symbols) + self.COINS_PER_BATCH - 1) // self.COINS_PER_BATCH
             
             await self.db.log(
                 user_id, "INFO", 
                 f"✅ Coin-Pool aktualisiert:\n"
-                f"   • {len(all_tradable_symbols)} Coins total ({regime_info})\n"
+                f"   • {len(all_tradable_symbols)} Coins total ({vol_info})\n"
                 f"   • {total_batches} Batches à {self.COINS_PER_BATCH} Coins\n"
                 f"   • Aktiver Batch: 1-{min(self.COINS_PER_BATCH, len(all_tradable_symbols))}\n"
                 f"   • {skipped_price_too_high} übersprungen (Preis zu hoch)\n"
-                f"   • {skipped_bearish} übersprungen (BEARISH)",
+                f"   • {skipped_low_volatility} übersprungen (zu wenig Bewegung)",
                 {'symbols': active_batch[:10]}
             )
             
