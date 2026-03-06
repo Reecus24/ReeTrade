@@ -359,3 +359,7 @@ frontend/node_modules/.cache/default-development/8.pack_
 # RL Model Data - DO NOT DELETE
 data/
 *.pkl
+-e 
+# Environment files
+*.env
+*.env.*
