@@ -5,7 +5,6 @@ from typing import Optional, Dict, List
 import os
 from db_operations import Database
 from mexc_client import MexcClient
-from mexc_futures_client import MexcFuturesClient
 from strategy import TradingStrategy
 from risk_manager import RiskManager
 from regime_detector import RegimeDetector
@@ -16,7 +15,6 @@ from ai_engine_v2 import (
     RISK_PROFILES_V2
 )
 from smart_exit_engine import SmartExitEngine
-from telegram_bot import get_telegram_bot
 from rl_trading_ai import get_rl_trading_ai, RLTradingAI, MarketState, Action
 
 logger = logging.getLogger(__name__)
@@ -24,18 +22,11 @@ logger = logging.getLogger(__name__)
 class MultiUserTradingWorker:
     """Background worker for multi-user LIVE automated trading with RL-AI"""
     
-    # ═══════════════════════════════════════════════════════════════════════════
-    # GLOBAL BUY COOLDOWN - Anti-Overtrading Safety
-    # Default value - can be overridden per-user via settings.buy_cooldown_seconds
-    # ═══════════════════════════════════════════════════════════════════════════
-    DEFAULT_BUY_COOLDOWN_SECONDS = 1200  # 20 Minuten zwischen BUY Orders
-    
     def __init__(self, db: Database):
         self.db = db
         self.running = False
         self.user_initial_equity: Dict[str, float] = {}
         self.user_last_trade_time: Dict[str, datetime] = {}
-        self.user_last_buy_time: Dict[str, datetime] = {}  # NEW: Global Buy Cooldown
         self.regime_detector = RegimeDetector()
         self.exchange_info_loaded = False
         self.smart_exit = SmartExitEngine(db)  # Smart Exit Engine für Fallback-Analyse
@@ -43,17 +34,13 @@ class MultiUserTradingWorker:
         # RL-AI: Der einzige Decision Maker
         self.rl_ai = get_rl_trading_ai()
         
-        # Telegram Bot
-        tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-        self.telegram = get_telegram_bot(tg_token, db) if tg_token else None
-        self.telegram_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
         # Coin rotation: track which batch of coins to scan next
         self.user_coin_batch: Dict[str, int] = {}  # {user_id: batch_index}
         self.user_all_coins: Dict[str, list] = {}  # {user_id: [all coins]}
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
         
-        # Dedupe für Telegram-Benachrichtigungen
+        # Dedupe für Log-Benachrichtigungen
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
         self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
         
@@ -1246,23 +1233,6 @@ class MultiUserTradingWorker:
         if signal_candidates:
             signal_candidates.sort(key=lambda x: x['score'], reverse=True)
             
-            # ═══════════════════════════════════════════════════════════════════
-            # GLOBAL BUY COOLDOWN CHECK (PERSISTENT)
-            # ═══════════════════════════════════════════════════════════════════
-            result = await self.check_buy_cooldown_async(user_id)
-            is_on_cooldown, remaining_seconds, last_buy, cooldown_seconds = result
-            
-            if is_on_cooldown:
-                minutes = remaining_seconds // 60
-                seconds = remaining_seconds % 60
-                await self.db.log(user_id, "WARNING", 
-                    f"[BUY COOLDOWN] ⏳ Skipping BUY - cooldown active | "
-                    f"Remaining: {minutes}m {seconds}s | "
-                    f"Next buy available at: {(last_buy + timedelta(seconds=cooldown_seconds)).strftime('%H:%M:%S')}"
-                )
-                return  # Skip all BUY signals, continue with exit checks
-            # ═══════════════════════════════════════════════════════════════════
-            
             await self.db.log(user_id, "INFO", 
                 f"[LIVE] 🎯 {len(signal_candidates)} Signale! Wähle besten: " +
                 ", ".join([f"{c['symbol']}({c['score']:.1f})" for c in signal_candidates[:5]])
@@ -1278,11 +1248,8 @@ class MultiUserTradingWorker:
                 # Use AI position size if available
                 position_budget = candidate_ai.position_size_usdt if candidate_ai else available_budget
                 
-                # Determine if we should use FUTURES (AI mode with futures enabled)
+                # SPOT ONLY MODE (Futures disabled)
                 use_futures = False
-                if is_ai_mode and candidate_ai and settings.futures_enabled:
-                    market_type = getattr(candidate_ai, 'market_type', 'spot')
-                    use_futures = market_type == 'futures'
                 
                 # FINAL SAFETY CHECK: Double-check we don't already own this symbol
                 current_owned = set()
@@ -1293,24 +1260,15 @@ class MultiUserTradingWorker:
                     await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol} bereits im Portfolio - Trade übersprungen")
                     continue
                 
-                if use_futures:
-                    # Execute FUTURES trade
-                    trade_success = await self.open_futures_position(
-                        user_id, symbol, candidate, account, settings, 
-                        position_budget, candidate_ai
-                    )
-                    trade_type = f"FUTURES {candidate_ai.direction.upper()} {candidate_ai.leverage}x"
-                else:
-                    # Execute SPOT trade (existing logic)
-                    trade_success = await self.open_live_position(
-                        user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
-                        position_budget, is_ai_mode, candidate_ai
-                    )
-                    trade_type = "SPOT"
+                # Execute SPOT trade ONLY
+                trade_success = await self.open_live_position(
+                    user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
+                    position_budget, is_ai_mode, candidate_ai
+                )
+                trade_type = "SPOT"
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
-                    await self.set_last_buy_time_async(user_id)  # Set global buy cooldown (PERSISTENT)
                     decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     # ============ RL LEARNING: Record Trade Entry ============
@@ -1680,15 +1638,8 @@ class MultiUserTradingWorker:
     ):
         """Close a SPOT or FUTURES position with real SELL order"""
         try:
-            # Check if this is a Futures position
-            is_futures = getattr(position, 'market_type', 'spot') == 'futures'
-            
-            if is_futures:
-                # Close FUTURES position
-                await self.close_futures_position(user_id, position, exit_price, account, settings, reason)
-            else:
-                # Close SPOT position (existing logic)
-                await self._close_spot_position(user_id, position, exit_price, account, settings, reason, mexc)
+            # Close SPOT position
+            await self._close_spot_position(user_id, position, exit_price, account, settings, reason, mexc)
                 
         except Exception as e:
             logger.error(f"Close position error: {e}")
@@ -1956,195 +1907,6 @@ class MultiUserTradingWorker:
         except Exception as e:
             await self.db.log(user_id, "ERROR", f"[LIVE] ❌ SELL FAILED: {position.symbol} - {str(e)}")
     
-    async def close_futures_position(
-        self, user_id: str, position: Position, exit_price: float,
-        account: PaperAccount, settings: UserSettings, reason: str
-    ):
-        """Close a FUTURES position"""
-        try:
-            keys = await self.db.get_mexc_keys(user_id)
-            if not keys:
-                raise Exception("MEXC API keys nicht konfiguriert")
-            
-            futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-            
-            # Convert symbol format if needed
-            futures_symbol = futures_client.convert_spot_symbol_to_futures(position.symbol)
-            is_long = position.side == "LONG"
-            
-            await self.db.log(user_id, "WARNING", 
-                f"[FUTURES] ⚡ CLOSING {position.side}: {futures_symbol} | Qty: {position.qty}")
-            
-            # Close the position
-            if is_long:
-                result = await futures_client.close_long(futures_symbol, position.qty)
-            else:
-                result = await futures_client.close_short(futures_symbol, position.qty)
-            
-            # Calculate PnL
-            if is_long:
-                pnl = (exit_price - position.entry_price) * position.qty
-                pnl_pct = ((exit_price - position.entry_price) / position.entry_price) * 100
-            else:
-                pnl = (position.entry_price - exit_price) * position.qty
-                pnl_pct = ((position.entry_price - exit_price) / position.entry_price) * 100
-            
-            # Factor in leverage for ROE
-            leverage = getattr(position, 'leverage', 1) or 1
-            roe = pnl_pct * leverage
-            
-            # Remove from account
-            account.open_positions.remove(position)
-            
-            # Record trade
-            trade = Trade(
-                user_id=user_id,
-                ts=datetime.now(timezone.utc),
-                symbol=position.symbol,
-                side="SELL" if is_long else "BUY",
-                qty=position.qty,
-                entry=position.entry_price,
-                exit=exit_price,
-                pnl=pnl,
-                pnl_pct=pnl_pct,
-                mode='live',
-                reason=f"[FUTURES {leverage}x {position.side}] {reason}",
-                notional=position.entry_price * position.qty
-            )
-            await self.db.add_trade(trade)
-            
-            emoji = "🟢" if pnl >= 0 else "🔴"
-            await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
-                f"[FUTURES] {emoji} CLOSED: {futures_symbol} {position.side} | Exit: ${exit_price:.4f} | PnL: ${pnl:.2f} | ROE: {roe:.1f}%")
-            
-        except Exception as e:
-            logger.error(f"Futures close error: {e}")
-            await self.db.log(user_id, "ERROR", f"[FUTURES] ❌ CLOSE FAILED: {position.symbol} - {str(e)}")
-    
-    async def open_futures_position(
-        self, user_id: str, symbol: str, candidate: dict,
-        account: PaperAccount, settings: UserSettings,
-        available_budget: float, ai_decision
-    ) -> bool:
-        """Open a FUTURES position on MEXC"""
-        try:
-            keys = await self.db.get_mexc_keys(user_id)
-            if not keys:
-                raise Exception("MEXC API keys nicht konfiguriert")
-            
-            futures_client = MexcFuturesClient(api_key=keys['api_key'], api_secret=keys['api_secret'])
-            
-            # Get decision parameters
-            direction = ai_decision.direction  # "long" or "short"
-            leverage = ai_decision.leverage
-            position_size = ai_decision.position_size_usdt
-            current_price = candidate['current_price']
-            
-            # Convert symbol format
-            futures_symbol = futures_client.convert_spot_symbol_to_futures(symbol)
-            
-            # Apply risk reduction for futures
-            profile = RISK_PROFILES_V2.get(TradingMode(settings.trading_mode), {})
-            risk_reduction = profile.get('futures_risk_reduction', 0.5)
-            actual_position = position_size * risk_reduction
-            
-            # Clamp to available budget
-            actual_position = min(actual_position, available_budget * 0.9)
-            
-            if actual_position < settings.live_min_notional_usdt:
-                await self.db.log(user_id, "INFO", 
-                    f"[FUTURES] ⚠️ Position ${actual_position:.2f} < Min ${settings.live_min_notional_usdt} → Skip")
-                return False
-            
-            # Calculate quantity in contracts
-            quantity = futures_client.calculate_position_size(actual_position, current_price, 1)  # No extra leverage in qty
-            
-            # Set leverage
-            await futures_client.set_leverage(futures_symbol, leverage)
-            
-            await self.db.log(user_id, "WARNING", 
-                f"[FUTURES] ⚡ OPENING {direction.upper()} {leverage}x: {futures_symbol} | Size: ${actual_position:.2f}")
-            
-            # Open position
-            if direction == "long":
-                result = await futures_client.open_long(
-                    symbol=futures_symbol,
-                    quantity=quantity,
-                    leverage=leverage,
-                    stop_loss_price=ai_decision.stop_loss_price,
-                    take_profit_price=ai_decision.take_profit_price
-                )
-            else:
-                result = await futures_client.open_short(
-                    symbol=futures_symbol,
-                    quantity=quantity,
-                    leverage=leverage,
-                    stop_loss_price=ai_decision.stop_loss_price,
-                    take_profit_price=ai_decision.take_profit_price
-                )
-            
-            # Create position record
-            position = Position(
-                symbol=symbol,
-                side=direction.upper(),
-                entry_price=current_price,
-                qty=quantity,
-                stop_loss=ai_decision.stop_loss_price,
-                take_profit=ai_decision.take_profit_price,
-                entry_time=datetime.now(timezone.utc),
-                market_type="futures",
-                leverage=leverage,
-                margin_mode="isolated",
-                liquidation_price=ai_decision.liquidation_price,
-                margin_used=actual_position
-            )
-            
-            # Update account
-            if not account:
-                account = PaperAccount(user_id=user_id, equity=0, cash=0, open_positions=[])
-            
-            account.open_positions.append(position)
-            await self.db.update_live_account(account)
-            
-            # Record trade
-            trade = Trade(
-                user_id=user_id,
-                ts=datetime.now(timezone.utc),
-                symbol=symbol,
-                side="BUY" if direction == "long" else "SELL",
-                qty=quantity,
-                entry=current_price,
-                mode='live',
-                reason=f"[FUTURES {leverage}x {direction.upper()}] Score={candidate['score']:.1f}",
-                notional=actual_position * leverage
-            )
-            await self.db.add_trade(trade)
-            
-            emoji = "📈" if direction == "long" else "📉"
-            await self.db.log(user_id, "WARNING",
-                f"[FUTURES] {emoji} OPENED: {futures_symbol} {direction.upper()} {leverage}x | Margin: ${actual_position:.2f} | Liq: ${ai_decision.liquidation_price:.4f}")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Futures open error: {e}")
-            await self.db.log(user_id, "ERROR", f"[FUTURES] ❌ OPEN FAILED: {symbol} - {str(e)}")
-            return False
-                    
-        except Exception as e:
-            await self.db.log(user_id, "ERROR", f"[LIVE] ❌ SELL FAILED: {position.symbol} - {str(e)}")
-    
-    def is_in_cooldown(self, user_id: str, cooldown_candles: int) -> bool:
-        """Check if user is in cooldown"""
-        cooldown_key = f"{user_id}_live"
-        if cooldown_key not in self.user_last_trade_time:
-            return False
-        
-        last_trade = self.user_last_trade_time[cooldown_key]
-        cooldown_duration = timedelta(minutes=cooldown_candles * 15)
-        
-        return (datetime.now(timezone.utc) - last_trade) < cooldown_duration
-    
     def set_last_trade_time(self, user_id: str):
         """Set last trade time"""
         cooldown_key = f"{user_id}_live"
@@ -2178,133 +1940,3 @@ class MultiUserTradingWorker:
     async def stop(self):
         self.running = False
         logger.info("Multi-user trading worker stopped")
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # GLOBAL BUY COOLDOWN METHODS (PERSISTENT IN MONGODB)
-    # User-configurable via settings.buy_cooldown_seconds
-    # ═══════════════════════════════════════════════════════════════════════════
-    
-    async def get_user_cooldown_seconds(self, user_id: str) -> int:
-        """Get user-specific cooldown from settings, fallback to default"""
-        try:
-            settings = await self.db.get_settings(user_id)
-            return getattr(settings, 'buy_cooldown_seconds', None) or self.DEFAULT_BUY_COOLDOWN_SECONDS
-        except Exception:
-            return self.DEFAULT_BUY_COOLDOWN_SECONDS
-    
-    async def check_buy_cooldown_async(self, user_id: str) -> tuple:
-        """
-        Check if buy cooldown is active (PERSISTENT - reads from MongoDB)
-        
-        Returns:
-            (is_on_cooldown: bool, remaining_seconds: int, last_buy_time: datetime or None)
-        """
-        cooldown_seconds = await self.get_user_cooldown_seconds(user_id)
-        
-        # First check RAM cache
-        if user_id in self.user_last_buy_time:
-            last_buy = self.user_last_buy_time[user_id]
-        else:
-            # Load from MongoDB
-            cooldown_doc = await self.db.db.buy_cooldowns.find_one({"user_id": user_id})
-            if cooldown_doc and cooldown_doc.get("last_buy_time"):
-                last_buy = cooldown_doc["last_buy_time"]
-                # Handle timezone
-                if last_buy.tzinfo is None:
-                    last_buy = last_buy.replace(tzinfo=timezone.utc)
-                # Update RAM cache
-                self.user_last_buy_time[user_id] = last_buy
-            else:
-                return False, 0, None, cooldown_seconds
-        
-        elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
-        remaining = cooldown_seconds - elapsed
-        
-        if remaining > 0:
-            return True, int(remaining), last_buy, cooldown_seconds
-        else:
-            return False, 0, last_buy, cooldown_seconds
-    
-    def check_buy_cooldown(self, user_id: str, cooldown_seconds: int = None) -> tuple:
-        """Sync version - uses RAM cache only (for non-async contexts)"""
-        if cooldown_seconds is None:
-            cooldown_seconds = self.DEFAULT_BUY_COOLDOWN_SECONDS
-            
-        if user_id not in self.user_last_buy_time:
-            return False, 0, None, cooldown_seconds
-        
-        last_buy = self.user_last_buy_time[user_id]
-        elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
-        remaining = cooldown_seconds - elapsed
-        
-        if remaining > 0:
-            return True, int(remaining), last_buy, cooldown_seconds
-        else:
-            return False, 0, last_buy, cooldown_seconds
-    
-    async def set_last_buy_time_async(self, user_id: str):
-        """Record timestamp of last BUY order (PERSISTENT - saves to MongoDB)"""
-        now = datetime.now(timezone.utc)
-        self.user_last_buy_time[user_id] = now
-        cooldown_seconds = await self.get_user_cooldown_seconds(user_id)
-        
-        # Save to MongoDB for persistence
-        await self.db.db.buy_cooldowns.update_one(
-            {"user_id": user_id},
-            {"$set": {"user_id": user_id, "last_buy_time": now}},
-            upsert=True
-        )
-        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {cooldown_seconds}s (saved to DB)")
-    
-    def set_last_buy_time(self, user_id: str):
-        """Sync version - updates RAM only (DB save happens in async context)"""
-        self.user_last_buy_time[user_id] = datetime.now(timezone.utc)
-        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.DEFAULT_BUY_COOLDOWN_SECONDS}s")
-    
-    async def get_buy_cooldown_status_async(self, user_id: str) -> dict:
-        """Get cooldown status for API/UI (PERSISTENT)"""
-        result = await self.check_buy_cooldown_async(user_id)
-        is_active, remaining, last_buy, cooldown_seconds = result
-        
-        if is_active:
-            minutes = remaining // 60
-            seconds = remaining % 60
-            return {
-                "cooldown_active": True,
-                "remaining_seconds": remaining,
-                "remaining_formatted": f"{minutes}m {seconds}s",
-                "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": cooldown_seconds
-            }
-        else:
-            return {
-                "cooldown_active": False,
-                "remaining_seconds": 0,
-                "remaining_formatted": "Ready",
-                "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": cooldown_seconds
-            }
-    
-    def get_buy_cooldown_status(self, user_id: str, cooldown_seconds: int = None) -> dict:
-        """Sync version for backwards compatibility"""
-        is_active, remaining, last_buy, cooldown_secs = self.check_buy_cooldown(user_id, cooldown_seconds)
-        
-        if is_active:
-            minutes = remaining // 60
-            seconds = remaining % 60
-            return {
-                "cooldown_active": True,
-                "remaining_seconds": remaining,
-                "remaining_formatted": f"{minutes}m {seconds}s",
-                "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": cooldown_secs
-            }
-        else:
-            return {
-                "cooldown_active": False,
-                "remaining_seconds": 0,
-                "remaining_formatted": "Ready",
-                "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": cooldown_secs
-            }
-

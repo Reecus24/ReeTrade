@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, RefreshCw, Check, MessageCircle, Link, Unlink, Zap
+  Key, Search, Coins, TrendingUp, RefreshCw, Check, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,12 +24,6 @@ const SettingsTab = () => {
   const [keysConnected, setKeysConnected] = useState(false);
   const [spotConnected, setSpotConnected] = useState(false);
   const [showKeysInput, setShowKeysInput] = useState(false);
-  const [telegramStatus, setTelegramStatus] = useState({ configured: false, bot_active: false });
-  
-  // Telegram Linking State
-  const [telegramLinked, setTelegramLinked] = useState(false);
-  const [telegramLinkCode, setTelegramLinkCode] = useState('');  // User input code from Telegram
-  const [linkingTelegram, setLinkingTelegram] = useState(false);
   
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
@@ -42,15 +36,12 @@ const SettingsTab = () => {
   const [settings, setSettings] = useState({
     min_notional_usdt: 10,
     max_notional_usdt: 50,
-    max_positions: 5,
-    buy_cooldown_seconds: 1200
+    max_positions: 5
   });
 
   useEffect(() => {
     fetchKeysStatus();
     fetchSettings();
-    fetchTelegramStatus();
-    fetchTelegramLinkStatus();
   }, []);
 
   useEffect(() => {
@@ -63,12 +54,10 @@ const SettingsTab = () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/settings`, getAuthHeaders());
       const data = response.data;
-      // Map backend field names to frontend field names
       setSettings({
         min_notional_usdt: data.live_min_notional_usdt || data.min_notional_usdt || 10,
         max_notional_usdt: data.live_max_order_usdt || data.max_notional_usdt || 50,
-        max_positions: data.max_positions || 5,
-        buy_cooldown_seconds: data.buy_cooldown_seconds || 1200
+        max_positions: data.max_positions || 5
       });
       setSelectedSpotCoins(data.selected_spot_coins || []);
       setSpotSelectAll(data.spot_trade_all !== false);
@@ -83,63 +72,8 @@ const SettingsTab = () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/keys/mexc/status`, getAuthHeaders());
       setKeysConnected(response.data.connected);
-      setSpotConnected(response.data.spot_connected || response.data.connected);
+      setSpotConnected(response.data.connected);
     } catch (error) {}
-  };
-
-  const fetchTelegramStatus = async () => {
-    try {
-      const response = await axios.get(`${BACKEND_URL}/api/telegram/status`, getAuthHeaders());
-      setTelegramStatus(response.data);
-    } catch (error) {}
-  };
-
-  const fetchTelegramLinkStatus = async () => {
-    try {
-      const response = await axios.get(`${BACKEND_URL}/api/telegram/link-status`, getAuthHeaders());
-      setTelegramLinked(response.data.linked);
-    } catch (error) {}
-  };
-
-  const linkTelegramWithCode = async () => {
-    if (!telegramLinkCode.trim()) {
-      toast.error('Bitte Code eingeben');
-      return;
-    }
-    
-    setLinkingTelegram(true);
-    try {
-      await axios.post(`${BACKEND_URL}/api/telegram/link-with-code`, {
-        code: telegramLinkCode.trim()
-      }, getAuthHeaders());
-      setTelegramLinked(true);
-      setTelegramLinkCode('');
-      toast.success('TELEGRAM VERKNÜPFT!');
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'FEHLER BEIM VERKNÜPFEN');
-    } finally {
-      setLinkingTelegram(false);
-    }
-  };
-
-  const unlinkTelegram = async () => {
-    try {
-      await axios.post(`${BACKEND_URL}/api/telegram/unlink`, {}, getAuthHeaders());
-      setTelegramLinked(false);
-      setTelegramLinkCode(null);
-      toast.success('TELEGRAM GETRENNT');
-    } catch (error) {
-      toast.error('FEHLER');
-    }
-  };
-
-  const testTelegram = async () => {
-    try {
-      await axios.post(`${BACKEND_URL}/api/telegram/test`, {}, getAuthHeaders());
-      toast.success('TEST GESENDET');
-    } catch (error) {
-      toast.error('TEST FEHLGESCHLAGEN');
-    }
   };
 
   const fetchAvailableCoins = async () => {
@@ -181,8 +115,7 @@ const SettingsTab = () => {
         spot_trade_all: spotSelectAll,
         min_notional_usdt: settings.min_notional_usdt,
         max_notional_usdt: settings.max_notional_usdt,
-        max_positions: settings.max_positions,
-        buy_cooldown_seconds: settings.buy_cooldown_seconds
+        max_positions: settings.max_positions
       }, getAuthHeaders());
       toast.success('EINSTELLUNGEN GESPEICHERT');
     } catch (error) {
@@ -278,93 +211,6 @@ const SettingsTab = () => {
         )}
       </div>
 
-      {/* Telegram Integration */}
-      <div className="cyber-panel p-6 box-glow-purple">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
-              <MessageCircle className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">Telegram</h3>
-              <p className="text-xs text-zinc-500 font-mono-cyber">NOTIFICATIONS</p>
-            </div>
-          </div>
-          <Badge className={`cyber-badge ${telegramLinked ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/50'}`}>
-            {telegramLinked ? 'LINKED' : 'OFFLINE'}
-          </Badge>
-        </div>
-        
-        {telegramLinked ? (
-          <div className="space-y-4">
-            <div className="p-4 bg-green-500/5 border border-green-500/30">
-              <p className="text-sm text-green-400 flex items-center gap-2 font-mono-cyber">
-                <Check className="w-4 h-4" />
-                TELEGRAM ACCOUNT LINKED
-              </p>
-            </div>
-            
-            <div className="text-xs text-zinc-500 font-mono-cyber space-y-1">
-              <p>COMMANDS: /status, /profit, /balance, /trades, /ki</p>
-              <p>NOTIFICATIONS: Trade Open/Close, SL/TP, AI Decisions</p>
-            </div>
-            
-            <div className="flex gap-3">
-              <Button 
-                onClick={testTelegram}
-                className="flex-1 cyber-btn"
-                data-testid="test-telegram-btn"
-              >
-                TEST MESSAGE
-              </Button>
-              <Button 
-                onClick={unlinkTelegram}
-                className="cyber-btn bg-red-500/10 border-red-500 text-red-400 hover:bg-red-500/20"
-                data-testid="unlink-telegram-btn"
-              >
-                <Unlink className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        ) : telegramStatus.bot_active ? (
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-400 font-mono-cyber">
-              1. Öffne <strong className="text-purple-400">@ReeTrade_Bot</strong> in Telegram
-            </p>
-            <p className="text-sm text-zinc-400 font-mono-cyber">
-              2. Sende <code className="text-cyan-400">/link</code> um einen Code zu erhalten
-            </p>
-            <p className="text-sm text-zinc-400 font-mono-cyber">
-              3. Gib den Code hier ein:
-            </p>
-            
-            <div className="flex gap-2">
-              <Input
-                value={telegramLinkCode}
-                onChange={(e) => setTelegramLinkCode(e.target.value.toUpperCase())}
-                placeholder="CODE EINGEBEN"
-                className="flex-1 bg-black/50 border-purple-500/30 text-purple-300 font-mono text-lg tracking-widest text-center"
-                maxLength={6}
-                data-testid="telegram-code-input"
-              />
-              <Button 
-                onClick={linkTelegramWithCode}
-                disabled={linkingTelegram || !telegramLinkCode.trim()}
-                className="cyber-btn bg-purple-500/20 border-purple-500 text-purple-400 hover:bg-purple-500/30"
-                data-testid="link-telegram-btn"
-              >
-                <Link className="w-4 h-4 mr-2" />
-                {linkingTelegram ? 'LINKING...' : 'VERBINDEN'}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-xs text-zinc-600 font-mono-cyber">
-            TELEGRAM NOT CONFIGURED ON SERVER
-          </p>
-        )}
-      </div>
-
       {/* Trading Settings */}
       <div className="cyber-panel p-6">
         <div className="flex items-center gap-3 mb-6">
@@ -377,7 +223,7 @@ const SettingsTab = () => {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MIN ORDER (USDT)</label>
             <Input
@@ -399,9 +245,7 @@ const SettingsTab = () => {
               data-testid="max-order-input"
             />
           </div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4 mb-6">
+          
           <div>
             <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MAX POSITIONS</label>
             <Input
@@ -412,26 +256,12 @@ const SettingsTab = () => {
               data-testid="max-positions-input"
             />
           </div>
-          
-          <div>
-            <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">BUY COOLDOWN (Sekunden)</label>
-            <Input
-              type="number"
-              value={settings.buy_cooldown_seconds || 1200}
-              onChange={(e) => setSettings(prev => ({ ...prev, buy_cooldown_seconds: parseInt(e.target.value) || 1200 }))}
-              className="cyber-input"
-              data-testid="buy-cooldown-input"
-            />
-            <p className="text-[10px] text-zinc-600 mt-1 font-mono-cyber">
-              {Math.floor((settings.buy_cooldown_seconds || 1200) / 60)} Minuten zwischen Käufen
-            </p>
-          </div>
         </div>
         
         <div className="p-4 bg-cyan-500/5 border border-cyan-500/20">
           <p className="text-xs text-cyan-400 font-mono-cyber">
             <Zap className="w-3 h-3 inline mr-1" />
-            RL-KI berechnet Position Size automatisch zwischen MIN und MAX | Keine doppelten Coins | Cooldown nach jedem Kauf
+            RL-KI berechnet Position Size automatisch zwischen MIN und MAX | Keine doppelten Coins
           </p>
         </div>
       </div>

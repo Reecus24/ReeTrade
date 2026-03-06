@@ -29,39 +29,22 @@ class User(BaseModel):
 class UserSettings(BaseModel):
     user_id: str
     
-    # ========== TRADING MODE ==========
-    # Simplified: Only RL-AI or Manual
-    trading_mode: Literal["manual", "rl_ai", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"] = "rl_ai"
-    
-    # ========== MARKET TYPE (SPOT vs FUTURES) ==========
-    market_type: Literal["spot", "futures", "auto"] = "spot"  # auto = AI decides
-    
-    # ========== FUTURES SETTINGS ==========
-    futures_enabled: bool = False
-    futures_default_leverage: int = 5  # Default leverage (2-20)
-    futures_max_leverage: int = 10  # Maximum allowed leverage
-    futures_risk_per_trade: float = 0.02  # 2% risk per trade for futures
-    futures_margin_mode: Literal["isolated", "cross"] = "isolated"
-    futures_allow_shorts: bool = True  # Allow short positions
+    # ========== TRADING MODE (SIMPLIFIED: Only RL-AI) ==========
+    trading_mode: Literal["manual", "rl_ai"] = "rl_ai"
     
     # AI Override Tracking (for UI display)
-    ai_last_override: Optional[dict] = None  # Last AI decision details
+    ai_last_override: Optional[dict] = None
     ai_confidence: Optional[float] = None
     ai_risk_score: Optional[float] = None
     ai_reasoning: Optional[List[str]] = None
-    ai_min_position: Optional[float] = None  # Min position size (NEW)
-    ai_max_position: Optional[float] = None  # Max position size (NEW)
-    ai_current_position: Optional[float] = None  # Current calculated position (NEW)
+    ai_min_position: Optional[float] = None
+    ai_max_position: Optional[float] = None
+    ai_current_position: Optional[float] = None
     
-    # SEPARATE RUNNING STATES
-    paper_running: bool = False
+    # LIVE MODE ONLY
     live_running: bool = False
     live_requested: bool = False
     live_confirmed: bool = False
-    
-    # Legacy field for backwards compatibility
-    mode: Literal["paper", "live"] = "paper"
-    bot_running: bool = False
     
     # ========== SHARED STRATEGY PARAMETERS ==========
     ema_fast: int = 50
@@ -77,15 +60,7 @@ class UserSettings(BaseModel):
     take_profit_rr: float = 2.0  # Risk:Reward
     atr_stop: bool = False
     atr_mult: float = 1.5
-    cooldown_candles: int = 3
     min_notional_usdt: float = 10.0
-    
-    # ========== PAPER MODE SETTINGS ==========
-    paper_start_balance_usdt: float = 500.0
-    paper_daily_cap_usdt: float = 200.0  # Daily trading limit
-    paper_max_order_usdt: float = 50.0  # Max order size
-    paper_fee_bps: int = 10  # 0.1%
-    paper_slippage_bps: int = 5  # 0.05%
     
     # ========== LIVE MODE SETTINGS ==========
     reserve_usdt: float = 0.0  # Safety reserve
@@ -93,7 +68,6 @@ class UserSettings(BaseModel):
     live_daily_cap_usdt: float = 200.0  # Daily trading limit
     live_max_order_usdt: float = 50.0  # Max order size
     live_min_notional_usdt: float = 10.0  # Min order size for live
-    buy_cooldown_seconds: int = 1200  # Cooldown between buys (user-configurable)
     
     # Legacy (for backwards compat)
     fee_bps: int = 10
@@ -104,25 +78,11 @@ class UserSettings(BaseModel):
     top_pairs: List[str] = Field(default_factory=list)
     all_pairs: List[str] = Field(default_factory=list)  # All coins for batch rotation
     last_pairs_refresh: Optional[datetime] = None
-    paper_heartbeat: Optional[datetime] = None
     live_heartbeat: Optional[datetime] = None
     
     # ========== COIN SELECTION ==========
     selected_spot_coins: List[str] = Field(default_factory=list)  # User selected SPOT coins
-    selected_futures_coins: List[str] = Field(default_factory=list)  # User selected FUTURES coins
     spot_trade_all: bool = True  # Trade all available SPOT coins
-    futures_trade_all: bool = True  # Trade all available FUTURES coins
-    
-    # ========== BOT STATUS TRACKING (Paper) ==========
-    paper_last_scan: Optional[str] = None
-    paper_last_decision: Optional[str] = None
-    paper_last_regime: Optional[str] = None
-    paper_last_symbol: Optional[str] = None
-    paper_budget_used: Optional[float] = None
-    paper_budget_available: Optional[float] = None
-    paper_daily_used: Optional[float] = None
-    paper_daily_remaining: Optional[float] = None
-    paper_positions_count: Optional[int] = None
     
     # ========== BOT STATUS TRACKING (Live) ==========
     live_last_scan: Optional[str] = None
@@ -137,18 +97,7 @@ class UserSettings(BaseModel):
 
 class SettingsUpdate(BaseModel):
     # Trading Mode
-    trading_mode: Optional[Literal["manual", "ai_conservative", "ai_moderate", "ai_aggressive", "ki_explorer"]] = None
-    
-    # Market Type (SPOT vs FUTURES)
-    market_type: Optional[Literal["spot", "futures", "auto"]] = None
-    
-    # Futures Settings
-    futures_enabled: Optional[bool] = None
-    futures_default_leverage: Optional[int] = None
-    futures_max_leverage: Optional[int] = None
-    futures_risk_per_trade: Optional[float] = None
-    futures_margin_mode: Optional[Literal["isolated", "cross"]] = None
-    futures_allow_shorts: Optional[bool] = None
+    trading_mode: Optional[Literal["manual", "rl_ai"]] = None
     
     # Strategy (shared)
     ema_fast: Optional[int] = None
@@ -164,15 +113,7 @@ class SettingsUpdate(BaseModel):
     take_profit_rr: Optional[float] = None
     atr_stop: Optional[bool] = None
     atr_mult: Optional[float] = None
-    cooldown_candles: Optional[int] = None
     min_notional_usdt: Optional[float] = None
-    
-    # Paper Settings
-    paper_start_balance_usdt: Optional[float] = None
-    paper_daily_cap_usdt: Optional[float] = None
-    paper_max_order_usdt: Optional[float] = None
-    paper_fee_bps: Optional[int] = None
-    paper_slippage_bps: Optional[int] = None
     
     # Live Settings
     reserve_usdt: Optional[float] = None
@@ -180,14 +121,11 @@ class SettingsUpdate(BaseModel):
     live_daily_cap_usdt: Optional[float] = None
     live_max_order_usdt: Optional[float] = None
     live_min_notional_usdt: Optional[float] = None
-    buy_cooldown_seconds: Optional[int] = None  # User-configurable cooldown
     max_notional_usdt: Optional[float] = None  # Alias for max order
     
     # Coin Selection
     selected_spot_coins: Optional[List[str]] = None
-    selected_futures_coins: Optional[List[str]] = None
     spot_trade_all: Optional[bool] = None
-    futures_trade_all: Optional[bool] = None
     
     # Legacy
     fee_bps: Optional[int] = None
@@ -224,24 +162,13 @@ class Position(BaseModel):
     take_profit: float
     entry_time: datetime
     
-    # Market Type
-    market_type: Literal["spot", "futures"] = "spot"
-    
-    # Futures-specific fields
-    leverage: Optional[int] = None  # Only for futures
-    margin_mode: Optional[Literal["isolated", "cross"]] = None
-    liquidation_price: Optional[float] = None
-    margin_used: Optional[float] = None  # USDT margin locked
-    unrealized_pnl: Optional[float] = None
-    roe_pct: Optional[float] = None  # Return on Equity %
-    
     # Partial Profit Tracking
     original_qty: Optional[float] = None  # Original quantity before partial sell
     partial_profit_taken: bool = False  # Has partial profit been taken?
     partial_profit_time: Optional[datetime] = None  # When partial was taken
     sl_moved_to_entry: bool = False  # Has SL been moved to break-even?
     
-    # ============ PHASE 2/3: ORDERBOOK & MFE/MAE TRACKING ============
+    # ============ ORDERBOOK & MFE/MAE TRACKING ============
     # Orderbook at entry
     spread_at_entry: Optional[float] = None
     orderbook_imbalance_at_entry: Optional[float] = None
@@ -254,11 +181,14 @@ class Position(BaseModel):
     epsilon_at_entry: Optional[float] = None
     q_value_at_entry: Optional[float] = None
 
-class PaperAccount(BaseModel):
+class LiveAccount(BaseModel):
     user_id: str
-    equity: float = 10000.0  # Start with $10k
-    cash: float = 10000.0
+    equity: float = 0.0
+    cash: float = 0.0
     open_positions: List[Position] = Field(default_factory=list)
+
+# Alias for backwards compatibility
+PaperAccount = LiveAccount
 
 class Trade(BaseModel):
     user_id: str
@@ -272,17 +202,16 @@ class Trade(BaseModel):
     pnl_pct: Optional[float] = None  # NET PnL percentage
     fees_paid: Optional[float] = None  # Total fees (entry + exit)
     slippage_cost: Optional[float] = None  # Slippage cost
-    mode: Literal["paper", "live"] = "paper"
+    mode: Literal["live"] = "live"  # Only live mode
     reason: Optional[str] = None  # Exit reason: ai_exit, time_limit, emergency_sl, manual
     notional: Optional[float] = None  # Position notional value
     
-    # Extended fields for Phase 1
+    # Extended fields
     duration_seconds: Optional[float] = None  # Hold duration
     gross_pnl: Optional[float] = None  # PnL before costs
     gross_pnl_pct: Optional[float] = None  # Gross PnL percentage
     
-    # ============ PHASE 2: ORDERBOOK & MARKET CONTEXT ============
-    # Market context at entry
+    # ============ ORDERBOOK & MARKET CONTEXT ============
     spread_at_entry: Optional[float] = None  # Bid-Ask Spread %
     orderbook_imbalance: Optional[float] = None  # bid_vol / ask_vol
     bid_volume_sum: Optional[float] = None  # Sum of top 5 bids
@@ -295,7 +224,7 @@ class Trade(BaseModel):
     return_60s_at_entry: Optional[float] = None
     return_180s_at_entry: Optional[float] = None
     
-    # ============ PHASE 3: MFE/MAE TRACKING ============
+    # ============ MFE/MAE TRACKING ============
     max_price_during_trade: Optional[float] = None
     min_price_during_trade: Optional[float] = None
     mfe: Optional[float] = None  # Max Favorable Excursion %
@@ -318,7 +247,7 @@ class DailyMetrics(BaseModel):
 
 class StatusResponse(BaseModel):
     settings: UserSettings
-    paper_account: Optional[PaperAccount] = None
+    live_account: Optional[LiveAccount] = None
     heartbeat: Optional[datetime] = None
     is_alive: bool = True
     mexc_keys_connected: bool = False

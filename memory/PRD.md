@@ -114,6 +114,34 @@ Der Scanner scannte keine Coins mehr, weil er nur Top-20 Coins nach globalem Vol
 #### Test-Ergebnis
 Mit den neuen Filtern: **13-20 tradable Coins** (vorher: 0-5)
 
+### P0 Fix: Große Bereinigung - Telegram, Futures & Cooldown entfernt ✅ (März 2026)
+
+#### Entfernte Features
+1. **Telegram Integration komplett entfernt:**
+   - `telegram_bot.py` gelöscht
+   - `distributed_lock.py` gelöscht  
+   - Alle Telegram-Endpoints entfernt
+   - Frontend: Telegram-Linking UI entfernt
+
+2. **Futures/Leverage komplett entfernt:**
+   - `mexc_futures_client.py` gelöscht
+   - `FuturesTab.js` gelöscht
+   - Alle Futures-Endpoints entfernt
+   - Nur noch SPOT Trading!
+
+3. **Buy Cooldown entfernt:**
+   - Keine Wartezeit mehr zwischen Trades
+   - Bot kann sofort wieder traden
+   - Cooldown-Endpoint entfernt
+   - Cooldown-UI im Dashboard entfernt
+
+#### Bereinigte Dateien
+- `backend/server.py`: ~500 Zeilen entfernt
+- `backend/worker.py`: ~200 Zeilen entfernt  
+- `backend/models.py`: Futures- und Paper-Mode Felder entfernt
+- `frontend/src/components/SettingsTab.js`: Telegram & Cooldown UI entfernt
+- `frontend/src/pages/DashboardPage.js`: Cooldown-Anzeige entfernt
+
 ## Aktiver Backlog
 
 ### P1.5 - Safety (Future)
@@ -121,18 +149,15 @@ Mit den neuen Filtern: **13-20 tradable Coins** (vorher: 0-5)
 - [ ] Handle non-decimal step sizes
 
 ### P2 - Nice-to-have
-- [ ] Paper Trading Modus
 - [ ] Backend Code Cleanup
 - [ ] Volatility/Regime Awareness als Feature
-- [ ] Webhook statt Polling (alternative to Lock)
 
 ## Key Files
-- `backend/worker.py` - Trading Loop + Universe Rotation
+- `backend/worker.py` - Trading Loop + Universe Rotation (SPOT only)
 - `backend/rl_trading_ai.py` - RL AI + PER
-- `backend/mexc_client.py` - MEXC API + Orderbook + Universe Scanner
+- `backend/mexc_client.py` - MEXC SPOT API + Orderbook + Universe Scanner
 - `backend/order_sizer.py` - Order validation
-- `backend/distributed_lock.py` - Leader Election
-- `backend/server.py` - API + Telegram Polling
+- `backend/server.py` - API Endpoints (ohne Telegram/Futures/Cooldown)
 
 ## PER Algorithm Details
 

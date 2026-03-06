@@ -33,20 +33,17 @@ const getAuthHeaders = () => {
 const RLStatusPanel = () => {
   const [rlStatus, setRlStatus] = useState(null);
   const [tradingStats, setTradingStats] = useState(null);
-  const [buyCooldown, setBuyCooldown] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statsHours, setStatsHours] = useState(24);
 
   const fetchStatus = async () => {
     try {
-      const [statusRes, statsRes, cooldownRes] = await Promise.all([
+      const [statusRes, statsRes] = await Promise.all([
         axios.get(`${BACKEND_URL}/api/rl/status`, getAuthHeaders()),
-        axios.get(`${BACKEND_URL}/api/rl/trading-stats?hours=${statsHours}`, getAuthHeaders()),
-        axios.get(`${BACKEND_URL}/api/rl/buy-cooldown`, getAuthHeaders())
+        axios.get(`${BACKEND_URL}/api/rl/trading-stats?hours=${statsHours}`, getAuthHeaders())
       ]);
       setRlStatus(statusRes.data);
       setTradingStats(statsRes.data);
-      setBuyCooldown(cooldownRes.data);
     } catch (error) {
       console.error('RL Status error:', error);
     } finally {
@@ -160,37 +157,6 @@ const RLStatusPanel = () => {
           </div>
         )}
       </div>
-
-      {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* BUY COOLDOWN STATUS */}
-      {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {buyCooldown && (
-        <div className={`mb-4 p-3 border ${buyCooldown.cooldown_active 
-          ? 'border-orange-500/50 bg-orange-500/10' 
-          : 'border-green-500/30 bg-green-500/5'}`}
-          data-testid="buy-cooldown"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className={`w-4 h-4 ${buyCooldown.cooldown_active ? 'text-orange-400' : 'text-green-400'}`} />
-              <span className="text-xs font-mono-cyber text-zinc-400">BUY COOLDOWN</span>
-            </div>
-            <span className={`text-sm font-cyber ${buyCooldown.cooldown_active ? 'text-orange-400' : 'text-green-400'}`}>
-              {buyCooldown.cooldown_active ? buyCooldown.remaining_formatted : '✓ READY'}
-            </span>
-          </div>
-          {buyCooldown.cooldown_active && (
-            <div className="mt-2">
-              <div className="h-1 bg-black/50 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-orange-500 transition-all duration-1000"
-                  style={{ width: `${(1 - buyCooldown.remaining_seconds / buyCooldown.cooldown_seconds) * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
       {/* EXPLOITATION READINESS - NEU */}
