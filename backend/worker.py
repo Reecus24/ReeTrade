@@ -40,6 +40,15 @@ class MultiUserTradingWorker:
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
         
+        # ============ ANTI-OVERTRADING SETTINGS ============
+        # Minimum Move Filter: Verhindert Trades mit zu kleinen erwarteten Bewegungen
+        self.TRADING_COST_PCT = 0.205  # ~0.1% Maker/Taker fees + ~0.1% Slippage
+        self.MIN_MOVE_MULTIPLIER = 1.5  # Mindestens 1.5x Trading-Kosten
+        self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.31%
+        
+        # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
+        self.TRADE_COOLDOWN_SECONDS = 90  # 90 Sekunden = 1.5 Minuten zwischen Trades
+        
         # Dedupe für Log-Benachrichtigungen
         self._sent_notifications: Dict[str, float] = {}  # {key: timestamp}
         self._notification_cooldown = 60  # Sekunden bis gleiche Nachricht erneut gesendet wird
@@ -50,6 +59,58 @@ class MultiUserTradingWorker:
         
         # Reinforcement Learning KI (echtes Lernen!)
         self.rl_ai = get_rl_trading_ai(db)
+    
+    def is_in_trade_cooldown(self, user_id: str) -> tuple[bool, float]:
+        """
+        Prüft ob der User noch im Trade-Cooldown ist.
+        
+        Returns:
+            Tuple[is_in_cooldown, seconds_remaining]
+        """
+        cooldown_key = f"{user_id}_live"
+        last_trade = self.user_last_trade_time.get(cooldown_key)
+        
+        if not last_trade:
+            return False, 0
+        
+        elapsed = (datetime.now(timezone.utc) - last_trade).total_seconds()
+        remaining = self.TRADE_COOLDOWN_SECONDS - elapsed
+        
+        if remaining > 0:
+            return True, remaining
+        return False, 0
+    
+    def calculate_expected_move(self, klines: list, lookback: int = 20) -> float:
+        """
+        Berechnet die erwartete Preisbewegung basierend auf historischer Volatilität.
+        
+        Args:
+            klines: OHLCV Kerzen
+            lookback: Anzahl Kerzen für Durchschnittsberechnung
+        
+        Returns:
+            Erwartete Bewegung in Prozent
+        """
+        if not klines or len(klines) < lookback:
+            return 0.0
+        
+        try:
+            moves = []
+            for i in range(-lookback, 0):
+                high = float(klines[i][2])
+                low = float(klines[i][3])
+                close = float(klines[i][4])
+                
+                if close > 0:
+                    # Range als % der Schlusskurses
+                    move_pct = ((high - low) / close) * 100
+                    moves.append(move_pct)
+            
+            if moves:
+                return sum(moves) / len(moves)
+            return 0.0
+        except Exception:
+            return 0.0
     
     async def notify_telegram(self, notification_type: str, data: Dict, user_id: str = None):
         """Sende Telegram-Benachrichtigung (mit Dedupe) an User-spezifische Chat ID"""
@@ -1082,11 +1143,17 @@ class MultiUserTradingWorker:
             })
             return
         
-        # Cooldown DEAKTIVIERT - Bot kann sofort wieder traden
-        # if self.is_in_cooldown(user_id, settings.cooldown_candles):
-        #     cooldown_mins = settings.cooldown_candles * 15
-        #     await self.db.log(user_id, "INFO", f"[LIVE] ⏸️ SKIPPED: Cooldown active ({cooldown_mins} Min)")
-        #     return
+        # ============ TRADE COOLDOWN CHECK ============
+        # Verhindert Overtrading während der Exploration-Phase
+        in_cooldown, cooldown_remaining = self.is_in_trade_cooldown(user_id)
+        if in_cooldown:
+            await self.db.log(user_id, "INFO", 
+                f"[LIVE] ⏸️ TRADE COOLDOWN: Noch {cooldown_remaining:.0f}s bis zum nächsten Trade erlaubt")
+            await self.db.update_settings(user_id, {
+                'live_last_decision': f'COOLDOWN: {cooldown_remaining:.0f}s verbleibend',
+                'live_last_symbol': '-'
+            })
+            return
         
         # Scan for signals - scan all available pairs (up to 20)
         signal_candidates = []
@@ -1202,6 +1269,19 @@ class MultiUserTradingWorker:
                 klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
                 if len(klines_15m) < 50:
                     continue
+                
+                # ============ MINIMUM MOVE FILTER ============
+                # Verhindert Trades mit zu kleinen erwarteten Bewegungen (Noise Trading)
+                expected_move = self.calculate_expected_move(klines_15m, lookback=20)
+                
+                if expected_move < self.MIN_EXPECTED_MOVE_PCT:
+                    await self.db.log(user_id, "INFO", 
+                        f"[ANTI-NOISE] ⚠️ {symbol}: Erwartete Bewegung {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% - SKIP")
+                    continue
+                
+                await self.db.log(user_id, "INFO", 
+                    f"[MOVE-CHECK] ✅ {symbol}: Erwartete Bewegung {expected_move:.3f}% > Min {self.MIN_EXPECTED_MOVE_PCT:.3f}%")
+                # ============ END MINIMUM MOVE FILTER ============
                 
                 # Get current price from 15m data
                 current_price = float(klines_15m[-1][4])
