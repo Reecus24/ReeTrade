@@ -27,7 +27,7 @@ const getAuthHeaders = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CYBERPUNK RL STATUS PANEL
+// CYBERPUNK RL TRADING STATS PANEL - KOMPLETT ÜBERARBEITET
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const RLStatusPanel = () => {
@@ -56,7 +56,7 @@ const RLStatusPanel = () => {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000); // Faster refresh for cooldown
+    const interval = setInterval(fetchStatus, 10000); // Auto-refresh alle 10 Sekunden
     return () => clearInterval(interval);
   }, [statsHours]);
 
@@ -70,67 +70,88 @@ const RLStatusPanel = () => {
 
   const explorationPct = rlStatus?.exploration_pct || 100;
   const learningPct = 100 - explorationPct;
-  const winRate = (rlStatus?.win_rate || 0) * 100;
   const totalTrades = rlStatus?.total_trades || 0;
 
-  // Trading Stats
+  // Extrahiere Stats aus der neuen Struktur
   const stats = tradingStats || {};
-  const sellSources = stats.sell_sources_pct || {};
+  const holdStats = stats.hold_stats || {};
+  const pnlStats = stats.pnl_stats || {};
+  const feeStats = stats.fee_stats || {};
+  const sellSources = stats.sell_sources || {};
+  const tradeCounts = stats.trade_counts || {};
+  const performance = stats.performance || {};
+  const rlMetrics = stats.rl_metrics || {};
+  const health = stats.health || {};
+
+  // Health Status Farben
+  const healthColors = {
+    healthy: { bg: 'bg-green-500/20', border: 'border-green-500/50', text: 'text-green-400', glow: 'shadow-[0_0_10px_rgba(34,197,94,0.3)]' },
+    warning: { bg: 'bg-yellow-500/20', border: 'border-yellow-500/50', text: 'text-yellow-400', glow: 'shadow-[0_0_10px_rgba(234,179,8,0.3)]' },
+    critical: { bg: 'bg-red-500/20', border: 'border-red-500/50', text: 'text-red-400', glow: 'shadow-[0_0_10px_rgba(239,68,68,0.3)]' }
+  };
+  const healthStyle = healthColors[health.status] || healthColors.warning;
 
   return (
     <div className="cyber-panel p-6 box-glow-purple" data-testid="rl-status-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* HEADER MIT ZEITRAUM-AUSWAHL */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
             <Brain className="w-5 h-5 text-purple-400" />
           </div>
           <div>
             <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">
-              Neural Network
+              RL Trading Stats
             </h3>
             <p className="text-xs text-zinc-500 font-mono-cyber">REINFORCEMENT LEARNING AI</p>
           </div>
         </div>
-        <Badge className={`cyber-badge ${rlStatus?.is_learning ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-green-500/20 text-green-400 border border-green-500/50'}`}>
-          {rlStatus?.is_learning ? 'LEARNING' : 'TRAINED'}
-        </Badge>
-      </div>
-
-      {/* Learning Progress */}
-      <div className="mb-6">
-        <div className="flex justify-between text-xs mb-2">
-          <span className="text-zinc-500 font-mono-cyber">NEURAL TRAINING</span>
-          <span className="text-cyan-400 font-mono-cyber">{learningPct.toFixed(0)}%</span>
-        </div>
-        <div className="cyber-progress">
-          <div 
-            className="cyber-progress-bar"
-            style={{ width: `${learningPct}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-xs mt-2 text-zinc-600">
-          <span>EXPLORATION: {explorationPct.toFixed(0)}%</span>
-          <span>EXPLOITATION: {learningPct.toFixed(0)}%</span>
+        
+        {/* Zeitraum Toggle */}
+        <div className="flex gap-1 bg-black/50 border border-cyan-500/30 p-1">
+          {[1, 6, 24].map(h => (
+            <button
+              key={h}
+              onClick={() => setStatsHours(h)}
+              data-testid={`stats-period-${h}h`}
+              className={`px-3 py-1 text-xs font-mono-cyber transition-all ${
+                statsHours === h 
+                  ? 'bg-cyan-500/30 text-cyan-400 border border-cyan-500/50' 
+                  : 'text-zinc-500 hover:text-cyan-400 hover:bg-cyan-500/10'
+              }`}
+            >
+              {h}h
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Basic Stats Grid */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-          <p className="text-2xl font-cyber text-white">{totalTrades}</p>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">TRADES</p>
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* HEALTH STATUS AMPEL */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className={`mb-4 p-3 border ${healthStyle.border} ${healthStyle.bg} ${healthStyle.glow}`} data-testid="health-status">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${health.status === 'healthy' ? 'bg-green-500' : health.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'} animate-pulse`} />
+            <span className={`text-sm font-cyber uppercase tracking-wider ${healthStyle.text}`}>
+              {health.status === 'healthy' ? 'HEALTHY' : health.status === 'warning' ? 'WARNING' : 'CRITICAL'}
+            </span>
+          </div>
+          <span className="text-xs text-zinc-500 font-mono-cyber">{tradeCounts.total || 0} TRADES</span>
         </div>
-        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-          <p className={`text-2xl font-cyber ${winRate >= 50 ? 'text-green-400 glow-green' : 'text-red-400'}`}>
-            {winRate.toFixed(1)}%
-          </p>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">WIN RATE</p>
-        </div>
-        <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
-          <p className="text-2xl font-cyber text-purple-400">{rlStatus?.memory_size || 0}</p>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">MEMORY</p>
-        </div>
+        
+        {/* Status Reasons */}
+        {health.reasons && health.reasons.length > 0 && (
+          <div className="space-y-1">
+            {health.reasons.slice(0, 3).map((reason, idx) => (
+              <p key={idx} className="text-xs text-zinc-400 font-mono-cyber pl-5">
+                • {reason}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
@@ -140,6 +161,7 @@ const RLStatusPanel = () => {
         <div className={`mb-4 p-3 border ${buyCooldown.cooldown_active 
           ? 'border-orange-500/50 bg-orange-500/10' 
           : 'border-green-500/30 bg-green-500/5'}`}
+          data-testid="buy-cooldown"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -163,91 +185,271 @@ const RLStatusPanel = () => {
         </div>
       )}
 
+      {/* Learning Progress (kompakt) */}
+      <div className="mb-4 p-3 bg-black/30 border border-purple-500/20">
+        <div className="flex justify-between text-xs mb-2">
+          <span className="text-zinc-500 font-mono-cyber">NEURAL TRAINING</span>
+          <span className="text-cyan-400 font-mono-cyber">{learningPct.toFixed(0)}% TRAINED</span>
+        </div>
+        <div className="h-2 bg-black/50 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all"
+            style={{ width: `${learningPct}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] mt-1 text-zinc-600">
+          <span>EXPLORE: {explorationPct.toFixed(0)}%</span>
+          <span>MEMORY: {rlStatus?.memory_size || 0}</span>
+        </div>
+      </div>
+
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* TRADING STATISTICS (NEW) */}
+      {/* 1. HOLD STATS */}
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {stats.total_trades > 0 && (
-        <div className="mt-4 border border-cyan-500/30 bg-black/30">
-          {/* Stats Header */}
-          <div className="flex items-center justify-between p-3 border-b border-cyan-500/20">
-            <span className="text-xs text-cyan-400 font-mono-cyber uppercase tracking-wider">
-              Trading Stats ({statsHours}h)
-            </span>
-            <div className="flex gap-1">
-              {[1, 6, 24].map(h => (
-                <button
-                  key={h}
-                  onClick={() => setStatsHours(h)}
-                  className={`px-2 py-0.5 text-xs font-mono ${statsHours === h ? 'bg-cyan-500/30 text-cyan-400' : 'text-zinc-500 hover:text-cyan-400'}`}
-                >
-                  {h}h
-                </button>
-              ))}
+      <div className="mb-3 border border-cyan-500/20 bg-black/30" data-testid="hold-stats">
+        <div className="p-2 border-b border-cyan-500/20">
+          <span className="text-[10px] text-cyan-400 font-mono-cyber uppercase tracking-wider">HOLD DURATION</span>
+        </div>
+        <div className="grid grid-cols-3 gap-px bg-cyan-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-lg font-cyber text-white">{holdStats.avg_hold_formatted || '0m 0s'}</p>
+            <p className="text-[9px] text-zinc-500">AVG HOLD</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-zinc-400">{holdStats.min_hold_formatted || '0m 0s'}</p>
+            <p className="text-[9px] text-zinc-500">MIN</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-zinc-400">{holdStats.max_hold_formatted || '0m 0s'}</p>
+            <p className="text-[9px] text-zinc-500">MAX</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 2. NET PNL STATS - VERGLEICH THEORETICAL VS NET */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-cyan-500/20 bg-black/30" data-testid="pnl-stats">
+        <div className="p-2 border-b border-cyan-500/20">
+          <span className="text-[10px] text-cyan-400 font-mono-cyber uppercase tracking-wider">NET PNL ANALYSIS</span>
+        </div>
+        
+        {/* Avg PnL Vergleich */}
+        <div className="grid grid-cols-2 gap-px bg-cyan-500/10">
+          <div className="bg-black p-3">
+            <p className="text-[10px] text-zinc-500 mb-1">AVG NET PnL</p>
+            <p className={`text-xl font-cyber ${(pnlStats.avg_net_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(pnlStats.avg_net_pnl_pct || 0) >= 0 ? '+' : ''}{(pnlStats.avg_net_pnl_pct || 0).toFixed(3)}%
+            </p>
+            <p className="text-[10px] text-zinc-600">${(pnlStats.avg_net_pnl_usdt || 0).toFixed(4)}</p>
+          </div>
+          <div className="bg-black p-3">
+            <p className="text-[10px] text-zinc-500 mb-1">AVG THEORETICAL</p>
+            <p className={`text-xl font-cyber ${(pnlStats.avg_theoretical_pnl_pct || 0) >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+              {(pnlStats.avg_theoretical_pnl_pct || 0) >= 0 ? '+' : ''}{(pnlStats.avg_theoretical_pnl_pct || 0).toFixed(3)}%
+            </p>
+            <p className="text-[10px] text-zinc-600">Gap: {(pnlStats.pnl_gap_pct || 0).toFixed(3)}%</p>
+          </div>
+        </div>
+        
+        {/* Total PnL */}
+        <div className="grid grid-cols-2 gap-px bg-cyan-500/10 border-t border-cyan-500/20">
+          <div className="bg-black p-2 text-center">
+            <p className="text-[10px] text-zinc-500">TOTAL NET</p>
+            <p className={`text-sm font-cyber ${(pnlStats.total_net_pnl_usdt || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              ${(pnlStats.total_net_pnl_usdt || 0).toFixed(4)}
+            </p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-[10px] text-zinc-500">TOTAL THEORETICAL</p>
+            <p className={`text-sm font-cyber ${(pnlStats.total_theoretical_pnl_pct || 0) >= 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+              {(pnlStats.total_theoretical_pnl_pct || 0).toFixed(3)}%
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 3. FEES ANALYSIS */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-yellow-500/20 bg-black/30" data-testid="fee-stats">
+        <div className="p-2 border-b border-yellow-500/20">
+          <span className="text-[10px] text-yellow-400 font-mono-cyber uppercase tracking-wider">FEES & COSTS</span>
+        </div>
+        <div className="grid grid-cols-3 gap-px bg-yellow-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-yellow-400">${(feeStats.total_fees_paid || 0).toFixed(4)}</p>
+            <p className="text-[9px] text-zinc-500">TOTAL FEES</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-orange-400">${(feeStats.total_slippage || 0).toFixed(4)}</p>
+            <p className="text-[9px] text-zinc-500">SLIPPAGE</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-sm font-cyber ${(feeStats.fee_ratio_pct || 0) > 0.5 ? 'text-red-400' : 'text-green-400'}`}>
+              {(feeStats.fee_ratio_pct || 0).toFixed(3)}%
+            </p>
+            <p className="text-[9px] text-zinc-500">FEE RATIO</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 4. SELL SOURCE BREAKDOWN */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-purple-500/20 bg-black/30" data-testid="sell-sources">
+        <div className="p-2 border-b border-purple-500/20">
+          <span className="text-[10px] text-purple-400 font-mono-cyber uppercase tracking-wider">SELL SOURCES</span>
+        </div>
+        <div className="p-3">
+          {/* Visual Bars */}
+          <div className="space-y-2">
+            {/* Exploitation */}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-16">EXPLOIT</span>
+              <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 transition-all"
+                  style={{ width: `${sellSources.percentages?.exploitation || 0}%` }}
+                />
+              </div>
+              <span className="text-xs font-cyber text-blue-400 w-12 text-right">
+                {(sellSources.percentages?.exploitation || 0).toFixed(0)}%
+              </span>
+            </div>
+            
+            {/* Random Exploration */}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-16">RANDOM</span>
+              <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-purple-500 transition-all"
+                  style={{ width: `${sellSources.percentages?.random_exploration || 0}%` }}
+                />
+              </div>
+              <span className="text-xs font-cyber text-purple-400 w-12 text-right">
+                {(sellSources.percentages?.random_exploration || 0).toFixed(0)}%
+              </span>
+            </div>
+            
+            {/* Time Limit */}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-16">TIME</span>
+              <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-yellow-500 transition-all"
+                  style={{ width: `${sellSources.percentages?.time_limit || 0}%` }}
+                />
+              </div>
+              <span className="text-xs font-cyber text-yellow-400 w-12 text-right">
+                {(sellSources.percentages?.time_limit || 0).toFixed(0)}%
+              </span>
+            </div>
+            
+            {/* Emergency */}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-16">EMERG</span>
+              <div className="flex-1 h-3 bg-black/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-red-500 transition-all"
+                  style={{ width: `${sellSources.percentages?.emergency || 0}%` }}
+                />
+              </div>
+              <span className="text-xs font-cyber text-red-400 w-12 text-right">
+                {(sellSources.percentages?.emergency || 0).toFixed(0)}%
+              </span>
             </div>
           </div>
           
-          {/* Hold Duration & PnL */}
-          <div className="grid grid-cols-2 gap-px bg-cyan-500/10">
-            <div className="bg-black p-3">
-              <p className="text-xs text-zinc-500 mb-1">AVG HOLD</p>
-              <p className="text-lg font-cyber text-white">{stats.avg_hold_duration_formatted || '0m 0s'}</p>
-              <p className="text-[10px] text-zinc-600">{stats.min_duration?.toFixed(0)}s - {stats.max_duration?.toFixed(0)}s</p>
+          {/* Counts */}
+          <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-purple-500/20 text-center">
+            <div>
+              <p className="text-xs font-cyber text-blue-400">{sellSources.counts?.exploitation || 0}</p>
+              <p className="text-[8px] text-zinc-600">EXPLOIT</p>
             </div>
-            <div className="bg-black p-3">
-              <p className="text-xs text-zinc-500 mb-1">NET PnL (AVG)</p>
-              <p className={`text-lg font-cyber ${(stats.avg_net_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {(stats.avg_net_pnl_pct || 0) >= 0 ? '+' : ''}{(stats.avg_net_pnl_pct || 0).toFixed(2)}%
-              </p>
-              <p className="text-[10px] text-zinc-600">Theoretical: {(stats.avg_theoretical_pnl_pct || 0).toFixed(2)}%</p>
+            <div>
+              <p className="text-xs font-cyber text-purple-400">{sellSources.counts?.random_exploration || 0}</p>
+              <p className="text-[8px] text-zinc-600">RANDOM</p>
             </div>
-          </div>
-
-          {/* Cost Analysis */}
-          <div className="grid grid-cols-3 gap-px bg-cyan-500/10 border-t border-cyan-500/20">
-            <div className="bg-black p-2 text-center">
-              <p className="text-[10px] text-zinc-500">TOTAL NET</p>
-              <p className={`text-sm font-cyber ${(stats.total_net_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {(stats.total_net_pnl_pct || 0) >= 0 ? '+' : ''}{(stats.total_net_pnl_pct || 0).toFixed(2)}%
-              </p>
+            <div>
+              <p className="text-xs font-cyber text-yellow-400">{sellSources.counts?.time_limit || 0}</p>
+              <p className="text-[8px] text-zinc-600">TIME</p>
             </div>
-            <div className="bg-black p-2 text-center">
-              <p className="text-[10px] text-zinc-500">FEES</p>
-              <p className="text-sm font-cyber text-yellow-400">${(stats.total_fees_usd || 0).toFixed(2)}</p>
-            </div>
-            <div className="bg-black p-2 text-center">
-              <p className="text-[10px] text-zinc-500">FEE RATIO</p>
-              <p className="text-sm font-cyber text-orange-400">{(stats.fee_ratio_pct || 0).toFixed(2)}%</p>
-            </div>
-          </div>
-
-          {/* Sell Source Breakdown */}
-          <div className="p-3 border-t border-cyan-500/20">
-            <p className="text-xs text-zinc-500 mb-2 font-mono-cyber">SELL SOURCES</p>
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <div>
-                <p className="text-sm font-cyber text-blue-400">{sellSources.exploitation?.toFixed(0) || 0}%</p>
-                <p className="text-[9px] text-zinc-600">EXPLOIT</p>
-              </div>
-              <div>
-                <p className="text-sm font-cyber text-purple-400">{sellSources.random_exploration?.toFixed(0) || 0}%</p>
-                <p className="text-[9px] text-zinc-600">RANDOM</p>
-              </div>
-              <div>
-                <p className="text-sm font-cyber text-red-400">{sellSources.emergency?.toFixed(0) || 0}%</p>
-                <p className="text-[9px] text-zinc-600">EMERG</p>
-              </div>
-              <div>
-                <p className="text-sm font-cyber text-yellow-400">{sellSources.time_limit?.toFixed(0) || 0}%</p>
-                <p className="text-[9px] text-zinc-600">TIME</p>
-              </div>
+            <div>
+              <p className="text-xs font-cyber text-red-400">{sellSources.counts?.emergency || 0}</p>
+              <p className="text-[8px] text-zinc-600">EMERG</p>
             </div>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 5. PERFORMANCE METRICS */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-green-500/20 bg-black/30" data-testid="performance">
+        <div className="p-2 border-b border-green-500/20">
+          <span className="text-[10px] text-green-400 font-mono-cyber uppercase tracking-wider">PERFORMANCE</span>
+        </div>
+        
+        {/* Win Rate & Trade Counts */}
+        <div className="grid grid-cols-3 gap-px bg-green-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className={`text-xl font-cyber ${(performance.win_rate_pct || 0) >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+              {(performance.win_rate_pct || 0).toFixed(1)}%
+            </p>
+            <p className="text-[9px] text-zinc-500">WIN RATE</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-lg font-cyber text-green-400">{tradeCounts.winning || 0}</p>
+            <p className="text-[9px] text-zinc-500">WINNERS</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-lg font-cyber text-red-400">{tradeCounts.losing || 0}</p>
+            <p className="text-[9px] text-zinc-500">LOSERS</p>
+          </div>
+        </div>
+        
+        {/* Avg Win/Loss */}
+        <div className="grid grid-cols-3 gap-px bg-green-500/10 border-t border-green-500/20">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-green-400">${(performance.avg_win_usdt || 0).toFixed(4)}</p>
+            <p className="text-[9px] text-zinc-500">AVG WIN</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-red-400">${Math.abs(performance.avg_loss_usdt || 0).toFixed(4)}</p>
+            <p className="text-[9px] text-zinc-500">AVG LOSS</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-sm font-cyber ${(performance.profit_factor || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+              {(performance.profit_factor || 0).toFixed(2)}
+            </p>
+            <p className="text-[9px] text-zinc-500">PROFIT FACTOR</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 6. RL-SPECIFIC METRICS */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-cyan-500/20 bg-black/30" data-testid="rl-metrics">
+        <div className="p-2 border-b border-cyan-500/20">
+          <span className="text-[10px] text-cyan-400 font-mono-cyber uppercase tracking-wider">RL METRICS</span>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-cyan-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-cyan-400">{rlMetrics.avg_duration_winning_formatted || '0m 0s'}</p>
+            <p className="text-[9px] text-zinc-500">AVG WIN DURATION</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-orange-400">{rlMetrics.avg_duration_losing_formatted || '0m 0s'}</p>
+            <p className="text-[9px] text-zinc-500">AVG LOSS DURATION</p>
+          </div>
+        </div>
+      </div>
 
       {/* Active Episodes */}
       {rlStatus?.active_episodes && rlStatus.active_episodes.length > 0 && (
-        <div className="mt-4 p-3 bg-purple-500/5 border border-purple-500/20">
+        <div className="mb-3 p-3 bg-purple-500/5 border border-purple-500/20">
           <p className="text-xs text-purple-400 mb-2 font-mono-cyber">ACTIVE POSITIONS:</p>
           <div className="flex flex-wrap gap-2">
             {rlStatus.active_episodes.map(symbol => (
@@ -259,9 +461,9 @@ const RLStatusPanel = () => {
         </div>
       )}
 
-      {/* Info */}
+      {/* Info für Lernphase */}
       {totalTrades < 10 && (
-        <div className="mt-4 p-3 border border-yellow-500/30 bg-yellow-500/5">
+        <div className="mb-3 p-3 border border-yellow-500/30 bg-yellow-500/5">
           <p className="text-sm text-yellow-400 font-mono-cyber">
             <Zap className="w-3 h-3 inline mr-1" />
             LERNPHASE: Noch {10 - totalTrades} Trades - KI sammelt Erfahrung
@@ -273,7 +475,7 @@ const RLStatusPanel = () => {
         onClick={fetchStatus} 
         variant="ghost" 
         size="sm" 
-        className="w-full mt-4 text-zinc-600 hover:text-cyan-400 font-mono-cyber text-xs"
+        className="w-full mt-2 text-zinc-600 hover:text-cyan-400 font-mono-cyber text-xs"
         data-testid="refresh-rl-status"
       >
         <RefreshCw className="w-3 h-3 mr-2" />

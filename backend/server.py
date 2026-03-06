@@ -2380,40 +2380,131 @@ async def get_rl_trading_stats(
     hours: int = 24
 ):
     """
-    Get detailed RL Trading Statistics
+    Comprehensive RL Trading Statistics
     
-    Includes:
-    - average hold duration
-    - average theoretical vs net pnl
-    - sell_source breakdown
-    - fee analysis
+    Supported periods: 1h, 6h, 24h
+    
+    Returns:
+    - Hold stats (avg, min, max)
+    - Net PnL stats (avg, total, theoretical comparison)
+    - Fees analysis (total, ratio)
+    - Sell source breakdown (exploitation, random, emergency, time_limit)
+    - Trade counts (total, winning, losing)
+    - Core performance (win rate, avg win/loss, profit factor)
+    - RL-specific metrics (exploration ratio, duration by outcome)
+    - Health status (healthy/warning/critical with reasons)
     """
     user_id = current_user['user_id']
     
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     
-    # Hole alle Trades im Zeitraum
+    # Fetch all closed trades in period
     trades = await db.db.trades.find({
         "user_id": user_id,
         "ts": {"$gte": cutoff},
-        "side": "SELL"  # Nur abgeschlossene Trades
+        "side": "SELL"  # Only closed trades
     }).to_list(1000)
     
+    # ═══════════════════════════════════════════════════════════════════════════
+    # NO DATA CASE
+    # ═══════════════════════════════════════════════════════════════════════════
     if not trades:
         return {
             "period_hours": hours,
-            "total_trades": 0,
-            "message": "Keine Trades im Zeitraum"
+            "total_closed_trades": 0,
+            
+            # Hold stats
+            "hold_stats": {
+                "avg_hold_seconds": 0,
+                "min_hold_seconds": 0,
+                "max_hold_seconds": 0,
+                "avg_hold_formatted": "0m 0s",
+                "min_hold_formatted": "0m 0s",
+                "max_hold_formatted": "0m 0s"
+            },
+            
+            # Net PnL stats
+            "pnl_stats": {
+                "avg_net_pnl_usdt": 0,
+                "avg_net_pnl_pct": 0,
+                "avg_theoretical_pnl_pct": 0,
+                "total_net_pnl_usdt": 0,
+                "total_net_pnl_pct": 0,
+                "total_theoretical_pnl_pct": 0,
+                "pnl_gap_pct": 0
+            },
+            
+            # Fees
+            "fee_stats": {
+                "total_fees_paid": 0,
+                "total_slippage": 0,
+                "total_costs": 0,
+                "fee_ratio_pct": 0
+            },
+            
+            # Sell sources
+            "sell_sources": {
+                "counts": {"exploitation": 0, "random_exploration": 0, "emergency": 0, "time_limit": 0, "unknown": 0},
+                "percentages": {"exploitation": 0, "random_exploration": 0, "emergency": 0, "time_limit": 0, "unknown": 0}
+            },
+            
+            # Trade counts
+            "trade_counts": {
+                "total": 0,
+                "winning": 0,
+                "losing": 0
+            },
+            
+            # Performance
+            "performance": {
+                "win_rate_pct": 0,
+                "avg_win_usdt": 0,
+                "avg_loss_usdt": 0,
+                "avg_win_pct": 0,
+                "avg_loss_pct": 0,
+                "profit_factor": 0,
+                "gross_profit": 0,
+                "gross_loss": 0
+            },
+            
+            # RL metrics
+            "rl_metrics": {
+                "exploration_sell_ratio_pct": 0,
+                "exploitation_sell_ratio_pct": 0,
+                "avg_duration_winning": 0,
+                "avg_duration_losing": 0,
+                "avg_duration_winning_formatted": "0m 0s",
+                "avg_duration_losing_formatted": "0m 0s"
+            },
+            
+            # Health status
+            "health": {
+                "status": "warning",
+                "status_color": "yellow",
+                "reasons": ["no_data"]
+            }
         }
     
-    # Statistiken berechnen
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DATA COLLECTION
+    # ═══════════════════════════════════════════════════════════════════════════
     durations = []
-    theoretical_pnls = []
-    net_pnls = []
-    fees_total = 0
-    slippage_total = 0
-    notional_total = 0
+    durations_winning = []
+    durations_losing = []
+    
+    net_pnls_pct = []
+    net_pnls_usdt = []
+    theoretical_pnls_pct = []
+    
+    winning_pnls_usdt = []
+    winning_pnls_pct = []
+    losing_pnls_usdt = []
+    losing_pnls_pct = []
+    
+    total_fees = 0
+    total_slippage = 0
+    total_notional = 0
     
     sell_sources = {
         "exploitation": 0,
@@ -2425,91 +2516,266 @@ async def get_rl_trading_stats(
     
     for t in trades:
         # Duration
-        duration = t.get('duration_seconds')
-        if duration:
-            durations.append(duration)
+        duration = t.get('duration_seconds') or 0
+        durations.append(duration)
         
-        # PnL
-        gross_pnl = t.get('gross_pnl_pct') or t.get('pnl_pct', 0)
-        net_pnl = t.get('pnl_pct', 0)
+        # PnL (USDT)
+        pnl_usdt = t.get('pnl') or 0
+        net_pnls_usdt.append(pnl_usdt)
         
-        if gross_pnl:
-            theoretical_pnls.append(gross_pnl)
-        net_pnls.append(net_pnl)
+        # PnL (%)
+        net_pnl_pct = t.get('pnl_pct') or 0
+        net_pnls_pct.append(net_pnl_pct)
         
-        # Fees
-        fees = t.get('fees_paid', 0) or 0
-        slippage = t.get('slippage_cost', 0) or 0
-        notional = t.get('notional', 0) or 0
+        # Theoretical PnL (gross before fees)
+        theoretical_pct = t.get('gross_pnl_pct') or net_pnl_pct
+        theoretical_pnls_pct.append(theoretical_pct)
         
-        fees_total += fees
-        slippage_total += slippage
-        notional_total += notional
+        # Winning vs Losing
+        if pnl_usdt > 0:
+            winning_pnls_usdt.append(pnl_usdt)
+            winning_pnls_pct.append(net_pnl_pct)
+            durations_winning.append(duration)
+        elif pnl_usdt < 0:
+            losing_pnls_usdt.append(pnl_usdt)
+            losing_pnls_pct.append(net_pnl_pct)
+            durations_losing.append(duration)
         
-        # Sell source (aus reason extrahieren)
-        reason = t.get('reason', '') or ''
-        reason_lower = reason.lower()
+        # Fees & Costs
+        fees = t.get('fees_paid') or 0
+        slippage = t.get('slippage_cost') or 0
+        notional = t.get('notional') or 0
         
-        if 'time_limit' in reason_lower:
+        total_fees += fees
+        total_slippage += slippage
+        total_notional += notional
+        
+        # Sell source extraction
+        reason = (t.get('reason') or '').lower()
+        
+        if 'time_limit' in reason:
             sell_sources['time_limit'] += 1
-        elif 'emergency' in reason_lower:
+        elif 'emergency' in reason:
             sell_sources['emergency'] += 1
-        elif 'random_exploration' in reason_lower or 'exploration sell' in reason_lower:
+        elif 'random_exploration' in reason or 'exploration sell' in reason:
             sell_sources['random_exploration'] += 1
-        elif 'exploitation' in reason_lower or 'ai_exit' in reason_lower:
+        elif 'exploitation' in reason or 'ai_exit' in reason:
             sell_sources['exploitation'] += 1
         else:
             sell_sources['unknown'] += 1
     
-    # Durchschnitte berechnen
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CALCULATIONS
+    # ═══════════════════════════════════════════════════════════════════════════
     total = len(trades)
-    avg_duration = sum(durations) / len(durations) if durations else 0
-    avg_theoretical_pnl = sum(theoretical_pnls) / len(theoretical_pnls) if theoretical_pnls else 0
-    avg_net_pnl = sum(net_pnls) / len(net_pnls) if net_pnls else 0
+    total_winning = len(winning_pnls_usdt)
+    total_losing = len(losing_pnls_usdt)
     
-    # Fee ratio
-    fee_ratio = (fees_total / notional_total * 100) if notional_total > 0 else 0
+    # Small value to prevent division by zero
+    EPSILON = 0.0001
+    
+    # Hold stats
+    avg_hold = sum(durations) / len(durations) if durations else 0
+    min_hold = min(durations) if durations else 0
+    max_hold = max(durations) if durations else 0
+    
+    # PnL stats
+    avg_net_pnl_usdt = sum(net_pnls_usdt) / total if total > 0 else 0
+    avg_net_pnl_pct = sum(net_pnls_pct) / total if total > 0 else 0
+    avg_theoretical_pnl_pct = sum(theoretical_pnls_pct) / total if total > 0 else 0
+    
+    total_net_pnl_usdt = sum(net_pnls_usdt)
+    total_net_pnl_pct = sum(net_pnls_pct)
+    total_theoretical_pnl_pct = sum(theoretical_pnls_pct)
+    
+    # Gap between theoretical and net (shows fee/slippage impact)
+    pnl_gap_pct = avg_theoretical_pnl_pct - avg_net_pnl_pct
+    
+    # Fee ratio: total_fees / total_notional * 100
+    # Definition: What percentage of traded volume went to fees
+    fee_ratio_pct = (total_fees / max(total_notional, EPSILON)) * 100
     
     # Sell source percentages
-    sell_source_pct = {k: (v / total * 100) if total > 0 else 0 for k, v in sell_sources.items()}
+    sell_source_pct = {k: (v / max(total, 1) * 100) for k, v in sell_sources.items()}
     
-    # Profitable trades
-    profitable = sum(1 for p in net_pnls if p > 0)
-    win_rate = (profitable / total * 100) if total > 0 else 0
+    # Performance metrics
+    win_rate = (total_winning / max(total, 1)) * 100
+    avg_win_usdt = sum(winning_pnls_usdt) / max(total_winning, 1)
+    avg_loss_usdt = sum(losing_pnls_usdt) / max(total_losing, 1)  # Will be negative
+    avg_win_pct = sum(winning_pnls_pct) / max(total_winning, 1)
+    avg_loss_pct = sum(losing_pnls_pct) / max(total_losing, 1)  # Will be negative
+    
+    # Profit factor: gross_profit / gross_loss
+    gross_profit = sum(p for p in net_pnls_usdt if p > 0)
+    gross_loss = abs(sum(p for p in net_pnls_usdt if p < 0))
+    profit_factor = gross_profit / max(gross_loss, EPSILON)
+    
+    # RL-specific metrics
+    exploration_sells = sell_sources['random_exploration']
+    exploitation_sells = sell_sources['exploitation']
+    total_ai_sells = exploration_sells + exploitation_sells
+    
+    exploration_ratio = (exploration_sells / max(total_ai_sells, 1)) * 100
+    exploitation_ratio = (exploitation_sells / max(total_ai_sells, 1)) * 100
+    
+    avg_duration_winning = sum(durations_winning) / max(len(durations_winning), 1)
+    avg_duration_losing = sum(durations_losing) / max(len(durations_losing), 1)
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # HEALTH STATUS CALCULATION
+    # ═══════════════════════════════════════════════════════════════════════════
+    status = "healthy"
+    status_reasons = []
+    
+    # Critical checks
+    if avg_net_pnl_pct < -0.5:
+        status = "critical"
+        status_reasons.append("Net PnL strongly negative")
+    
+    if profit_factor < 0.5 and total >= 5:
+        status = "critical"
+        status_reasons.append(f"Profit factor very low ({profit_factor:.2f})")
+    
+    if sell_source_pct.get('random_exploration', 0) > 70:
+        status = "critical"
+        status_reasons.append("Too many random exploration sells (>70%)")
+    
+    if fee_ratio_pct > 1.0:
+        status = "critical"
+        status_reasons.append(f"Fee ratio extremely high ({fee_ratio_pct:.2f}%)")
+    
+    if avg_hold < 60 and total >= 5:
+        status = "critical"
+        status_reasons.append(f"Avg hold too short ({avg_hold:.0f}s) - possible overtrading")
+    
+    # Warning checks (only if not already critical)
+    if status != "critical":
+        if avg_net_pnl_pct < 0:
+            status = "warning"
+            status_reasons.append("Net PnL negative")
+        
+        if profit_factor < 1.0 and total >= 5:
+            if status != "warning":
+                status = "warning"
+            status_reasons.append(f"Profit factor below 1.0 ({profit_factor:.2f})")
+        
+        if sell_source_pct.get('random_exploration', 0) > 50:
+            if status != "warning":
+                status = "warning"
+            status_reasons.append("High random exploration sells (>50%)")
+        
+        if pnl_gap_pct > 0.3:
+            if status != "warning":
+                status = "warning"
+            status_reasons.append(f"Large gap between theoretical and net PnL ({pnl_gap_pct:.2f}%)")
+        
+        if fee_ratio_pct > 0.5:
+            if status != "warning":
+                status = "warning"
+            status_reasons.append(f"Fee ratio elevated ({fee_ratio_pct:.2f}%)")
+        
+        if avg_hold < 90 and total >= 5:
+            if status != "warning":
+                status = "warning"
+            status_reasons.append(f"Avg hold near minimum ({avg_hold:.0f}s)")
+    
+    # Healthy status reasons
+    if status == "healthy" and total >= 3:
+        if win_rate >= 50:
+            status_reasons.append(f"Win rate healthy ({win_rate:.1f}%)")
+        if profit_factor >= 1.0:
+            status_reasons.append(f"Profit factor positive ({profit_factor:.2f})")
+        if exploitation_ratio > 50:
+            status_reasons.append(f"Exploitation dominant ({exploitation_ratio:.0f}%)")
+    
+    if not status_reasons:
+        status_reasons.append("Insufficient data for assessment")
+    
+    # Status color mapping
+    status_color = {"healthy": "green", "warning": "yellow", "critical": "red"}.get(status, "gray")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # RESPONSE
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    def fmt_duration(secs):
+        """Format seconds as Xm Ys"""
+        return f"{int(secs//60)}m {int(secs%60)}s"
     
     return {
         "period_hours": hours,
-        "total_trades": total,
+        "total_closed_trades": total,
         
-        # Duration
-        "avg_hold_duration_seconds": round(avg_duration, 1),
-        "avg_hold_duration_formatted": f"{int(avg_duration//60)}m {int(avg_duration%60)}s",
-        "min_duration": round(min(durations), 1) if durations else 0,
-        "max_duration": round(max(durations), 1) if durations else 0,
+        # 1. HOLD STATS
+        "hold_stats": {
+            "avg_hold_seconds": round(avg_hold, 1),
+            "min_hold_seconds": round(min_hold, 1),
+            "max_hold_seconds": round(max_hold, 1),
+            "avg_hold_formatted": fmt_duration(avg_hold),
+            "min_hold_formatted": fmt_duration(min_hold),
+            "max_hold_formatted": fmt_duration(max_hold)
+        },
         
-        # PnL
-        "avg_theoretical_pnl_pct": round(avg_theoretical_pnl, 3),
-        "avg_net_pnl_pct": round(avg_net_pnl, 3),
-        "total_net_pnl_pct": round(sum(net_pnls), 3),
-        "pnl_difference": round(avg_theoretical_pnl - avg_net_pnl, 3),
+        # 2. NET PNL STATS
+        "pnl_stats": {
+            "avg_net_pnl_usdt": round(avg_net_pnl_usdt, 4),
+            "avg_net_pnl_pct": round(avg_net_pnl_pct, 3),
+            "avg_theoretical_pnl_pct": round(avg_theoretical_pnl_pct, 3),
+            "total_net_pnl_usdt": round(total_net_pnl_usdt, 4),
+            "total_net_pnl_pct": round(total_net_pnl_pct, 3),
+            "total_theoretical_pnl_pct": round(total_theoretical_pnl_pct, 3),
+            "pnl_gap_pct": round(pnl_gap_pct, 3)
+        },
         
-        # Win Rate
-        "profitable_trades": profitable,
-        "losing_trades": total - profitable,
-        "win_rate_pct": round(win_rate, 1),
+        # 3. FEES
+        "fee_stats": {
+            "total_fees_paid": round(total_fees, 4),
+            "total_slippage": round(total_slippage, 4),
+            "total_costs": round(total_fees + total_slippage, 4),
+            "fee_ratio_pct": round(fee_ratio_pct, 3)
+        },
         
-        # Fees
-        "total_fees_usd": round(fees_total, 4),
-        "total_slippage_usd": round(slippage_total, 4),
-        "total_costs_usd": round(fees_total + slippage_total, 4),
-        "fee_ratio_pct": round(fee_ratio, 3),
+        # 4. SELL SOURCE BREAKDOWN
+        "sell_sources": {
+            "counts": sell_sources,
+            "percentages": {k: round(v, 1) for k, v in sell_source_pct.items()}
+        },
         
-        # Sell Sources
-        "sell_sources": sell_sources,
-        "sell_sources_pct": {k: round(v, 1) for k, v in sell_source_pct.items()},
+        # 5. TRADE COUNTS
+        "trade_counts": {
+            "total": total,
+            "winning": total_winning,
+            "losing": total_losing
+        },
         
-        # Summary Message
-        "summary": f"{total} Trades | Avg Hold: {int(avg_duration//60)}m | Net PnL: {avg_net_pnl:+.2f}% | Win: {win_rate:.0f}%"
+        # 6. CORE PERFORMANCE METRICS
+        "performance": {
+            "win_rate_pct": round(win_rate, 1),
+            "avg_win_usdt": round(avg_win_usdt, 4),
+            "avg_loss_usdt": round(avg_loss_usdt, 4),
+            "avg_win_pct": round(avg_win_pct, 3),
+            "avg_loss_pct": round(avg_loss_pct, 3),
+            "profit_factor": round(profit_factor, 2),
+            "gross_profit": round(gross_profit, 4),
+            "gross_loss": round(gross_loss, 4)
+        },
+        
+        # 7. RL-SPECIFIC METRICS
+        "rl_metrics": {
+            "exploration_sell_ratio_pct": round(exploration_ratio, 1),
+            "exploitation_sell_ratio_pct": round(exploitation_ratio, 1),
+            "avg_duration_winning": round(avg_duration_winning, 1),
+            "avg_duration_losing": round(avg_duration_losing, 1),
+            "avg_duration_winning_formatted": fmt_duration(avg_duration_winning),
+            "avg_duration_losing_formatted": fmt_duration(avg_duration_losing)
+        },
+        
+        # 8. HEALTH STATUS
+        "health": {
+            "status": status,
+            "status_color": status_color,
+            "reasons": status_reasons
+        }
     }
 
 
