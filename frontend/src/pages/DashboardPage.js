@@ -82,6 +82,13 @@ const RLStatusPanel = () => {
   const performance = stats.performance || {};
   const rlMetrics = stats.rl_metrics || {};
   const health = stats.health || {};
+  
+  // NEW: Edge Analysis Stats
+  const edgeAnalysis = stats.edge_analysis || {};
+  const tradeQuality = stats.trade_quality || {};
+  const noiseDetection = stats.noise_detection || {};
+  const frequencyAnalysis = stats.frequency_analysis || {};
+  const liquidity = stats.liquidity || {};
 
   // Health Status Farben
   const healthColors = {
@@ -365,6 +372,153 @@ const RLStatusPanel = () => {
             <p className="text-[9px] text-zinc-500">FEE RATIO</p>
           </div>
         </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* EDGE ANALYSIS - NEU */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-emerald-500/20 bg-black/30" data-testid="edge-analysis">
+        <div className="p-2 border-b border-emerald-500/20 flex items-center justify-between">
+          <span className="text-[10px] text-emerald-400 font-mono-cyber uppercase tracking-wider">EDGE ANALYSIS</span>
+          {edgeAnalysis.is_profitable_edge && (
+            <span className="px-2 py-0.5 bg-green-500/20 border border-green-500/40 text-[9px] text-green-400 font-mono-cyber">
+              PROFITABLE EDGE
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-px bg-emerald-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className={`text-lg font-cyber ${(edgeAnalysis.edge_after_costs_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(edgeAnalysis.edge_after_costs_pct || 0) >= 0 ? '+' : ''}{(edgeAnalysis.edge_after_costs_pct || 0).toFixed(3)}%
+            </p>
+            <p className="text-[9px] text-zinc-500">EDGE AFTER COSTS</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-lg font-cyber ${(edgeAnalysis.cost_impact_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(edgeAnalysis.cost_impact_pct || 0).toFixed(3)}%
+            </p>
+            <p className="text-[9px] text-zinc-500">COST IMPACT</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-lg font-cyber ${(edgeAnalysis.edge_efficiency_pct || 0) >= 50 ? 'text-green-400' : (edgeAnalysis.edge_efficiency_pct || 0) >= 30 ? 'text-yellow-400' : 'text-red-400'}`}>
+              {(edgeAnalysis.edge_efficiency_pct || 0).toFixed(0)}%
+            </p>
+            <p className="text-[9px] text-zinc-500">EDGE EFFICIENCY</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* TRADE QUALITY (MFE/MAE) - NEU */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-indigo-500/20 bg-black/30" data-testid="trade-quality">
+        <div className="p-2 border-b border-indigo-500/20">
+          <span className="text-[10px] text-indigo-400 font-mono-cyber uppercase tracking-wider">TRADE QUALITY (MFE/MAE)</span>
+        </div>
+        <div className="grid grid-cols-3 gap-px bg-indigo-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-green-400">+{(tradeQuality.avg_mfe_pct || 0).toFixed(3)}%</p>
+            <p className="text-[9px] text-zinc-500">AVG MFE</p>
+            <p className="text-[8px] text-zinc-600">Max Profit</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-red-400">{(tradeQuality.avg_mae_pct || 0).toFixed(3)}%</p>
+            <p className="text-[9px] text-zinc-500">AVG MAE</p>
+            <p className="text-[8px] text-zinc-600">Max Loss</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-sm font-cyber ${(tradeQuality.mfe_mae_ratio || 0) >= 1.5 ? 'text-green-400' : 'text-yellow-400'}`}>
+              {(tradeQuality.mfe_mae_ratio || 0).toFixed(2)}
+            </p>
+            <p className="text-[9px] text-zinc-500">MFE/MAE RATIO</p>
+          </div>
+        </div>
+        {tradeQuality.exits_too_early && (
+          <div className="p-2 bg-yellow-500/10 border-t border-yellow-500/20">
+            <p className="text-[10px] text-yellow-400 font-mono-cyber">
+              ⚠️ Exits möglicherweise zu früh - MFE deutlich höher als realisierter Profit
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* NOISE & FREQUENCY DETECTION - NEU */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-orange-500/20 bg-black/30" data-testid="noise-frequency">
+        <div className="p-2 border-b border-orange-500/20">
+          <span className="text-[10px] text-orange-400 font-mono-cyber uppercase tracking-wider">NOISE & FREQUENCY</span>
+        </div>
+        <div className="grid grid-cols-4 gap-px bg-orange-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-white">{(noiseDetection.avg_price_move_pct || 0).toFixed(3)}%</p>
+            <p className="text-[8px] text-zinc-500">AVG MOVE</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-orange-400">{(noiseDetection.avg_trading_cost_pct || 0).toFixed(3)}%</p>
+            <p className="text-[8px] text-zinc-500">AVG COST</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-cyan-400">{(frequencyAnalysis.trades_per_hour || 0).toFixed(1)}</p>
+            <p className="text-[8px] text-zinc-500">TRADES/H</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-white">{frequencyAnalysis.avg_time_between_trades_formatted || '0m 0s'}</p>
+            <p className="text-[8px] text-zinc-500">AVG GAP</p>
+          </div>
+        </div>
+        
+        {/* Warnings */}
+        {(noiseDetection.is_noise_trading || frequencyAnalysis.is_overtrading) && (
+          <div className="p-2 bg-red-500/10 border-t border-red-500/20 space-y-1">
+            {noiseDetection.is_noise_trading && (
+              <p className="text-[10px] text-red-400 font-mono-cyber">
+                ⚠️ Trades kleiner als Kosten – mögliche Noise-Trades
+              </p>
+            )}
+            {frequencyAnalysis.is_overtrading && (
+              <p className="text-[10px] text-red-400 font-mono-cyber">
+                ⚠️ Hohe Trade Frequenz mit negativem Edge – Overtrading
+              </p>
+            )}
+          </div>
+        )}
+        
+        {/* Profitable Move Ratio */}
+        <div className="p-2 border-t border-orange-500/20 flex items-center justify-between">
+          <span className="text-[9px] text-zinc-500">Trades über Min. Profitable Move:</span>
+          <span className={`text-xs font-cyber ${(noiseDetection.profitable_move_ratio_pct || 0) >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+            {(noiseDetection.profitable_move_ratio_pct || 0).toFixed(0)}%
+          </span>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* LIQUIDITY MONITORING - NEU */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <div className="mb-3 border border-sky-500/20 bg-black/30" data-testid="liquidity">
+        <div className="p-2 border-b border-sky-500/20">
+          <span className="text-[10px] text-sky-400 font-mono-cyber uppercase tracking-wider">LIQUIDITY</span>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-sky-500/10">
+          <div className="bg-black p-2 text-center">
+            <p className="text-sm font-cyber text-white">{(liquidity.avg_spread_pct || 0).toFixed(4)}%</p>
+            <p className="text-[9px] text-zinc-500">AVG SPREAD</p>
+          </div>
+          <div className="bg-black p-2 text-center">
+            <p className={`text-sm font-cyber ${liquidity.high_slippage_warning ? 'text-red-400' : 'text-green-400'}`}>
+              ${(liquidity.avg_slippage_per_trade || 0).toFixed(4)}
+            </p>
+            <p className="text-[9px] text-zinc-500">AVG SLIPPAGE/TRADE</p>
+          </div>
+        </div>
+        {liquidity.high_slippage_warning && (
+          <div className="p-2 bg-red-500/10 border-t border-red-500/20">
+            <p className="text-[10px] text-red-400 font-mono-cyber">
+              ⚠️ Hohe Slippage – Liquiditätsprobleme bei kleinen Coins
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}

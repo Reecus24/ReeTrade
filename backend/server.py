@@ -2561,6 +2561,14 @@ async def get_rl_trading_stats(
         "unknown": 0
     }
     
+    # Neue Metriken für Edge Analysis
+    mfe_values = []  # Max Favorable Excursion
+    mae_values = []  # Max Adverse Excursion
+    spread_values = []  # Spreads
+    slippage_per_trade = []  # Slippage pro Trade
+    trade_timestamps = []  # Für Frequency Analysis
+    price_moves = []  # Actual price moves
+    
     for t in trades:
         # Duration
         duration = t.get('duration_seconds') or 0
@@ -2596,6 +2604,26 @@ async def get_rl_trading_stats(
         total_fees += fees
         total_slippage += slippage
         total_notional += notional
+        
+        # MFE/MAE (Trade Quality)
+        mfe = t.get('mfe') or 0  # Max profit during trade
+        mae = t.get('mae') or 0  # Max loss during trade
+        mfe_values.append(mfe)
+        mae_values.append(mae)
+        
+        # Spread & Slippage per trade
+        spread = t.get('spread_pct') or 0
+        spread_values.append(spread)
+        slippage_per_trade.append(slippage)
+        
+        # Timestamp for frequency analysis
+        ts = t.get('ts')
+        if ts:
+            trade_timestamps.append(ts)
+        
+        # Price move (absolute)
+        price_move = abs(theoretical_pct) if theoretical_pct else 0
+        price_moves.append(price_move)
         
         # Sell source extraction
         reason = (t.get('reason') or '').lower()
@@ -2669,6 +2697,61 @@ async def get_rl_trading_stats(
     avg_duration_losing = sum(durations_losing) / max(len(durations_losing), 1)
     
     # ═══════════════════════════════════════════════════════════════════════════
+    # EDGE ANALYSIS & NEW METRICS
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    # 1. Edge After Costs = Theoretical PnL - Fees - Slippage (as %)
+    total_costs_pct = fee_ratio_pct + (total_slippage / max(total_notional, EPSILON) * 100)
+    edge_after_costs_pct = avg_theoretical_pnl_pct - total_costs_pct / max(total, 1) if total > 0 else 0
+    
+    # Alternative: Edge After Costs = Net PnL - Theoretical PnL (shows cost impact)
+    cost_impact_pct = avg_net_pnl_pct - avg_theoretical_pnl_pct
+    
+    # 2. Edge Efficiency = Net PnL / Theoretical PnL (how much edge survives costs)
+    edge_efficiency_pct = (avg_net_pnl_pct / max(abs(avg_theoretical_pnl_pct), EPSILON)) * 100 if avg_theoretical_pnl_pct != 0 else 0
+    
+    # 3. Trade Quality Metrics (MFE/MAE)
+    avg_mfe = sum(mfe_values) / max(len(mfe_values), 1)
+    avg_mae = sum(mae_values) / max(len(mae_values), 1)
+    mfe_mae_ratio = avg_mfe / max(abs(avg_mae), EPSILON) if avg_mae != 0 else 0
+    
+    # 4. Liquidity Monitoring
+    avg_spread = sum(spread_values) / max(len(spread_values), 1)
+    avg_slippage_per_trade = sum(slippage_per_trade) / max(len(slippage_per_trade), 1)
+    
+    # 5. Noise Trading Detection
+    avg_price_move = sum(price_moves) / max(len(price_moves), 1)
+    avg_trading_cost = (total_fees + total_slippage) / max(total, 1) if total > 0 else 0
+    avg_trading_cost_pct = total_costs_pct / max(total, 1) if total > 0 else 0
+    is_noise_trading = avg_price_move < avg_trading_cost_pct and total >= 5
+    
+    # 6. Trade Frequency Analysis
+    trades_per_hour = 0
+    avg_time_between_trades = 0
+    is_overtrading = False
+    
+    if len(trade_timestamps) >= 2:
+        # Sort timestamps and calculate time differences
+        try:
+            sorted_ts = sorted([ts if isinstance(ts, str) else ts.isoformat() for ts in trade_timestamps])
+            if sorted_ts:
+                first_trade = datetime.fromisoformat(sorted_ts[0].replace('Z', '+00:00'))
+                last_trade = datetime.fromisoformat(sorted_ts[-1].replace('Z', '+00:00'))
+                time_span_hours = max((last_trade - first_trade).total_seconds() / 3600, 0.1)
+                trades_per_hour = total / time_span_hours
+                avg_time_between_trades = (time_span_hours * 3600) / max(total - 1, 1)  # in seconds
+                
+                # Overtrading: > 3 trades/hour AND negative edge
+                is_overtrading = trades_per_hour > 3 and avg_net_pnl_pct < 0
+        except:
+            pass
+    
+    # 7. Minimum Expected Move Threshold
+    min_profitable_move = avg_trading_cost_pct * 1.5  # Need 1.5x costs to be profitable
+    trades_above_threshold = sum(1 for m in price_moves if m > min_profitable_move) if price_moves else 0
+    profitable_move_ratio = (trades_above_threshold / max(total, 1)) * 100
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # HEALTH STATUS CALCULATION
     # ═══════════════════════════════════════════════════════════════════════════
     status = "healthy"
@@ -2734,6 +2817,27 @@ async def get_rl_trading_stats(
             status_reasons.append(f"Profit factor positive ({profit_factor:.2f})")
         if exploitation_ratio > 50:
             status_reasons.append(f"Exploitation dominant ({exploitation_ratio:.0f}%)")
+    
+    # New warning checks for edge analysis
+    if is_noise_trading and status != "critical":
+        if status != "warning":
+            status = "warning"
+        status_reasons.append("⚠️ Trades smaller than costs - possible noise trading")
+    
+    if is_overtrading:
+        if status != "critical":
+            status = "warning"
+        status_reasons.append(f"⚠️ High trade frequency ({trades_per_hour:.1f}/h) with negative edge - overtrading")
+    
+    if avg_slippage_per_trade > 0.05 and total >= 5:  # > $0.05 slippage per trade
+        if status != "critical":
+            status = "warning"
+        status_reasons.append(f"⚠️ High average slippage (${avg_slippage_per_trade:.4f}/trade)")
+    
+    if edge_efficiency_pct < 30 and total >= 10 and avg_theoretical_pnl_pct > 0:
+        if status != "critical":
+            status = "warning"
+        status_reasons.append(f"⚠️ Low edge efficiency ({edge_efficiency_pct:.0f}%) - costs destroying profits")
     
     if not status_reasons:
         status_reasons.append("Insufficient data for assessment")
@@ -2817,7 +2921,47 @@ async def get_rl_trading_stats(
             "avg_duration_losing_formatted": fmt_duration(avg_duration_losing)
         },
         
-        # 8. HEALTH STATUS
+        # 8. EDGE ANALYSIS (NEW)
+        "edge_analysis": {
+            "edge_after_costs_pct": round(edge_after_costs_pct, 3),
+            "cost_impact_pct": round(cost_impact_pct, 3),
+            "edge_efficiency_pct": round(edge_efficiency_pct, 1),
+            "is_profitable_edge": edge_after_costs_pct > 0 and total >= 5
+        },
+        
+        # 9. TRADE QUALITY (NEW)
+        "trade_quality": {
+            "avg_mfe_pct": round(avg_mfe, 3),
+            "avg_mae_pct": round(avg_mae, 3),
+            "mfe_mae_ratio": round(mfe_mae_ratio, 2),
+            "exits_too_early": avg_mfe > abs(avg_mae) * 1.5 and avg_net_pnl_pct < avg_mfe * 0.5 if total >= 5 else False
+        },
+        
+        # 10. NOISE DETECTION (NEW)
+        "noise_detection": {
+            "avg_price_move_pct": round(avg_price_move, 3),
+            "avg_trading_cost_pct": round(avg_trading_cost_pct, 3),
+            "is_noise_trading": is_noise_trading,
+            "min_profitable_move_pct": round(min_profitable_move, 3),
+            "profitable_move_ratio_pct": round(profitable_move_ratio, 1)
+        },
+        
+        # 11. TRADE FREQUENCY (NEW)
+        "frequency_analysis": {
+            "trades_per_hour": round(trades_per_hour, 2),
+            "avg_time_between_trades_sec": round(avg_time_between_trades, 0),
+            "avg_time_between_trades_formatted": fmt_duration(avg_time_between_trades),
+            "is_overtrading": is_overtrading
+        },
+        
+        # 12. LIQUIDITY MONITORING (NEW)
+        "liquidity": {
+            "avg_spread_pct": round(avg_spread, 4),
+            "avg_slippage_per_trade": round(avg_slippage_per_trade, 4),
+            "high_slippage_warning": avg_slippage_per_trade > 0.05
+        },
+        
+        # 13. HEALTH STATUS
         "health": {
             "status": status,
             "status_color": status_color,
