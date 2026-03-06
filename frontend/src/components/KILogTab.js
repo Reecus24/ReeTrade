@@ -139,6 +139,57 @@ export default function KILogTab() {
         </div>
       </div>
 
+      {/* Exit Statistics Panel */}
+      {rlStatus?.exit_stats && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-orange-500/20 border border-orange-500/50">
+              <Target className="w-5 h-5 text-orange-400" />
+            </div>
+            <h3 className="font-cyber text-sm text-orange-400 tracking-widest uppercase">EXIT ANALYTICS</h3>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-black/50 border border-purple-500/20 p-3 text-center">
+              <p className="text-xl font-cyber text-purple-400">{rlStatus.exit_stats.exploration_sells || 0}</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">EXPLORATION SELLS</p>
+            </div>
+            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+              <p className="text-xl font-cyber text-cyan-400">{rlStatus.exit_stats.exploitation_sells || 0}</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">EXPLOITATION SELLS</p>
+            </div>
+            <div className="bg-black/50 border border-red-500/20 p-3 text-center">
+              <p className="text-xl font-cyber text-red-400">{rlStatus.exit_stats.emergency_sells || 0}</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">EMERGENCY SELLS</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-black/30 p-3 border border-zinc-800">
+              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG SELL PROB</p>
+              <p className="text-lg font-mono-cyber text-white">{(rlStatus.exit_stats.avg_sell_probability_pct || 0).toFixed(2)}%</p>
+            </div>
+            <div className="bg-black/30 p-3 border border-zinc-800">
+              <p className="text-[10px] text-zinc-500 font-mono-cyber">EXPLOITATION RATIO</p>
+              <p className="text-lg font-mono-cyber text-cyan-400">{(rlStatus.exit_stats.exploitation_ratio || 0).toFixed(1)}%</p>
+            </div>
+            <div className="bg-black/30 p-3 border border-zinc-800">
+              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG HOLD (EXPLORATION)</p>
+              <p className="text-lg font-mono-cyber text-purple-400">{(rlStatus.exit_stats.avg_hold_time_exploration_s || 0).toFixed(0)}s</p>
+            </div>
+            <div className="bg-black/30 p-3 border border-zinc-800">
+              <p className="text-[10px] text-zinc-500 font-mono-cyber">AVG HOLD (EXPLOITATION)</p>
+              <p className="text-lg font-mono-cyber text-cyan-400">{(rlStatus.exit_stats.avg_hold_time_exploitation_s || 0).toFixed(0)}s</p>
+            </div>
+          </div>
+          
+          <p className="text-[10px] text-zinc-600 font-mono-cyber mt-3 italic">
+            Exploration-Check alle {rlStatus.exit_stats.exploration_check_interval_s || 30}s | 
+            Ziel: Exploitation Ratio {'>'} 50% = KI nutzt gelerntes Wissen
+          </p>
+        </div>
+      )}
+
       {/* Active Episodes */}
       {rlStatus?.active_episodes && rlStatus.active_episodes.length > 0 && (
         <div className="cyber-panel p-6">

@@ -13,6 +13,7 @@ import numpy as np
 import pickle
 import os
 import random
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -511,6 +512,23 @@ class RLTradingAI:
         # Aktuelle Episode (offener Trade)
         self.current_episode: Dict[str, Dict] = {}  # {symbol: episode_data}
         
+        # ============ EXIT EXPLORATION TRACKING ============
+        # Verhindert ständiges Neuwürfeln - speichert letzte Exploration-Entscheidung
+        self.last_exploration_check: Dict[str, float] = {}  # {symbol: timestamp}
+        self.exploration_check_interval = 30  # Sekunden zwischen Exploration-Würfen
+        
+        # Exit-Statistiken für Dashboard
+        self.exit_stats = {
+            'exploration_sells': 0,
+            'exploitation_sells': 0,
+            'emergency_sells': 0,
+            'time_limit_sells': 0,
+            'total_hold_time_exploration': 0,  # Summe Haltezeit bei Exploration-Sells
+            'total_hold_time_exploitation': 0,  # Summe Haltezeit bei Exploitation-Sells
+            'sell_prob_sum': 0,  # Summe aller SELL-Wahrscheinlichkeiten
+            'sell_prob_count': 0,  # Anzahl Checks
+        }
+        
         # Lade gespeichertes Modell
         self._load_model()
     
@@ -902,6 +920,7 @@ class RLTradingAI:
         if hold_seconds < MIN_HOLD_SECONDS:
             # Emergency Exit auch vor Mindesthaltezeit erlaubt
             if pnl <= EMERGENCY_THRESHOLD:
+                self.exit_stats['emergency_sells'] += 1
                 return {
                     'should_sell': True,
                     'confidence': 100,
@@ -941,6 +960,7 @@ class RLTradingAI:
             # Hohe Exploration + unter 180s: SELL nur durch Exploitation oder Emergency
             
             if pnl <= EMERGENCY_THRESHOLD:
+                self.exit_stats['emergency_sells'] += 1
                 return {
                     'should_sell': True,
                     'confidence': 100,
@@ -953,6 +973,8 @@ class RLTradingAI:
                 }
             
             if exploitation_says_sell and q_diff > 0.1:  # Starkes Exploitation-Signal
+                self.exit_stats['exploitation_sells'] += 1
+                self.exit_stats['total_hold_time_exploitation'] += hold_seconds
                 reason = f"🧠 EXPLOITATION SELL: Q[SELL]={q_values[2]:.3f} >> Q[HOLD]={q_values[0]:.3f} | Net PnL: {pnl:+.2f}%"
                 logger.info(f"[RL] {symbol}: {reason}")
                 return {
@@ -979,20 +1001,44 @@ class RLTradingAI:
         
         # ============ PHASE 4: NORMALE ENTSCHEIDUNG (>180s oder niedrige Exploration) ============
         
+        # Track sell probability für Stats
+        minutes_over_guard = max(0, (hold_seconds - EXPLORATION_SELL_SECONDS) / 60)
+        sell_prob_per_check = min(0.03, 0.003 + minutes_over_guard * 0.005)  # REDUZIERT: 0.3% + 0.5% pro Minute, max 3%
+        
+        # Stats tracken
+        self.exit_stats['sell_prob_sum'] += sell_prob_per_check
+        self.exit_stats['sell_prob_count'] += 1
+        
         if is_exploration_phase:
-            # Exploration: SELL-Wahrscheinlichkeit steigt mit Haltezeit
-            # Damit die KI auch längere Haltezeiten explorieren kann!
+            # ============ EXPLORATION COOLDOWN ============
+            # Würfle nur alle 30 Sekunden neu, nicht bei jedem Check!
+            current_time = time.time()
+            last_check = self.last_exploration_check.get(symbol, 0)
             
-            # Base: 2% pro Minute nach 180s
-            # Bei 3 Min (180s) = 0%, 4 Min (240s) = 2%, 5 Min (300s) = 4%, etc.
-            # Hard Exit ist bei 10 Min (600s) ohnehin
-            minutes_over_guard = max(0, (hold_seconds - EXPLORATION_SELL_SECONDS) / 60)
-            sell_prob_per_check = min(0.05, 0.005 + minutes_over_guard * 0.01)  # 0.5% + 1% pro Minute, max 5%
+            if current_time - last_check < self.exploration_check_interval:
+                # Noch im Cooldown - kein neuer Würfel
+                reason = f"⏳ EXPLORATION COOLDOWN: Nächster Check in {self.exploration_check_interval - (current_time - last_check):.0f}s | Net PnL: {pnl:+.2f}%"
+                return {
+                    'should_sell': False,
+                    'confidence': 0,
+                    'reasoning': reason,
+                    'action': 'HOLD',
+                    'exploration': True,
+                    'q_values': q_dict,
+                    'sell_source': None
+                }
             
-            # Alternative: Time-weighted probability
-            # Je länger gehalten, desto höher die SELL-Chance (aber immer noch niedrig)
+            # Neuer Exploration-Check - Timestamp updaten
+            self.last_exploration_check[symbol] = current_time
+            
+            # SELL-Wahrscheinlichkeit steigt mit Haltezeit (aber sehr konservativ)
+            # Damit die KI längere Haltezeiten explorieren kann!
             
             if random.random() < sell_prob_per_check:
+                # Exploration SELL - Stats tracken
+                self.exit_stats['exploration_sells'] += 1
+                self.exit_stats['total_hold_time_exploration'] += hold_seconds
+                
                 reason = f"🎲 EXPLORATION SELL: Random ({sell_prob_per_check*100:.1f}%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={epsilon:.2f}"
                 logger.info(f"[RL] {symbol}: {reason}")
                 return {
@@ -1019,6 +1065,10 @@ class RLTradingAI:
         else:
             # Exploitation: Nutze gelerntes Wissen
             if exploitation_says_sell:
+                # Exploitation SELL - Stats tracken
+                self.exit_stats['exploitation_sells'] += 1
+                self.exit_stats['total_hold_time_exploitation'] += hold_seconds
+                
                 reason = f"🧠 EXPLOITATION SELL: Q[SELL]={q_values[2]:.3f} > Q[HOLD]={q_values[0]:.3f} | Net PnL: {pnl:+.2f}%"
                 logger.info(f"[RL] {symbol}: {reason}")
                 return {
@@ -1209,13 +1259,34 @@ class RLTradingAI:
         logger.info(f"[RL]    → Training-Episoden: {self.brain.training_episodes}")
     
     def get_status(self) -> Dict:
-        """Hole KI-Status"""
+        """Hole KI-Status mit Exit-Statistiken"""
         brain_status = self.brain.get_status()
+        
+        # Exit-Statistiken berechnen
+        total_sells = self.exit_stats['exploration_sells'] + self.exit_stats['exploitation_sells']
+        avg_sell_prob = (self.exit_stats['sell_prob_sum'] / self.exit_stats['sell_prob_count'] * 100) if self.exit_stats['sell_prob_count'] > 0 else 0
+        avg_hold_exploration = (self.exit_stats['total_hold_time_exploration'] / self.exit_stats['exploration_sells']) if self.exit_stats['exploration_sells'] > 0 else 0
+        avg_hold_exploitation = (self.exit_stats['total_hold_time_exploitation'] / self.exit_stats['exploitation_sells']) if self.exit_stats['exploitation_sells'] > 0 else 0
+        
         return {
             **brain_status,
             "active_episodes": list(self.current_episode.keys()),
             "model_path": self.MODEL_PATH,
-            "description": f"RL Trading AI - {brain_status['total_trades']} Trades, {brain_status['win_rate']*100:.1f}% Win-Rate"
+            "description": f"RL Trading AI - {brain_status['total_trades']} Trades, {brain_status['win_rate']*100:.1f}% Win-Rate",
+            
+            # Neue Exit-Statistiken für Dashboard
+            "exit_stats": {
+                "exploration_sells": self.exit_stats['exploration_sells'],
+                "exploitation_sells": self.exit_stats['exploitation_sells'],
+                "emergency_sells": self.exit_stats['emergency_sells'],
+                "time_limit_sells": self.exit_stats['time_limit_sells'],
+                "total_sells": total_sells,
+                "avg_sell_probability_pct": round(avg_sell_prob, 2),
+                "avg_hold_time_exploration_s": round(avg_hold_exploration, 1),
+                "avg_hold_time_exploitation_s": round(avg_hold_exploitation, 1),
+                "exploration_check_interval_s": self.exploration_check_interval,
+                "exploitation_ratio": round(self.exit_stats['exploitation_sells'] / total_sells * 100, 1) if total_sells > 0 else 0,
+            }
         }
 
 
