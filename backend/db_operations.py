@@ -323,9 +323,18 @@ class Database:
     
     # ========== TRADE OPERATIONS ==========
     
-    async def add_trade(self, trade: Trade):
-        doc = trade.model_dump()
-        doc['ts'] = doc['ts'].isoformat()
+    async def add_trade(self, trade):
+        if isinstance(trade, Trade):
+            doc = trade.model_dump()
+        elif isinstance(trade, dict):
+            doc = trade.copy()
+        else:
+            raise ValueError(f"add_trade expects Trade or dict, got {type(trade)}")
+        
+        # Ensure ts is ISO string
+        if 'ts' in doc and hasattr(doc['ts'], 'isoformat'):
+            doc['ts'] = doc['ts'].isoformat()
+        
         await self.trades.insert_one(doc)
     
     async def get_today_exposure(self, user_id: str, mode: str) -> float:

@@ -2404,11 +2404,13 @@ async def get_rl_trading_stats(
     
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff_str = cutoff.isoformat()  # Convert to string for comparison
     
     # Fetch all closed trades in period
+    # Note: ts is stored as ISO string, so we compare strings
     trades = await db.db.trades.find({
         "user_id": user_id,
-        "ts": {"$gte": cutoff},
+        "ts": {"$gte": cutoff_str},
         "side": "SELL"  # Only closed trades
     }).to_list(1000)
     
