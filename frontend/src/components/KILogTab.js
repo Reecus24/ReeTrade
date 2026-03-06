@@ -402,11 +402,12 @@ export default function KILogTab() {
               RL-KI ZURÜCKSETZEN
             </AlertDialogTitle>
             <AlertDialogDescription className="text-zinc-400 font-mono-cyber space-y-3">
-              <p>⚠️ <strong>ACHTUNG:</strong> Dies löscht alle gelernten Daten!</p>
+              <p>⚠️ <strong>ACHTUNG:</strong> Dies löscht ALLE Daten!</p>
               <ul className="list-disc list-inside text-sm space-y-1">
                 <li>Replay Buffer ({rlStatus?.memory_size || 0} Erfahrungen)</li>
                 <li>Neural Networks (alle gelernten Gewichte)</li>
                 <li>Trade-Statistiken ({rlStatus?.total_trades || 0} Trades)</li>
+                <li className="text-red-400">Trade-Historie in der Datenbank</li>
                 <li>Win-Rate ({winRate.toFixed(1)}%)</li>
               </ul>
               <p className="text-green-400">✅ Ein Backup wird automatisch erstellt.</p>

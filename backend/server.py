@@ -1684,10 +1684,11 @@ async def reset_rl_model(
     """
     Setzt die RL-KI komplett zurück für einen sauberen Neustart.
     
-    ACHTUNG: Dies löscht alle gelernten Daten!
+    ACHTUNG: Dies löscht ALLE Daten!
     - Replay Buffer (alle Erfahrungen)
     - Neural Networks (alle gelernten Gewichte)
     - Trade-Statistiken
+    - Trade-Historie in der Datenbank
     - Epsilon wird auf 1.0 zurückgesetzt
     
     Ein Backup wird automatisch erstellt.
@@ -1697,21 +1698,33 @@ async def reset_rl_model(
     user_id = current_user['user_id']
     
     # Log the reset action
-    await db.log(user_id, "WARNING", "[RL] 🔄 MODEL RESET angefordert vom Benutzer")
+    await db.log(user_id, "WARNING", "[RL] 🔄 KOMPLETTER RESET angefordert vom Benutzer")
     
-    # Get the RL AI instance and reset it
+    # 1. Zähle alte Trades
+    old_trades_count = await db.db.trades.count_documents({"user_id": user_id})
+    
+    # 2. Lösche Trade-Historie aus MongoDB
+    delete_result = await db.db.trades.delete_many({"user_id": user_id})
+    deleted_trades = delete_result.deleted_count
+    
+    await db.log(user_id, "WARNING", f"[RL] 🗑️ {deleted_trades} Trades aus der Datenbank gelöscht")
+    
+    # 3. Get the RL AI instance and reset it
     rl_ai = get_rl_trading_ai(db)
-    result = rl_ai.reset_model(reason=f"User {user_id} requested reset via API")
+    result = rl_ai.reset_model(reason=f"User {user_id} requested full reset via API")
     
-    await db.log(user_id, "WARNING", f"[RL] ✅ MODEL RESET abgeschlossen! Alte Stats: {result['old_stats']['trades']} Trades, {result['old_stats']['win_rate']*100:.1f}% Win-Rate")
+    await db.log(user_id, "WARNING", f"[RL] ✅ KOMPLETTER RESET abgeschlossen! Gelöscht: {deleted_trades} Trades, {result['old_stats']['memory']} Memory-Einträge")
     
     return {
         "success": result['success'],
-        "message": "RL-KI wurde erfolgreich zurückgesetzt!",
-        "old_stats": result['old_stats'],
+        "message": "RL-KI wurde komplett zurückgesetzt!",
+        "old_stats": {
+            **result['old_stats'],
+            "db_trades_deleted": deleted_trades
+        },
         "new_stats": result['new_stats'],
         "backup_created": result.get('backup_path') is not None,
-        "info": "Die KI startet jetzt mit 100% Exploration und lernt von Grund auf neu."
+        "info": "Die KI startet jetzt mit 100% Exploration und lernt von Grund auf neu. Trade-Historie wurde gelöscht."
     }
 
 
