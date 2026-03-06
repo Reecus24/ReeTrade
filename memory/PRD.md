@@ -76,6 +76,44 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
 
 - **Test Coverage**: 23/23 Tests bestanden (100%)
 
+### P0 Fix: Scan-Logik für RL Trading Universe ✅ (März 2026)
+
+#### Problem
+Der Scanner scannte keine Coins mehr, weil er nur Top-20 Coins nach globalem Volume berücksichtigte. Da das Trading-Universe auf Mid-Cap Coins umgestellt wurde, funktionierte diese Logik nicht mehr.
+
+#### Lösung
+**Neue Scan-Logik implementiert:**
+
+1. **DIREKT aus definiertem Universe scannen** (nicht mehr Top-20 global):
+   ```
+   SOLUSDT, AVAXUSDT, DOTUSDT, LINKUSDT, MATICUSDT, ATOMUSDT, TRXUSDT, NEARUSDT, 
+   FILUSDT, APTUSDT, ARBUSDT, OPUSDT, INJUSDT, SUIUSDT, SEIUSDT, AAVEUSDT, UNIUSDT, 
+   RUNEUSDT, STXUSDT, TIAUSDT, IMXUSDT, FTMUSDT, GALAUSDT, SANDUSDT, MANAUSDT, 
+   AXSUSDT, CHZUSDT, ZILUSDT, IOTAUSDT, XLMUSDT, ALGOUSDT, FLOWUSDT, MINAUSDT, 
+   RNDRUSDT, DYDXUSDT, GMXUSDT, LDOUSDT, CRVUSDT, SNXUSDT, COMPUSDT, BALUSDT, ANKRUSDT
+   ```
+
+2. **Optimierte Liquidity Filter für MEXC Mid-Caps**:
+   - 24h Volume > 3M USDT (statt 20M)
+   - Spread < 0.5% (statt 0.2%)
+
+3. **Active Scan Pool mit Rotation**:
+   - Universe: ~42 Coins (alle liquiden Mid-Caps)
+   - Active Scan Pool: 15-20 Coins gleichzeitig
+   - Rotation alle 45 Minuten (statt 4 Stunden)
+
+4. **Robustere Fehlerbehandlung**:
+   - Sofortiger Refresh wenn `top_pairs` leer ist
+   - Fallback zu Batch-Rotation wenn nach Refresh leer
+   - Detailliertes Logging für Debugging
+
+#### Geänderte Dateien
+- `backend/mexc_client.py`: `get_momentum_universe()` komplett überarbeitet
+- `backend/worker.py`: `process_user()`, `refresh_top_pairs()`, `rotate_to_next_batch()` angepasst
+
+#### Test-Ergebnis
+Mit den neuen Filtern: **13-20 tradable Coins** (vorher: 0-5)
+
 ## Aktiver Backlog
 
 ### P1.5 - Safety (Future)
@@ -89,11 +127,11 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
 - [ ] Webhook statt Polling (alternative to Lock)
 
 ## Key Files
-- `backend/worker.py` - Trading Loop
+- `backend/worker.py` - Trading Loop + Universe Rotation
 - `backend/rl_trading_ai.py` - RL AI + PER
-- `backend/mexc_client.py` - MEXC API + Orderbook
+- `backend/mexc_client.py` - MEXC API + Orderbook + Universe Scanner
 - `backend/order_sizer.py` - Order validation
-- `backend/distributed_lock.py` - Leader Election ✅ NEW
+- `backend/distributed_lock.py` - Leader Election
 - `backend/server.py` - API + Telegram Polling
 
 ## PER Algorithm Details

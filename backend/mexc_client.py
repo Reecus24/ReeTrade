@@ -248,16 +248,21 @@ class MexcClient:
     
     async def get_momentum_universe(self, quote: str = "USDT", base_limit: int = 50, 
                                       curated_list: List[str] = None,
-                                      min_volume_24h: float = 20_000_000,
-                                      max_spread_pct: float = 0.20) -> List[Dict]:
+                                      min_volume_24h: float = 3_000_000,
+                                      max_spread_pct: float = 0.50) -> List[Dict]:
         """Get momentum-scored universe with liquidity filter
+        
+        NEUE LOGIK (v2):
+        - Scannt DIREKT aus dem definierten Universe (42 Mid-Cap Coins)
+        - KEIN Top-20 Volume Filter mehr!
+        - Optimierte Filter für MEXC: 3M Volume, 0.5% Spread
         
         Args:
             quote: Quote currency (default: USDT)
             base_limit: Max coins to return
-            curated_list: Optional whitelist of preferred coins
-            min_volume_24h: Minimum 24h volume in USDT (default: 20M)
-            max_spread_pct: Maximum spread in % (default: 0.20%)
+            curated_list: Optional whitelist of preferred coins (WIRD DIREKT VERWENDET!)
+            min_volume_24h: Minimum 24h volume in USDT (default: 3M - optimal für MEXC Mid-Caps)
+            max_spread_pct: Maximum spread in % (default: 0.5% - realistisch für Mid-Caps)
         
         Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume, spread_pct
         """
@@ -270,47 +275,62 @@ class MexcClient:
         ]
         
         # ═══════════════════════════════════════════════════════════════════════════
-        # CURATED MID-CAP TRADING UNIVERSE
-        # These coins have good liquidity, reasonable spreads, and enough volatility
+        # DEFINIERTES MID-CAP TRADING UNIVERSE (42 Coins)
+        # Diese Liste wird DIREKT gescannt - KEIN Top-20 Volume Filter!
         # ═══════════════════════════════════════════════════════════════════════════
         if curated_list is None:
             curated_list = [
-                # Tier 1: High Liquidity Mid-Caps
+                # Tier 1: High Liquidity Mid-Caps (15)
                 "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
                 "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
                 "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
                 
-                # Tier 2: DeFi & Layer 1
+                # Tier 2: DeFi & Layer 1 (10)
                 "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
                 "IMXUSDT", "FTMUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
                 
-                # Tier 3: Gaming & Metaverse
+                # Tier 3: Gaming & Metaverse (5)
                 "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
                 
-                # Tier 4: Infrastructure & DeFi
+                # Tier 4: Infrastructure & DeFi (12)
                 "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
                 "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
                 "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT"
             ]
         
-        # Filter to curated list first
+        # ═══════════════════════════════════════════════════════════════════════════
+        # DIREKT AUS UNIVERSE SCANNEN - NICHT MEHR TOP-20 VOLUME!
+        # ═══════════════════════════════════════════════════════════════════════════
         curated_set = set(curated_list)
-        filtered_pairs = [t for t in usdt_pairs if t.get('symbol') in curated_set]
         
-        # If curated list yields too few results, add top volume coins
-        if len(filtered_pairs) < 15:
-            # Sort all by volume and add top ones
-            usdt_pairs.sort(key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)
-            for t in usdt_pairs[:50]:
-                if t.get('symbol') not in curated_set and t not in filtered_pairs:
-                    filtered_pairs.append(t)
-                    if len(filtered_pairs) >= 30:
-                        break
+        # Erstelle Lookup für schnellen Zugriff
+        ticker_lookup = {t.get('symbol'): t for t in usdt_pairs}
         
-        # Apply liquidity filters
+        # Hole nur die Coins aus dem Universe
+        filtered_pairs = []
+        missing_coins = []
+        for symbol in curated_list:
+            if symbol in ticker_lookup:
+                filtered_pairs.append(ticker_lookup[symbol])
+            else:
+                missing_coins.append(symbol)
+        
+        if missing_coins:
+            logger.warning(f"[UNIVERSE] {len(missing_coins)} Coins nicht auf MEXC gefunden: {missing_coins[:5]}...")
+        
+        logger.info(f"[UNIVERSE] {len(filtered_pairs)}/{len(curated_list)} Universe-Coins auf MEXC verfügbar")
+        
+        # ═══════════════════════════════════════════════════════════════════════════
+        # LOCKERERE LIQUIDITY FILTER FÜR MID-CAPS
+        # Volume > 10M USDT, Spread < 0.25%
+        # ═══════════════════════════════════════════════════════════════════════════
         liquid_pairs = []
+        skipped_volume = []
+        skipped_spread = []
+        
         for ticker in filtered_pairs:
             try:
+                symbol = ticker.get('symbol', 'UNKNOWN')
                 volume_24h = float(ticker.get('quoteVolume', 0))
                 
                 # Calculate spread from bid/ask if available, otherwise estimate
@@ -318,23 +338,37 @@ class MexcClient:
                 ask = float(ticker.get('askPrice', 0))
                 last_price = float(ticker.get('lastPrice', 1))
                 
-                if bid > 0 and ask > 0:
+                if bid > 0 and ask > 0 and last_price > 0:
                     spread_pct = ((ask - bid) / last_price) * 100
                 else:
                     # Estimate spread based on volume (higher volume = lower spread)
                     spread_pct = max(0.05, 1.0 / (volume_24h / 1_000_000 + 1))
                 
-                # Apply filters
-                if volume_24h >= min_volume_24h and spread_pct <= max_spread_pct:
-                    ticker['spread_pct'] = spread_pct
-                    ticker['volume_24h'] = volume_24h
-                    liquid_pairs.append(ticker)
+                # Apply LOCKERERE filters
+                if volume_24h < min_volume_24h:
+                    skipped_volume.append(f"{symbol}({volume_24h/1e6:.1f}M)")
+                    continue
+                    
+                if spread_pct > max_spread_pct:
+                    skipped_spread.append(f"{symbol}({spread_pct:.2f}%)")
+                    continue
+                
+                ticker['spread_pct'] = spread_pct
+                ticker['volume_24h'] = volume_24h
+                liquid_pairs.append(ticker)
                     
             except Exception as e:
                 logger.warning(f"Error filtering {ticker.get('symbol')}: {e}")
                 continue
         
-        logger.info(f"[UNIVERSE] {len(filtered_pairs)} curated -> {len(liquid_pairs)} after liquidity filter (Vol>{min_volume_24h/1e6:.0f}M, Spread<{max_spread_pct}%)")
+        # Detailed logging
+        logger.info(f"[UNIVERSE] Liquidity Filter: {len(liquid_pairs)} passed | "
+                   f"{len(skipped_volume)} low volume | {len(skipped_spread)} high spread")
+        
+        if skipped_volume:
+            logger.debug(f"[UNIVERSE] Skipped (Volume<{min_volume_24h/1e6:.0f}M): {skipped_volume[:10]}")
+        if skipped_spread:
+            logger.debug(f"[UNIVERSE] Skipped (Spread>{max_spread_pct}%): {skipped_spread[:10]}")
         
         # Sort by volume for base universe
         liquid_pairs.sort(key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)
@@ -376,6 +410,8 @@ class MexcClient:
         
         # Sort by momentum score descending
         momentum_pairs.sort(key=lambda x: x['score'], reverse=True)
+        
+        logger.info(f"[UNIVERSE] Final: {len(momentum_pairs)} tradable coins with momentum scores")
         
         return momentum_pairs
     

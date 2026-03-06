@@ -709,21 +709,37 @@ class MultiUserTradingWorker:
             except Exception as e:
                 logger.error(f"Failed to load exchange info: {e}")
         
-        # Refresh top pairs every 4 hours
+        # ═══════════════════════════════════════════════════════════════════════════
+        # ROTATION LOGIC: Refresh Universe alle 45 Minuten ODER wenn leer
+        # ═══════════════════════════════════════════════════════════════════════════
+        ROTATION_INTERVAL_MINUTES = 45  # Universe-Rotation alle 45 Minuten
+        
         should_refresh = True
         if settings.last_pairs_refresh:
             last_refresh = settings.last_pairs_refresh
             if last_refresh.tzinfo is None:
                 last_refresh = last_refresh.replace(tzinfo=timezone.utc)
-            should_refresh = (datetime.now(timezone.utc) - last_refresh) > timedelta(hours=4)
+            should_refresh = (datetime.now(timezone.utc) - last_refresh) > timedelta(minutes=ROTATION_INTERVAL_MINUTES)
+        
+        # KRITISCH: Sofortiger Refresh wenn top_pairs LEER ist!
+        if not settings.top_pairs or len(settings.top_pairs) == 0:
+            await self.db.log(user_id, "WARNING", "⚠️ top_pairs ist LEER - Starte sofortigen Universe Refresh!")
+            should_refresh = True
         
         if should_refresh:
             await self.refresh_top_pairs(user_id)
             settings = await self.db.get_settings(user_id)
         
-        if not settings.top_pairs:
-            await self.db.log(user_id, "WARNING", "No top pairs available")
-            return
+        # Fallback: Wenn nach Refresh immer noch leer, versuche Batch-Rotation
+        if not settings.top_pairs or len(settings.top_pairs) == 0:
+            await self.db.log(user_id, "WARNING", "⚠️ Nach Refresh immer noch keine Coins - Versuche Batch-Rotation")
+            await self.rotate_to_next_batch(user_id, settings)
+            settings = await self.db.get_settings(user_id)
+            
+            # Letzter Fallback: Wenn komplett leer, überspringe diesen Zyklus
+            if not settings.top_pairs or len(settings.top_pairs) == 0:
+                await self.db.log(user_id, "ERROR", "❌ Keine Trading-Pairs verfügbar - Überspringe diesen Zyklus")
+                return
         
         await self.db.log(user_id, "WARNING", "[LIVE] Starting trading cycle")
         await self.scan_and_trade(user_id, settings)
@@ -771,14 +787,14 @@ class MultiUserTradingWorker:
             
             mexc = MexcClient()
             # ═══════════════════════════════════════════════════════════════════════════
-            # OPTIMIZED MID-CAP TRADING UNIVERSE
-            # - Curated list of liquid mid-cap coins
-            # - Dynamic liquidity filter (Volume > 5M, Spread < 0.50%)
-            # - Active trading set: 20 coins per batch
+            # NEUE SCAN-LOGIK: DIREKT AUS DEFINIERTEM UNIVERSE
+            # - Scannt NICHT mehr Top-20 global nach Volume!
+            # - Verwendet DIREKT die 42 Mid-Cap Coins
+            # - Optimierte Filter für MEXC: 3M Volume, 0.5% Spread
             # ═══════════════════════════════════════════════════════════════════════════
             COIN_UNIVERSE_SIZE = 50  # Pool size
-            MIN_VOLUME_24H = 5_000_000  # 5M USDT minimum (MEXC has lower volume than Binance)
-            MAX_SPREAD_PCT = 0.50  # 0.50% max spread (more lenient)
+            MIN_VOLUME_24H = 3_000_000  # 3M USDT minimum (optimal für Mid-Caps auf MEXC)
+            MAX_SPREAD_PCT = 0.50  # 0.5% max spread (realistisch für Mid-Caps)
             
             momentum_pairs = await mexc.get_momentum_universe(
                 quote="USDT", 
@@ -788,7 +804,7 @@ class MultiUserTradingWorker:
             )
             
             await self.db.log(user_id, "INFO", 
-                f"📊 {len(momentum_pairs)} liquide Mid-Cap Coins gefunden (Vol>{MIN_VOLUME_24H/1e6:.0f}M, Spread<{MAX_SPREAD_PCT}%)")
+                f"📊 {len(momentum_pairs)} Coins aus Universe gefunden (Vol>{MIN_VOLUME_24H/1e6:.0f}M, Spread<{MAX_SPREAD_PCT}%)")
             
             filtered_pairs = []
             skipped_bearish = 0
@@ -872,11 +888,13 @@ class MultiUserTradingWorker:
             ), reverse=True)
             
             # ═══════════════════════════════════════════════════════════════════════════
-            # ACTIVE TRADING SET: 40-60 COINS UNIVERSE, 15-20 PER BATCH
-            # Für fokussiertes RL-Training: alle liquiden Mid-Caps, Batch-Rotation
+            # ACTIVE TRADING SET: 15-20 COINS PRO BATCH
+            # - Universe: ~42 Coins (alle verfügbaren Mid-Caps)
+            # - Active Scan Pool: 20 Coins gleichzeitig
+            # - Rotation alle 30-60 Minuten (via ROTATION_INTERVAL_MINUTES in process_user)
             # ═══════════════════════════════════════════════════════════════════════════
             MAX_TRADABLE_COINS = 45  # Alle ~42 curated Coins + etwas Buffer
-            self.COINS_PER_BATCH = 20  # 20 Coins pro Scan-Batch
+            self.COINS_PER_BATCH = 20  # 15-20 Coins pro Scan-Batch (20 für bessere Abdeckung)
             all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
             
             # Save first batch (20) as active, store all for rotation
@@ -1356,16 +1374,26 @@ class MultiUserTradingWorker:
         await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen")
     
     async def rotate_to_next_batch(self, user_id: str, settings: UserSettings):
-        """Rotate to next batch of coins when no signals found"""
+        """Rotate to next batch of coins when no signals found
+        
+        VERBESSERTE LOGIK:
+        - Wenn all_coins leer: sofortiger Refresh
+        - Wenn alle Batches durchlaufen: Refresh
+        - Sonst: nächster Batch
+        """
         # Get all coins (from memory or DB)
         if user_id not in self.user_all_coins or not self.user_all_coins[user_id]:
             # Load from DB
             all_pairs = getattr(settings, 'all_pairs', None) or settings.top_pairs
-            self.user_all_coins[user_id] = all_pairs
+            self.user_all_coins[user_id] = all_pairs if all_pairs else []
             self.user_coin_batch[user_id] = 0
         
         all_coins = self.user_all_coins[user_id]
-        if not all_coins:
+        
+        # KRITISCH: Wenn keine Coins vorhanden, sofortiger Refresh!
+        if not all_coins or len(all_coins) == 0:
+            await self.db.log(user_id, "WARNING", "⚠️ Keine Coins im Pool - Starte sofortigen Universe Refresh!")
+            await self.refresh_top_pairs(user_id)
             return
         
         # Calculate current and next batch
@@ -1383,6 +1411,11 @@ class MultiUserTradingWorker:
         start_idx = next_batch * self.COINS_PER_BATCH
         end_idx = min(start_idx + self.COINS_PER_BATCH, len(all_coins))
         next_coins = all_coins[start_idx:end_idx]
+        
+        # Fallback: Wenn Batch leer wäre, nimm erste Coins
+        if not next_coins:
+            next_coins = all_coins[:self.COINS_PER_BATCH]
+            next_batch = 0
         
         # Update settings with new active batch
         await self.db.update_settings(user_id, {
