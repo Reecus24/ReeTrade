@@ -237,6 +237,19 @@ class Position(BaseModel):
     partial_profit_taken: bool = False  # Has partial profit been taken?
     partial_profit_time: Optional[datetime] = None  # When partial was taken
     sl_moved_to_entry: bool = False  # Has SL been moved to break-even?
+    
+    # ============ PHASE 2/3: ORDERBOOK & MFE/MAE TRACKING ============
+    # Orderbook at entry
+    spread_at_entry: Optional[float] = None
+    orderbook_imbalance_at_entry: Optional[float] = None
+    
+    # MFE/MAE Tracking (updated during position lifetime)
+    max_price_seen: Optional[float] = None  # Highest price during trade
+    min_price_seen: Optional[float] = None  # Lowest price during trade
+    
+    # AI Context at entry
+    epsilon_at_entry: Optional[float] = None
+    q_value_at_entry: Optional[float] = None
 
 class PaperAccount(BaseModel):
     user_id: str
@@ -265,13 +278,31 @@ class Trade(BaseModel):
     gross_pnl: Optional[float] = None  # PnL before costs
     gross_pnl_pct: Optional[float] = None  # Gross PnL percentage
     
-    # Market context at entry (will be populated in Phase 2)
-    spread_at_entry: Optional[float] = None
-    orderbook_imbalance: Optional[float] = None
+    # ============ PHASE 2: ORDERBOOK & MARKET CONTEXT ============
+    # Market context at entry
+    spread_at_entry: Optional[float] = None  # Bid-Ask Spread %
+    orderbook_imbalance: Optional[float] = None  # bid_vol / ask_vol
+    bid_volume_sum: Optional[float] = None  # Sum of top 5 bids
+    ask_volume_sum: Optional[float] = None  # Sum of top 5 asks
+    mid_price_at_entry: Optional[float] = None
+    volatility_at_entry: Optional[float] = None  # 1m realized volatility
+    
+    # Microtrend at entry
+    return_30s_at_entry: Optional[float] = None
+    return_60s_at_entry: Optional[float] = None
+    return_180s_at_entry: Optional[float] = None
+    
+    # ============ PHASE 3: MFE/MAE TRACKING ============
+    max_price_during_trade: Optional[float] = None
+    min_price_during_trade: Optional[float] = None
+    mfe: Optional[float] = None  # Max Favorable Excursion %
+    mae: Optional[float] = None  # Max Adverse Excursion %
     
     # AI context
     epsilon_at_trade: Optional[float] = None
     exit_reason_category: Optional[str] = None  # ai_exit, time_limit, emergency_sl, stop_loss, take_profit, manual
+    q_value_at_entry: Optional[float] = None  # Q-Value when trade was opened
+    model_version: Optional[str] = None
 
 class DailyMetrics(BaseModel):
     user_id: str

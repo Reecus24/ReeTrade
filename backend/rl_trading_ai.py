@@ -62,9 +62,28 @@ class MarketState:
     distance_to_stop_loss: float = 0
     distance_to_take_profit: float = 0
     
+    # ============ PHASE 2: ORDERBOOK & MICROSTRUCTURE ============
+    # Spread & Mid Price
+    spread_pct: float = 0  # Bid-Ask Spread in %
+    mid_price: float = 0  # (best_bid + best_ask) / 2
+    
+    # Orderbook Imbalance
+    orderbook_imbalance: float = 1.0  # bid_vol / ask_vol (>1 = buying pressure)
+    bid_volume_sum: float = 0  # Sum of top 5 bid volumes
+    ask_volume_sum: float = 0  # Sum of top 5 ask volumes
+    
+    # Microtrend Returns (für 10-Min Trading kritisch!)
+    return_30s: float = 0  # Price change last 30 seconds
+    return_60s: float = 0  # Price change last 60 seconds
+    return_180s: float = 0  # Price change last 180 seconds
+    
+    # Volatility (realized)
+    volatility_1m: float = 0  # 1-minute realized volatility
+    
     def to_array(self) -> np.ndarray:
-        """Konvertiere zu Feature-Array für KI"""
+        """Konvertiere zu Feature-Array für KI (32 Features)"""
         return np.array([
+            # Original features (22)
             self.price_change_1h,
             self.price_change_4h,
             self.price_change_24h,
@@ -86,12 +105,23 @@ class MarketState:
             self.position_pnl_pct / 10,
             self.position_hold_hours / 24,
             self.distance_to_stop_loss / 10,
-            self.distance_to_take_profit / 10
+            self.distance_to_take_profit / 10,
+            # NEW: Orderbook & Microstructure (10 features)
+            self.spread_pct * 10,  # Spread normalized (0.1% -> 1.0)
+            min(self.orderbook_imbalance, 5.0) / 5.0,  # Capped at 5, normalized
+            self.return_30s * 100,  # Micro returns amplified
+            self.return_60s * 100,
+            self.return_180s * 100,
+            min(self.bid_volume_sum, 1000000) / 1000000,  # Normalized
+            min(self.ask_volume_sum, 1000000) / 1000000,
+            self.volatility_1m * 100,  # Volatility amplified
+            0,  # Reserved for future use
+            0   # Reserved for future use
         ], dtype=np.float32)
     
     @staticmethod
     def state_size() -> int:
-        return 22
+        return 32  # Increased from 22 to 32
 
 
 # ============ ACTIONS (Was die KI tun kann) ============
@@ -154,7 +184,7 @@ class QLearningBrain:
         gamma: float = 0.95,  # Discount für zukünftige Rewards
         epsilon_start: float = 1.0,  # Start-Exploration
         epsilon_end: float = 0.05,  # End-Exploration (5% minimum)
-        epsilon_decay: float = 0.997  # Langsamer Decay für stabileres Lernen
+        epsilon_decay: float = 0.995  # Schnellerer Decay für effizienteres Lernen
     ):
         self.state_size = state_size
         self.action_size = action_size
@@ -543,8 +573,61 @@ class RLTradingAI:
                 if take_profit and take_profit > 0:
                     state.distance_to_take_profit = (take_profit - state.current_price) / state.current_price * 100
             
+            # ============ PHASE 2: MICROSTRUCTURE FEATURES ============
+            # Berechne Volatility aus 1-Minute Returns (falls genug Daten)
+            if len(closes) >= 10:
+                returns_1m = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, min(11, len(closes)))]
+                state.volatility_1m = np.std(returns_1m) if returns_1m else 0
+            
+            # Microtrend Returns (30s, 60s, 180s entsprechend 0.5, 1, 3 Minuten Kerzen)
+            # Bei 1-Minute Kerzen: 30s ~= 0.5 Kerzen, 60s = 1 Kerze, 180s = 3 Kerzen
+            if len(closes) >= 4:
+                # return_30s approximiert als halbe 1-Minute Bewegung
+                state.return_30s = (closes[-1] - closes[-2]) / closes[-2] / 2 if closes[-2] > 0 else 0
+                # return_60s = 1 Kerze zurück
+                state.return_60s = (closes[-1] - closes[-2]) / closes[-2] if closes[-2] > 0 else 0
+                # return_180s = 3 Kerzen zurück
+                if len(closes) >= 4:
+                    state.return_180s = (closes[-1] - closes[-4]) / closes[-4] if closes[-4] > 0 else 0
+            
         except Exception as e:
             logger.error(f"Market analysis error: {e}")
+        
+        return state
+    
+    async def analyze_market_with_orderbook(
+        self, 
+        symbol: str, 
+        klines: List, 
+        ticker: Dict, 
+        position=None,
+        orderbook_snapshot: Dict = None
+    ) -> MarketState:
+        """
+        Erweiterte Marktanalyse MIT Orderbook-Daten
+        
+        Args:
+            symbol: Trading-Paar
+            klines: Kerzen-Daten
+            ticker: 24h Ticker
+            position: Aktuelle Position (falls vorhanden)
+            orderbook_snapshot: Orderbook Snapshot von mexc.get_orderbook_snapshot()
+        """
+        # Basis-Analyse
+        state = await self.analyze_market(symbol, klines, ticker, position)
+        
+        # Füge Orderbook-Features hinzu
+        if orderbook_snapshot:
+            try:
+                state.spread_pct = orderbook_snapshot.get('spread_pct', 0)
+                state.mid_price = orderbook_snapshot.get('mid_price', state.current_price)
+                state.orderbook_imbalance = orderbook_snapshot.get('orderbook_imbalance', 1.0)
+                state.bid_volume_sum = orderbook_snapshot.get('bid_volume_sum', 0)
+                state.ask_volume_sum = orderbook_snapshot.get('ask_volume_sum', 0)
+                
+                logger.debug(f"[RL] {symbol} Orderbook: Spread={state.spread_pct:.4f}% | Imbalance={state.orderbook_imbalance:.2f}")
+            except Exception as e:
+                logger.warning(f"Orderbook feature error for {symbol}: {e}")
         
         return state
     

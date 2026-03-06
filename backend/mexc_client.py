@@ -115,6 +115,86 @@ class MexcClient:
         }
         return await self._request("GET", "/api/v3/klines", params=params)
     
+    async def get_orderbook(self, symbol: str, limit: int = 5) -> Dict[str, Any]:
+        """Get orderbook depth (Top N levels)
+        
+        Returns:
+            {
+                'bids': [[price, qty], ...],  # Sorted descending (best bid first)
+                'asks': [[price, qty], ...],  # Sorted ascending (best ask first)
+                'lastUpdateId': int
+            }
+        """
+        params = {
+            "symbol": symbol,
+            "limit": min(limit, 100)  # MEXC supports up to 100
+        }
+        return await self._request("GET", "/api/v3/depth", params=params)
+    
+    async def get_orderbook_snapshot(self, symbol: str, levels: int = 5) -> Dict[str, Any]:
+        """Get processed orderbook snapshot with aggregated features
+        
+        Returns:
+            {
+                'symbol': str,
+                'timestamp': int (ms),
+                'best_bid_price': float,
+                'best_ask_price': float,
+                'spread': float,
+                'spread_pct': float,
+                'mid_price': float,
+                'top5_bids': [{'price': float, 'qty': float}, ...],
+                'top5_asks': [{'price': float, 'qty': float}, ...],
+                'bid_volume_sum': float,
+                'ask_volume_sum': float,
+                'orderbook_imbalance': float,  # bid_vol / ask_vol
+            }
+        """
+        try:
+            raw = await self.get_orderbook(symbol, limit=levels)
+            
+            bids = raw.get('bids', [])
+            asks = raw.get('asks', [])
+            
+            if not bids or not asks:
+                return None
+            
+            # Parse bids and asks
+            top_bids = [{'price': float(b[0]), 'qty': float(b[1])} for b in bids[:levels]]
+            top_asks = [{'price': float(a[0]), 'qty': float(a[1])} for a in asks[:levels]]
+            
+            best_bid = top_bids[0]['price'] if top_bids else 0
+            best_ask = top_asks[0]['price'] if top_asks else 0
+            
+            spread = best_ask - best_bid
+            mid_price = (best_bid + best_ask) / 2 if (best_bid + best_ask) > 0 else 0
+            spread_pct = (spread / mid_price * 100) if mid_price > 0 else 0
+            
+            bid_volume_sum = sum(b['qty'] for b in top_bids)
+            ask_volume_sum = sum(a['qty'] for a in top_asks)
+            
+            # Orderbook imbalance: > 1 = more buying pressure, < 1 = more selling pressure
+            epsilon = 0.0001
+            orderbook_imbalance = bid_volume_sum / max(ask_volume_sum, epsilon)
+            
+            return {
+                'symbol': symbol,
+                'timestamp': int(time.time() * 1000),
+                'best_bid_price': best_bid,
+                'best_ask_price': best_ask,
+                'spread': spread,
+                'spread_pct': spread_pct,
+                'mid_price': mid_price,
+                'top5_bids': top_bids,
+                'top5_asks': top_asks,
+                'bid_volume_sum': bid_volume_sum,
+                'ask_volume_sum': ask_volume_sum,
+                'orderbook_imbalance': orderbook_imbalance
+            }
+        except Exception as e:
+            logger.warning(f"Orderbook snapshot error for {symbol}: {e}")
+            return None
+    
     async def get_top_pairs(self, quote: str = "USDT", limit: int = 20) -> List[str]:
         """Get top trading pairs by 24h volume"""
         tickers = await self.get_ticker_24h()

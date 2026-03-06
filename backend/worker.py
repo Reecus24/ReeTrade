@@ -381,6 +381,13 @@ class MultiUserTradingWorker:
                 # Calculate current PnL for logging
                 pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
                 
+                # ============ MFE/MAE TRACKING ============
+                # Update max/min price seen during trade
+                if position.max_price_seen is None or current_price > position.max_price_seen:
+                    position.max_price_seen = current_price
+                if position.min_price_seen is None or current_price < position.min_price_seen:
+                    position.min_price_seen = current_price
+                
                 # Calculate hold duration
                 entry_time = position.entry_time
                 if entry_time.tzinfo is None:
@@ -436,10 +443,16 @@ class MultiUserTradingWorker:
                         
                         # Berechne Indikatoren für Logging
                         rsi = self._calculate_rsi(closes) if len(closes) >= 14 else 50
-                        momentum_1h = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) >= 2 else 0
                         
-                        # Frage RL-KI ob verkaufen
-                        rl_market_state = await self.rl_ai.analyze_market(
+                        # ============ PHASE 2: ORDERBOOK FEATURES ============
+                        orderbook_snapshot = None
+                        try:
+                            orderbook_snapshot = await mexc.get_orderbook_snapshot(position.symbol, levels=5)
+                        except Exception as ob_err:
+                            logger.debug(f"Orderbook fetch error: {ob_err}")
+                        
+                        # Frage RL-KI ob verkaufen (mit Orderbook-Features)
+                        rl_market_state = await self.rl_ai.analyze_market_with_orderbook(
                             symbol=position.symbol,
                             klines=klines,
                             ticker=ticker,
@@ -450,7 +463,8 @@ class MultiUserTradingWorker:
                                 'pnl_pct': pnl_pct,
                                 'stop_loss': position.stop_loss,
                                 'take_profit': position.take_profit
-                            }
+                            },
+                            orderbook_snapshot=orderbook_snapshot
                         )
                         
                         rl_decision = await self.rl_ai.should_sell(
@@ -697,9 +711,9 @@ class MultiUserTradingWorker:
                 f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | USDT Free: ${usdt_free:.2f} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
-            # ============ REDUCED UNIVERSE: Top 50 by Volume ============
-            # Weniger Noise für stabileres RL-Lernen
-            COIN_UNIVERSE_SIZE = 50  # Reduziert von 500 auf 50
+            # ============ REDUCED UNIVERSE: Top 30 by Volume ============
+            # Weniger Noise für stabileres RL-Lernen bei 10-Min Trades
+            COIN_UNIVERSE_SIZE = 30  # Reduziert auf 30 für fokussiertes Training
             momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=COIN_UNIVERSE_SIZE)
             
             await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} Top-Volume USDT Coins gefunden")
@@ -785,9 +799,9 @@ class MultiUserTradingWorker:
                 x.get('adx', 0)
             ), reverse=True)
             
-            # ============ REDUCED ACTIVE SET: Top 20-30 ============
+            # ============ REDUCED ACTIVE SET: Top 20 ============
             # Für 10-Min Trading: weniger Coins, mehr Fokus
-            MAX_TRADABLE_COINS = 30  # Reduziert von 100 auf 30
+            MAX_TRADABLE_COINS = 20  # Reduziert auf 20 für stabiles Training
             all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
             
             # Save first batch (20) as active, store all for rotation
@@ -1412,7 +1426,23 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "INFO", 
                 f"[LIVE] 📊 EXECUTED @ ${avg_price:.8f} | Notfall-SL: ${actual_stop_loss:.8f} | KI entscheidet Exit!")
             
-            # Create position record with ACTUAL execution price
+            # ============ PHASE 2: ORDERBOOK SNAPSHOT AT ENTRY ============
+            spread_at_entry = None
+            orderbook_imbalance_at_entry = None
+            try:
+                entry_orderbook = await mexc.get_orderbook_snapshot(symbol, levels=5)
+                if entry_orderbook:
+                    spread_at_entry = entry_orderbook.get('spread_pct')
+                    orderbook_imbalance_at_entry = entry_orderbook.get('orderbook_imbalance')
+                    await self.db.log(user_id, "INFO",
+                        f"[ORDERBOOK] {symbol}: Spread={spread_at_entry:.4f}% | Imbalance={orderbook_imbalance_at_entry:.2f}")
+            except Exception as ob_err:
+                logger.debug(f"Orderbook fetch at entry error: {ob_err}")
+            
+            # Get current epsilon for AI context
+            epsilon_at_entry = self.rl_ai.brain.epsilon if hasattr(self, 'rl_ai') else None
+            
+            # Create position record with ACTUAL execution price and Orderbook context
             position = Position(
                 symbol=symbol,
                 side="LONG",
@@ -1420,7 +1450,15 @@ class MultiUserTradingWorker:
                 qty=executed_qty,
                 stop_loss=actual_stop_loss,
                 take_profit=actual_take_profit,
-                entry_time=datetime.now(timezone.utc)
+                entry_time=datetime.now(timezone.utc),
+                # Phase 2: Orderbook at entry
+                spread_at_entry=spread_at_entry,
+                orderbook_imbalance_at_entry=orderbook_imbalance_at_entry,
+                # Phase 3: Initialize MFE/MAE tracking
+                max_price_seen=avg_price,
+                min_price_seen=avg_price,
+                # AI Context
+                epsilon_at_entry=epsilon_at_entry
             )
             
             # Update account
@@ -1646,11 +1684,22 @@ class MultiUserTradingWorker:
             elif "AI_EXIT" in reason.upper() or "RL" in reason.upper():
                 exit_reason_category = "ai_exit"
             
+            # ============ PHASE 3: MFE/MAE CALCULATION ============
+            mfe = None
+            mae = None
+            max_price = getattr(position, 'max_price_seen', None)
+            min_price = getattr(position, 'min_price_seen', None)
+            
+            if max_price and position.entry_price > 0:
+                mfe = ((max_price - position.entry_price) / position.entry_price) * 100
+            if min_price and position.entry_price > 0:
+                mae = ((min_price - position.entry_price) / position.entry_price) * 100
+            
             # Remove from account
             account.open_positions.remove(position)
             account.cash += exit_notional
             
-            # Record trade with EXTENDED SCHEMA
+            # Record trade with EXTENDED SCHEMA (Phase 2/3)
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
@@ -1665,7 +1714,23 @@ class MultiUserTradingWorker:
                 slippage_cost=round(slippage_cost, 6),
                 mode='live',
                 reason=f"{exit_reason_category}: {reason}",
-                notional=round(entry_notional, 2)
+                notional=round(entry_notional, 2),
+                # Phase 1: Duration & Gross PnL
+                duration_seconds=round(duration_seconds, 1),
+                gross_pnl=round(gross_pnl, 4),
+                gross_pnl_pct=round(gross_pnl_pct, 4),
+                # Phase 2: Orderbook context (from position)
+                spread_at_entry=getattr(position, 'spread_at_entry', None),
+                orderbook_imbalance=getattr(position, 'orderbook_imbalance_at_entry', None),
+                # Phase 3: MFE/MAE
+                max_price_during_trade=max_price,
+                min_price_during_trade=min_price,
+                mfe=round(mfe, 4) if mfe is not None else None,
+                mae=round(mae, 4) if mae is not None else None,
+                # AI Context
+                exit_reason_category=exit_reason_category,
+                epsilon_at_trade=getattr(position, 'epsilon_at_entry', None),
+                q_value_at_entry=getattr(position, 'q_value_at_entry', None)
             )
             await self.db.add_trade(trade)
             
@@ -1674,6 +1739,12 @@ class MultiUserTradingWorker:
                 f"[COST] {position.symbol}: Gross PnL: ${gross_pnl:.4f} ({gross_pnl_pct:+.2f}%) | "
                 f"Fees: ${fees_paid:.4f} | Slip: ${slippage_cost:.4f} | "
                 f"Net: ${net_pnl:.4f} ({net_pnl_pct:+.2f}%)")
+            
+            # MFE/MAE Logging
+            if mfe is not None and mae is not None:
+                await self.db.log(user_id, "INFO",
+                    f"[MFE/MAE] {position.symbol}: MFE: {mfe:+.2f}% (Max: ${max_price:.4f}) | "
+                    f"MAE: {mae:+.2f}% (Min: ${min_price:.4f})")
             
             await self.db.log(user_id, "WARNING" if net_pnl < 0 else "INFO",
                 f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | "
