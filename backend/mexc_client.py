@@ -248,24 +248,33 @@ class MexcClient:
     
     async def get_momentum_universe(self, quote: str = "USDT", base_limit: int = 50, 
                                       curated_list: List[str] = None,
-                                      min_volume_24h: float = 3_000_000,
-                                      max_spread_pct: float = 0.50) -> List[Dict]:
-        """Get momentum-scored universe with liquidity filter
+                                      min_preferred_coins: int = 10) -> List[Dict]:
+        """Get momentum-scored universe with TWO-TIER liquidity filter
         
-        NEUE LOGIK (v2):
-        - Scannt DIREKT aus dem definierten Universe (42 Mid-Cap Coins)
-        - KEIN Top-20 Volume Filter mehr!
-        - Optimierte Filter für MEXC: 3M Volume, 0.5% Spread
+        ZWEISTUFIGES SYSTEM für 10-Minuten-Trading:
         
-        Args:
-            quote: Quote currency (default: USDT)
-            base_limit: Max coins to return
-            curated_list: Optional whitelist of preferred coins (WIRD DIREKT VERWENDET!)
-            min_volume_24h: Minimum 24h volume in USDT (default: 3M - optimal für MEXC Mid-Caps)
-            max_spread_pct: Maximum spread in % (default: 0.5% - realistisch für Mid-Caps)
+        1. PREFERRED COINS (höchste Qualität):
+           - Volume > 5M USDT
+           - Spread < 0.20%
+           
+        2. FALLBACK UNIVERSE (wenn zu wenig Preferred):
+           - Volume > 2M USDT
+           - Spread < 0.35%
         
-        Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume, spread_pct
+        Der Scanner nutzt zuerst Preferred Coins. Nur wenn dort zu wenige 
+        verfügbar sind (< min_preferred_coins), wird das Fallback Universe hinzugefügt.
+        
+        Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume, spread_pct, tier
         """
+        # ═══════════════════════════════════════════════════════════════════════════
+        # FILTER THRESHOLDS
+        # ═══════════════════════════════════════════════════════════════════════════
+        PREFERRED_MIN_VOLUME = 5_000_000   # 5M USDT
+        PREFERRED_MAX_SPREAD = 0.20        # 0.20%
+        
+        FALLBACK_MIN_VOLUME = 2_000_000    # 2M USDT
+        FALLBACK_MAX_SPREAD = 0.35         # 0.35%
+        
         # Get all tickers
         tickers = await self.get_ticker_24h()
         
@@ -276,7 +285,6 @@ class MexcClient:
         
         # ═══════════════════════════════════════════════════════════════════════════
         # DEFINIERTES MID-CAP TRADING UNIVERSE (42 Coins)
-        # Diese Liste wird DIREKT gescannt - KEIN Top-20 Volume Filter!
         # ═══════════════════════════════════════════════════════════════════════════
         if curated_list is None:
             curated_list = [
@@ -298,11 +306,6 @@ class MexcClient:
                 "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT"
             ]
         
-        # ═══════════════════════════════════════════════════════════════════════════
-        # DIREKT AUS UNIVERSE SCANNEN - NICHT MEHR TOP-20 VOLUME!
-        # ═══════════════════════════════════════════════════════════════════════════
-        curated_set = set(curated_list)
-        
         # Erstelle Lookup für schnellen Zugriff
         ticker_lookup = {t.get('symbol'): t for t in usdt_pairs}
         
@@ -316,24 +319,21 @@ class MexcClient:
                 missing_coins.append(symbol)
         
         if missing_coins:
-            logger.warning(f"[UNIVERSE] {len(missing_coins)} Coins nicht auf MEXC gefunden: {missing_coins[:5]}...")
-        
-        logger.info(f"[UNIVERSE] {len(filtered_pairs)}/{len(curated_list)} Universe-Coins auf MEXC verfügbar")
+            logger.warning(f"[UNIVERSE] {len(missing_coins)} Coins nicht auf MEXC: {missing_coins[:5]}...")
         
         # ═══════════════════════════════════════════════════════════════════════════
-        # LOCKERERE LIQUIDITY FILTER FÜR MID-CAPS
-        # Volume > 10M USDT, Spread < 0.25%
+        # ZWEISTUFIGE FILTERUNG
         # ═══════════════════════════════════════════════════════════════════════════
-        liquid_pairs = []
-        skipped_volume = []
-        skipped_spread = []
+        preferred_pairs = []
+        fallback_pairs = []
+        rejected_coins = []
         
         for ticker in filtered_pairs:
             try:
                 symbol = ticker.get('symbol', 'UNKNOWN')
                 volume_24h = float(ticker.get('quoteVolume', 0))
                 
-                # Calculate spread from bid/ask if available, otherwise estimate
+                # Calculate spread from bid/ask
                 bid = float(ticker.get('bidPrice', 0))
                 ask = float(ticker.get('askPrice', 0))
                 last_price = float(ticker.get('lastPrice', 1))
@@ -341,36 +341,43 @@ class MexcClient:
                 if bid > 0 and ask > 0 and last_price > 0:
                     spread_pct = ((ask - bid) / last_price) * 100
                 else:
-                    # Estimate spread based on volume (higher volume = lower spread)
                     spread_pct = max(0.05, 1.0 / (volume_24h / 1_000_000 + 1))
-                
-                # Apply LOCKERERE filters
-                if volume_24h < min_volume_24h:
-                    skipped_volume.append(f"{symbol}({volume_24h/1e6:.1f}M)")
-                    continue
-                    
-                if spread_pct > max_spread_pct:
-                    skipped_spread.append(f"{symbol}({spread_pct:.2f}%)")
-                    continue
                 
                 ticker['spread_pct'] = spread_pct
                 ticker['volume_24h'] = volume_24h
-                liquid_pairs.append(ticker)
+                
+                # TIER 1: PREFERRED (beste Qualität)
+                if volume_24h >= PREFERRED_MIN_VOLUME and spread_pct <= PREFERRED_MAX_SPREAD:
+                    ticker['tier'] = 'preferred'
+                    preferred_pairs.append(ticker)
+                    
+                # TIER 2: FALLBACK (immer noch gut)
+                elif volume_24h >= FALLBACK_MIN_VOLUME and spread_pct <= FALLBACK_MAX_SPREAD:
+                    ticker['tier'] = 'fallback'
+                    fallback_pairs.append(ticker)
+                    
+                else:
+                    rejected_coins.append(f"{symbol}(Vol:{volume_24h/1e6:.1f}M,Spr:{spread_pct:.2f}%)")
                     
             except Exception as e:
                 logger.warning(f"Error filtering {ticker.get('symbol')}: {e}")
                 continue
         
-        # Detailed logging
-        logger.info(f"[UNIVERSE] Liquidity Filter: {len(liquid_pairs)} passed | "
-                   f"{len(skipped_volume)} low volume | {len(skipped_spread)} high spread")
+        # ═══════════════════════════════════════════════════════════════════════════
+        # INTELLIGENTE AUSWAHL: Preferred first, Fallback nur wenn nötig
+        # ═══════════════════════════════════════════════════════════════════════════
+        if len(preferred_pairs) >= min_preferred_coins:
+            liquid_pairs = preferred_pairs
+            logger.info(f"[UNIVERSE] ✅ {len(preferred_pairs)} PREFERRED Coins (Vol>5M, Spread<0.20%)")
+        else:
+            liquid_pairs = preferred_pairs + fallback_pairs
+            logger.info(f"[UNIVERSE] ⚠️ Nur {len(preferred_pairs)} Preferred → +{len(fallback_pairs)} Fallback")
+            logger.info(f"[UNIVERSE] Total: {len(liquid_pairs)} (Preferred: Vol>5M/Spr<0.20%, Fallback: Vol>2M/Spr<0.35%)")
         
-        if skipped_volume:
-            logger.debug(f"[UNIVERSE] Skipped (Volume<{min_volume_24h/1e6:.0f}M): {skipped_volume[:10]}")
-        if skipped_spread:
-            logger.debug(f"[UNIVERSE] Skipped (Spread>{max_spread_pct}%): {skipped_spread[:10]}")
+        if rejected_coins:
+            logger.debug(f"[UNIVERSE] Rejected: {rejected_coins[:5]}...")
         
-        # Sort by volume for base universe
+        # Sort by volume
         liquid_pairs.sort(key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)
         base_universe = liquid_pairs[:base_limit]
         
@@ -379,20 +386,16 @@ class MexcClient:
         for ticker in base_universe:
             try:
                 symbol = ticker['symbol']
-                
-                # Get 24h and 4h returns from ticker
                 price_change_pct = float(ticker.get('priceChangePercent', 0))
                 
-                # Get 4H candles for 4h return
                 klines_4h = await self.get_klines(symbol, interval="4h", limit=2)
                 if len(klines_4h) >= 2:
-                    price_4h_ago = float(klines_4h[-2][4])  # Close price 4h ago
-                    current_price = float(klines_4h[-1][4])  # Current close
+                    price_4h_ago = float(klines_4h[-2][4])
+                    current_price = float(klines_4h[-1][4])
                     return_4h = ((current_price - price_4h_ago) / price_4h_ago) * 100
                 else:
                     return_4h = 0
                 
-                # Momentum score: 0.6 * return_24h + 0.4 * return_4h
                 momentum_score = (0.6 * price_change_pct) + (0.4 * return_4h)
                 
                 momentum_pairs.append({
@@ -402,16 +405,18 @@ class MexcClient:
                     'return_4h': return_4h,
                     'quoteVolume': float(ticker.get('quoteVolume', 0)),
                     'spread_pct': ticker.get('spread_pct', 0),
-                    'price': current_price if len(klines_4h) >= 2 else float(ticker.get('lastPrice', 0))
+                    'price': current_price if len(klines_4h) >= 2 else float(ticker.get('lastPrice', 0)),
+                    'tier': ticker.get('tier', 'unknown')
                 })
             except Exception as e:
                 logger.warning(f"Error calculating momentum for {symbol}: {e}")
                 continue
         
-        # Sort by momentum score descending
         momentum_pairs.sort(key=lambda x: x['score'], reverse=True)
         
-        logger.info(f"[UNIVERSE] Final: {len(momentum_pairs)} tradable coins with momentum scores")
+        preferred_count = sum(1 for p in momentum_pairs if p.get('tier') == 'preferred')
+        fallback_count = sum(1 for p in momentum_pairs if p.get('tier') == 'fallback')
+        logger.info(f"[UNIVERSE] Final: {len(momentum_pairs)} tradable ({preferred_count} preferred, {fallback_count} fallback)")
         
         return momentum_pairs
     

@@ -774,24 +774,25 @@ class MultiUserTradingWorker:
             
             mexc = MexcClient()
             # ═══════════════════════════════════════════════════════════════════════════
-            # NEUE SCAN-LOGIK: DIREKT AUS DEFINIERTEM UNIVERSE
-            # - Scannt NICHT mehr Top-20 global nach Volume!
-            # - Verwendet DIREKT die 42 Mid-Cap Coins
-            # - Optimierte Filter für MEXC: 3M Volume, 0.5% Spread
+            # ZWEISTUFIGES UNIVERSE-SYSTEM
+            # - PREFERRED: Vol > 5M, Spread < 0.20% (beste Qualität)
+            # - FALLBACK: Vol > 2M, Spread < 0.35% (nur wenn zu wenig Preferred)
             # ═══════════════════════════════════════════════════════════════════════════
             COIN_UNIVERSE_SIZE = 50  # Pool size
-            MIN_VOLUME_24H = 3_000_000  # 3M USDT minimum (optimal für Mid-Caps auf MEXC)
-            MAX_SPREAD_PCT = 0.50  # 0.5% max spread (realistisch für Mid-Caps)
+            MIN_PREFERRED_COINS = 10  # Minimum Preferred bevor Fallback aktiviert wird
             
             momentum_pairs = await mexc.get_momentum_universe(
                 quote="USDT", 
                 base_limit=COIN_UNIVERSE_SIZE,
-                min_volume_24h=MIN_VOLUME_24H,
-                max_spread_pct=MAX_SPREAD_PCT
+                min_preferred_coins=MIN_PREFERRED_COINS
             )
             
+            # Count tiers for logging
+            preferred_count = sum(1 for p in momentum_pairs if p.get('tier') == 'preferred')
+            fallback_count = sum(1 for p in momentum_pairs if p.get('tier') == 'fallback')
+            
             await self.db.log(user_id, "INFO", 
-                f"📊 {len(momentum_pairs)} Coins aus Universe gefunden (Vol>{MIN_VOLUME_24H/1e6:.0f}M, Spread<{MAX_SPREAD_PCT}%)")
+                f"📊 {len(momentum_pairs)} Coins ({preferred_count} preferred, {fallback_count} fallback)")
             
             filtered_pairs = []
             skipped_bearish = 0
