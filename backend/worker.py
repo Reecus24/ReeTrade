@@ -378,8 +378,49 @@ class MultiUserTradingWorker:
                 ticker = await mexc.get_ticker_24h(position.symbol)
                 current_price = float(ticker['lastPrice'])
                 
-                # Calculate current PnL for logging
-                pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
+                # ============ FIX: NET PnL FÜR EXIT-DECISION ============
+                # Verwende estimated net exit price statt theoretical price
+                # SELL = Market Order = wird zu best_bid ausgeführt, nicht lastPrice
+                
+                # Hole Orderbook für realistische Preisschätzung
+                orderbook_for_pnl = None
+                try:
+                    orderbook_for_pnl = await mexc.get_orderbook_snapshot(position.symbol, levels=5)
+                except Exception:
+                    pass
+                
+                # Theoretical PnL (basierend auf lastPrice)
+                theoretical_pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
+                
+                # Estimated Net PnL (realistisch)
+                TAKER_FEE = 0.001  # 0.1% MEXC Taker Fee
+                
+                if orderbook_for_pnl and orderbook_for_pnl.get('best_bid_price'):
+                    best_bid = orderbook_for_pnl['best_bid_price']
+                    spread_pct = orderbook_for_pnl.get('spread_pct', 0)
+                    
+                    # Estimated sell price = best_bid (Market Sell geht zu Bid)
+                    estimated_sell_price = best_bid
+                    
+                    # Fees: Entry + Exit
+                    entry_fee = position.entry_price * TAKER_FEE
+                    exit_fee = estimated_sell_price * TAKER_FEE
+                    total_fees_pct = (entry_fee + exit_fee) / position.entry_price * 100
+                    
+                    # Net exit price
+                    net_exit_price = estimated_sell_price * (1 - TAKER_FEE)
+                    net_pnl_pct = ((net_exit_price - position.entry_price * (1 + TAKER_FEE)) / position.entry_price) * 100
+                    
+                    # Verwende NET PnL für AI-Entscheidung!
+                    pnl_pct = net_pnl_pct
+                    
+                    # Logging nur bei signifikantem Unterschied
+                    if abs(theoretical_pnl_pct - net_pnl_pct) > 0.1:
+                        logger.debug(f"[PNL] {position.symbol}: Theoretical={theoretical_pnl_pct:+.2f}% vs Net={net_pnl_pct:+.2f}% | Spread={spread_pct:.3f}%")
+                else:
+                    # Fallback: Schätze Kosten pauschal
+                    estimated_costs_pct = TAKER_FEE * 2 * 100  # Entry + Exit fees
+                    pnl_pct = theoretical_pnl_pct - estimated_costs_pct
                 
                 # ============ MFE/MAE TRACKING ============
                 # Update max/min price seen during trade
@@ -479,27 +520,29 @@ class MultiUserTradingWorker:
                             should_exit = True
                             exit_reason = f"🧠 AI_EXIT: {rl_decision['reasoning']}"
                             
-                            # ============ ÄNDERUNG 4: BESSERES EXIT LOGGING ============
+                            # ============ ERWEITERTES EXIT LOGGING ============
                             q_vals = rl_decision.get('q_values', {})
                             q_str = f"Q[H]={q_vals.get('hold', 0):.3f} Q[S]={q_vals.get('sell', 0):.3f}" if q_vals else "Q: N/A"
+                            sell_source = rl_decision.get('sell_source', 'unknown')
                             
                             await self.db.log(user_id, "WARNING", 
                                 f"[RL EXIT] {position.symbol} | "
-                                f"Action: {rl_decision['action']} | "
+                                f"Source: {sell_source} | "
                                 f"Hold: {hold_seconds:.0f}s | "
-                                f"PnL: {pnl_pct:+.2f}% | "
-                                f"Exploration: {rl_decision.get('exploration', False)} | "
+                                f"Net PnL: {pnl_pct:+.2f}% | "
+                                f"Theoretical: {theoretical_pnl_pct:+.2f}% | "
                                 f"ε: {self.rl_ai.brain.epsilon:.2f} | "
                                 f"{q_str}")
                             
                             # Telegram über RL-Entscheidung
                             await self.notify_telegram('smart_exit', {
                                 'symbol': position.symbol,
-                                'exit_type': rl_decision.get('exit_reason', 'ai_exit'),
+                                'exit_type': sell_source,
                                 'confidence': rl_decision.get('confidence', 50),
                                 'reasons': [rl_decision['reasoning']],
                                 'hold_seconds': hold_seconds,
-                                'pnl_pct': pnl_pct
+                                'net_pnl_pct': pnl_pct,
+                                'theoretical_pnl_pct': theoretical_pnl_pct
                             }, user_id)
                     
                     except Exception as smart_err:

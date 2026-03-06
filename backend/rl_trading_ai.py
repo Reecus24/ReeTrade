@@ -828,7 +828,8 @@ class RLTradingAI:
         
         ANTI-FLIP PROTECTION:
         - Mindest-Haltezeit: 90 Sekunden (verhindert Flip-Trading)
-        - Exploration Guard: Bei hohem Epsilon kein zufälliges SELL unter 90s
+        - Exploration Guard: Bei hohem Epsilon kein zufälliges SELL unter 180s
+        - SELL nur durch Exploitation oder Emergency, NICHT durch random Exploration
         - Hard Exit: 10 Minuten wird in worker.py erzwungen
         """
         if not state.has_position:
@@ -838,79 +839,159 @@ class RLTradingAI:
                 'reasoning': 'Keine Position vorhanden',
                 'action': 'HOLD',
                 'exploration': False,
-                'q_values': None
+                'q_values': None,
+                'sell_source': None
             }
         
-        pnl = state.position_pnl_pct
+        pnl = state.position_pnl_pct  # Dies ist jetzt NET PnL!
         hold_hours = state.position_hold_hours if hasattr(state, 'position_hold_hours') else 0
         hold_seconds = hold_hours * 3600
-        hold_minutes = hold_hours * 60
         
-        # ============ ÄNDERUNG 1: MINDESTHALTEZEIT 90 SEKUNDEN ============
-        # Verhindert Flip-Trading durch Spread + Fees
-        MIN_HOLD_SECONDS = 90
+        # ============ KONSTANTEN ============
+        MIN_HOLD_SECONDS = 90          # Absolute Mindesthaltezeit
+        EXPLORATION_SELL_SECONDS = 180  # Random SELL erst ab hier (bei hohem epsilon)
+        EMERGENCY_THRESHOLD = -5.0      # Emergency Exit Schwelle
+        HIGH_EPSILON_THRESHOLD = 0.5    # Ab hier gilt "hohe Exploration"
         
+        epsilon = self.brain.epsilon
+        is_high_exploration = epsilon > HIGH_EPSILON_THRESHOLD
+        
+        # ============ PHASE 1: ABSOLUTE MINDESTHALTEZEIT (90s) ============
         if hold_seconds < MIN_HOLD_SECONDS:
-            # ============ ÄNDERUNG 2: EXPLORATION GUARD ============
-            # Während hoher Exploration: SELL nur bei Emergency
-            # Emergency = PnL < -5% (kritischer Verlust)
-            EMERGENCY_THRESHOLD = -5.0
-            
+            # Emergency Exit auch vor Mindesthaltezeit erlaubt
             if pnl <= EMERGENCY_THRESHOLD:
-                # Emergency Exit erlaubt auch vor Mindesthaltezeit
                 return {
                     'should_sell': True,
                     'confidence': 100,
-                    'reasoning': f'🚨 EMERGENCY: PnL {pnl:.1f}% <= {EMERGENCY_THRESHOLD}% (Hold: {hold_seconds:.0f}s)',
+                    'reasoning': f'🚨 EMERGENCY: Net PnL {pnl:.1f}% <= {EMERGENCY_THRESHOLD}% (Hold: {hold_seconds:.0f}s)',
                     'action': 'SELL',
                     'exploration': False,
-                    'exit_reason': 'emergency_exit',
-                    'q_values': None
+                    'exit_reason': 'emergency',
+                    'q_values': None,
+                    'sell_source': 'emergency'
                 }
             
-            # Kein SELL vor Mindesthaltezeit (außer Emergency)
             return {
                 'should_sell': False,
                 'confidence': 0,
-                'reasoning': f'⏳ Mindesthaltezeit: {hold_seconds:.0f}s < {MIN_HOLD_SECONDS}s | PnL: {pnl:+.2f}%',
+                'reasoning': f'⏳ Mindesthaltezeit: {hold_seconds:.0f}s < {MIN_HOLD_SECONDS}s | Net PnL: {pnl:+.2f}%',
                 'action': 'HOLD',
                 'exploration': False,
-                'q_values': None
+                'q_values': None,
+                'sell_source': None
             }
         
-        # Ab hier: Mindesthaltezeit erreicht, normale KI-Entscheidung
+        # ============ PHASE 2: Q-VALUES BERECHNEN ============
         state_array = state.to_array()
         q_values = self.brain.get_q_values(state_array)
+        q_dict = {'hold': float(q_values[0]), 'buy': float(q_values[1]), 'sell': float(q_values[2])}
         
-        # KI-Entscheidung mit Exploration
-        is_exploration = random.random() < self.brain.epsilon
+        # Exploitation-basierte Entscheidung
+        exploitation_says_sell = q_values[2] > q_values[0]
+        q_diff = q_values[2] - q_values[0]  # Positiv = SELL besser
         
-        if is_exploration:
-            # Exploration: Leichte Tendenz zu HOLD um Overtrading zu reduzieren
-            # 30% SELL, 70% HOLD - konservativer als vorher
-            sell_prob = 0.3
+        # ============ PHASE 3: EXPLORATION GUARD FÜR SELL ============
+        # Bei hohem Epsilon: Random SELL erst ab 180s, davor nur Exploitation/Emergency
+        
+        is_exploration_phase = random.random() < epsilon
+        
+        if is_high_exploration and hold_seconds < EXPLORATION_SELL_SECONDS:
+            # Hohe Exploration + unter 180s: SELL nur durch Exploitation oder Emergency
             
-            action = Action.SELL if random.random() < sell_prob else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} | PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={self.brain.epsilon:.2f}"
-            logger.info(f"[RL] {symbol}: {reason}")
+            if pnl <= EMERGENCY_THRESHOLD:
+                return {
+                    'should_sell': True,
+                    'confidence': 100,
+                    'reasoning': f'🚨 EMERGENCY: Net PnL {pnl:.1f}% (Hold: {hold_seconds:.0f}s)',
+                    'action': 'SELL',
+                    'exploration': False,
+                    'exit_reason': 'emergency',
+                    'q_values': q_dict,
+                    'sell_source': 'emergency'
+                }
+            
+            if exploitation_says_sell and q_diff > 0.1:  # Starkes Exploitation-Signal
+                reason = f"🧠 EXPLOITATION SELL: Q[SELL]={q_values[2]:.3f} >> Q[HOLD]={q_values[0]:.3f} | Net PnL: {pnl:+.2f}%"
+                logger.info(f"[RL] {symbol}: {reason}")
+                return {
+                    'should_sell': True,
+                    'confidence': max(0, min(100, 50 + q_diff * 50)),
+                    'reasoning': reason,
+                    'action': 'SELL',
+                    'exploration': False,
+                    'exit_reason': 'ai_exit',
+                    'q_values': q_dict,
+                    'sell_source': 'exploitation'
+                }
+            
+            # Kein SELL - zu früh für random exploration
+            return {
+                'should_sell': False,
+                'confidence': 0,
+                'reasoning': f'⏳ Exploration Guard: {hold_seconds:.0f}s < {EXPLORATION_SELL_SECONDS}s (ε={epsilon:.2f}) | Net PnL: {pnl:+.2f}%',
+                'action': 'HOLD',
+                'exploration': False,
+                'q_values': q_dict,
+                'sell_source': None
+            }
+        
+        # ============ PHASE 4: NORMALE ENTSCHEIDUNG (>180s oder niedrige Exploration) ============
+        
+        if is_exploration_phase:
+            # Exploration: Aber SELL ist trotzdem konservativ (20% statt 40%)
+            # Exploration fokussiert auf BUY/HOLD, nicht auf SELL
+            sell_prob = 0.2  # Nur 20% Chance für random SELL
+            
+            if random.random() < sell_prob:
+                reason = f"🎲 EXPLORATION SELL: Random (20%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s | ε={epsilon:.2f}"
+                logger.info(f"[RL] {symbol}: {reason}")
+                return {
+                    'should_sell': True,
+                    'confidence': 30,
+                    'reasoning': reason,
+                    'action': 'SELL',
+                    'exploration': True,
+                    'exit_reason': 'ai_exit',
+                    'q_values': q_dict,
+                    'sell_source': 'random_exploration'
+                }
+            else:
+                reason = f"🎲 EXPLORATION HOLD: Random (80%) | Net PnL: {pnl:+.2f}% | Hold: {hold_seconds:.0f}s"
+                return {
+                    'should_sell': False,
+                    'confidence': 0,
+                    'reasoning': reason,
+                    'action': 'HOLD',
+                    'exploration': True,
+                    'q_values': q_dict,
+                    'sell_source': None
+                }
         else:
             # Exploitation: Nutze gelerntes Wissen
-            action = Action.SELL if q_values[2] > q_values[0] else Action.HOLD
-            reason = f"🧠 KI: {Action.to_string(action)} | Q[SELL]={q_values[2]:.3f} vs Q[HOLD]={q_values[0]:.3f} | PnL: {pnl:+.2f}%"
-            if action == Action.SELL:
+            if exploitation_says_sell:
+                reason = f"🧠 EXPLOITATION SELL: Q[SELL]={q_values[2]:.3f} > Q[HOLD]={q_values[0]:.3f} | Net PnL: {pnl:+.2f}%"
                 logger.info(f"[RL] {symbol}: {reason}")
-        
-        confidence = max(0, min(100, 50 + abs(q_values[2] - q_values[0]) * 30))
-        
-        return {
-            'should_sell': action == Action.SELL,
-            'confidence': confidence,
-            'reasoning': reason,
-            'action': Action.to_string(action),
-            'exploration': is_exploration,
-            'exit_reason': 'ai_exit' if action == Action.SELL else None,
-            'q_values': {'hold': float(q_values[0]), 'buy': float(q_values[1]), 'sell': float(q_values[2])}
-        }
+                return {
+                    'should_sell': True,
+                    'confidence': max(0, min(100, 50 + q_diff * 30)),
+                    'reasoning': reason,
+                    'action': 'SELL',
+                    'exploration': False,
+                    'exit_reason': 'ai_exit',
+                    'q_values': q_dict,
+                    'sell_source': 'exploitation'
+                }
+            else:
+                reason = f"🧠 EXPLOITATION HOLD: Q[HOLD]={q_values[0]:.3f} >= Q[SELL]={q_values[2]:.3f} | Net PnL: {pnl:+.2f}%"
+                return {
+                    'should_sell': False,
+                    'confidence': max(0, min(100, 50 + abs(q_diff) * 30)),
+                    'reasoning': reason,
+                    'action': 'HOLD',
+                    'exploration': False,
+                    'q_values': q_dict,
+                    'sell_source': None
+                }
     
     async def start_episode(self, symbol: str, state: MarketState, entry_price: float, entry_value: float = 0.0):
         """Starte neue Episode (Trade eröffnet)"""
