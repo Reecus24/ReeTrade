@@ -1073,7 +1073,20 @@ class RLTradingAI:
         - KI lernt aus realistischen Netto-Ergebnissen
         """
         if symbol not in self.current_episode:
-            return
+            # Episode nicht gefunden - erstelle eine synthetische Episode
+            # Dies passiert wenn der Server zwischen Trade-Open und Trade-Close neugestartet wurde
+            logger.warning(f"[RL] ⚠️ {symbol}: Keine aktive Episode gefunden - erstelle synthetische Episode für Lernen")
+            
+            # Erstelle synthetische Episode mit finalem State
+            synthetic_episode = {
+                'start_state': final_state.to_array(),
+                'entry_price': exit_price / (1 + pnl_pct/100) if pnl_pct != 0 else exit_price,
+                'entry_value': 30.0,  # Geschätzter Standardwert
+                'start_time': datetime.now(timezone.utc) - timedelta(seconds=180),  # Geschätzte Dauer
+                'states': [final_state.to_array()],
+                'actions': [Action.BUY]
+            }
+            self.current_episode[symbol] = synthetic_episode
         
         episode = self.current_episode[symbol]
         duration_seconds = (datetime.now(timezone.utc) - episode['start_time']).total_seconds()
