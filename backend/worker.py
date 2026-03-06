@@ -561,8 +561,9 @@ class MultiUserTradingWorker:
                         q_values=q_dict_at_exit
                     )
                     
+                    q_sell_str = f"{q_dict_at_exit['sell']:.3f}" if q_dict_at_exit else 'N/A'
                     await self.db.log(user_id, "WARNING", 
-                        f"[HARD EXIT] {position.symbol} nach {hold_minutes:.1f}min | PnL: {pnl_pct:+.2f}% | Q[SELL]={q_dict_at_exit['sell']:.3f if q_dict_at_exit else 'N/A'}")
+                        f"[HARD EXIT] {position.symbol} nach {hold_minutes:.1f}min | PnL: {pnl_pct:+.2f}% | Q[SELL]={q_sell_str}")
                 
                 # ============ PARTIAL PROFIT LOGIC ============
                 if not should_exit:
