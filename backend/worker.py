@@ -1626,23 +1626,17 @@ class MultiUserTradingWorker:
             await self.db.log(user_id, "INFO", 
                 f"[LIVE] 📊 EXECUTED @ ${avg_price:.8f} | Notfall-SL: ${actual_stop_loss:.8f} | KI entscheidet Exit!")
             
-            # ============ PHASE 2: ORDERBOOK SNAPSHOT AT ENTRY ============
-            spread_at_entry = None
-            orderbook_imbalance_at_entry = None
+            # ============ KRITISCH: POSITION SOFORT SPEICHERN ============
+            # Bevor irgendetwas anderes passiert, damit die Position nicht verloren geht!
+            
+            # Get current epsilon for AI context (kann fehlschlagen, ist aber nicht kritisch)
+            epsilon_at_entry = None
             try:
-                entry_orderbook = await mexc.get_orderbook_snapshot(symbol, levels=5)
-                if entry_orderbook:
-                    spread_at_entry = entry_orderbook.get('spread_pct')
-                    orderbook_imbalance_at_entry = entry_orderbook.get('orderbook_imbalance')
-                    await self.db.log(user_id, "INFO",
-                        f"[ORDERBOOK] {symbol}: Spread={spread_at_entry:.4f}% | Imbalance={orderbook_imbalance_at_entry:.2f}")
-            except Exception as ob_err:
-                logger.debug(f"Orderbook fetch at entry error: {ob_err}")
+                epsilon_at_entry = self.rl_ai.brain.epsilon if hasattr(self, 'rl_ai') else None
+            except:
+                pass
             
-            # Get current epsilon for AI context
-            epsilon_at_entry = self.rl_ai.brain.epsilon if hasattr(self, 'rl_ai') else None
-            
-            # Create position record with ACTUAL execution price and Orderbook context
+            # Create position record with ACTUAL execution price
             position = Position(
                 symbol=symbol,
                 side="LONG",
@@ -1651,9 +1645,9 @@ class MultiUserTradingWorker:
                 stop_loss=actual_stop_loss,
                 take_profit=actual_take_profit,
                 entry_time=datetime.now(timezone.utc),
-                # Phase 2: Orderbook at entry
-                spread_at_entry=spread_at_entry,
-                orderbook_imbalance_at_entry=orderbook_imbalance_at_entry,
+                # Orderbook wird später hinzugefügt
+                spread_at_entry=None,
+                orderbook_imbalance_at_entry=None,
                 # Phase 3: Initialize MFE/MAE tracking
                 max_price_seen=avg_price,
                 min_price_seen=avg_price,
@@ -1661,12 +1655,34 @@ class MultiUserTradingWorker:
                 epsilon_at_entry=epsilon_at_entry
             )
             
-            # Update account
+            # KRITISCH: SOFORT in DB speichern!
             if not account:
                 account = PaperAccount(user_id=user_id, equity=0, cash=0, open_positions=[])
             
             account.open_positions.append(position)
             await self.db.update_live_account(account)
+            
+            await self.db.log(user_id, "INFO", f"[LIVE] ✅ POSITION GESPEICHERT: {symbol} | Qty: {executed_qty}")
+            
+            # ============ AB HIER SIND FEHLER NICHT MEHR KRITISCH ============
+            # Die Position ist gespeichert, alles andere ist "nice to have"
+            
+            # Orderbook Snapshot (optional)
+            spread_at_entry = None
+            orderbook_imbalance_at_entry = None
+            try:
+                entry_orderbook = await mexc.get_orderbook_snapshot(symbol, levels=5)
+                if entry_orderbook:
+                    spread_at_entry = entry_orderbook.get('spread_pct')
+                    orderbook_imbalance_at_entry = entry_orderbook.get('orderbook_imbalance')
+                    # Update position with orderbook data
+                    position.spread_at_entry = spread_at_entry
+                    position.orderbook_imbalance_at_entry = orderbook_imbalance_at_entry
+                    await self.db.update_live_account(account)
+                    await self.db.log(user_id, "INFO",
+                        f"[ORDERBOOK] {symbol}: Spread={spread_at_entry:.4f}% | Imbalance={orderbook_imbalance_at_entry:.2f}")
+            except Exception as ob_err:
+                logger.debug(f"Orderbook fetch at entry error: {ob_err}")
             
             # Record trade
             trade = Trade(
