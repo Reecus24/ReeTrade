@@ -40,11 +40,19 @@ class MultiUserTradingWorker:
         self.COINS_PER_BATCH = 20
         self.MAX_BATCHES = 5  # 5 batches x 20 = 100 coins before refresh
         
-        # ============ ANTI-OVERTRADING SETTINGS ============
+        # ============ DYNAMISCHER ANTI-OVERTRADING FILTER ============
         # Minimum Move Filter: Verhindert Trades mit zu kleinen erwarteten Bewegungen
         self.TRADING_COST_PCT = 0.205  # ~0.1% Maker/Taker fees + ~0.1% Slippage
-        self.MIN_MOVE_MULTIPLIER = 2.0  # Mindestens 2x Trading-Kosten (mehr Puffer)
-        self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.41%
+        
+        # Dynamischer Multiplier
+        self.MIN_MOVE_MULTIPLIER_DEFAULT = 1.8  # Standard: 1.8x Trading-Kosten
+        self.MIN_MOVE_MULTIPLIER_REDUCED = 1.6  # Reduziert: 1.6x wenn Markt zu ruhig
+        self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_DEFAULT  # Aktueller Wert
+        self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.37%
+        
+        # Tracking für dynamische Anpassung
+        self.consecutive_blocked_scans: Dict[str, int] = {}  # {user_id: count}
+        self.BLOCKED_SCANS_THRESHOLD = 10  # Nach 10 blockierten Scans -> Multiplier reduzieren
         
         # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
         self.TRADE_COOLDOWN_SECONDS = 180  # 3 Minuten zwischen Trades (kontrolliertes Lernen)
@@ -63,6 +71,31 @@ class MultiUserTradingWorker:
         
         # Reinforcement Learning KI (echtes Lernen!)
         self.rl_ai = get_rl_trading_ai(db)
+    
+    def update_dynamic_move_filter(self, user_id: str, trade_executed: bool):
+        """
+        Passt den MIN_MOVE_MULTIPLIER dynamisch an basierend auf Marktbedingungen.
+        
+        - Nach BLOCKED_SCANS_THRESHOLD blockierten Scans: Multiplier reduzieren
+        - Nach erfolgreichem Trade: Multiplier zurück auf Standard
+        """
+        if trade_executed:
+            # Trade ausgeführt -> Reset auf Standard
+            self.consecutive_blocked_scans[user_id] = 0
+            if self.MIN_MOVE_MULTIPLIER != self.MIN_MOVE_MULTIPLIER_DEFAULT:
+                self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_DEFAULT
+                self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER
+                logger.info(f"[FILTER] 📈 MIN_MOVE_MULTIPLIER zurück auf Standard: {self.MIN_MOVE_MULTIPLIER}x ({self.MIN_EXPECTED_MOVE_PCT:.3f}%)")
+        else:
+            # Kein Trade -> Counter erhöhen
+            self.consecutive_blocked_scans[user_id] = self.consecutive_blocked_scans.get(user_id, 0) + 1
+            blocked_count = self.consecutive_blocked_scans[user_id]
+            
+            # Nach Threshold: Multiplier reduzieren
+            if blocked_count >= self.BLOCKED_SCANS_THRESHOLD and self.MIN_MOVE_MULTIPLIER > self.MIN_MOVE_MULTIPLIER_REDUCED:
+                self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_REDUCED
+                self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER
+                logger.info(f"[FILTER] 📉 MIN_MOVE_MULTIPLIER reduziert: {self.MIN_MOVE_MULTIPLIER}x ({self.MIN_EXPECTED_MOVE_PCT:.3f}%) nach {blocked_count} blockierten Scans")
     
     def is_in_trade_cooldown(self, user_id: str) -> tuple[bool, float]:
         """
@@ -1281,14 +1314,17 @@ class MultiUserTradingWorker:
                 # ============ MINIMUM MOVE FILTER ============
                 # Verhindert Trades mit zu kleinen erwarteten Bewegungen (Noise Trading)
                 expected_move = self.calculate_expected_move(klines_15m, lookback=20)
+                blocked_count = self.consecutive_blocked_scans.get(user_id, 0)
                 
                 if expected_move < self.MIN_EXPECTED_MOVE_PCT:
                     await self.db.log(user_id, "INFO", 
-                        f"[ANTI-NOISE] ⚠️ {symbol}: Erwartete Bewegung {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% - SKIP")
+                        f"[ANTI-NOISE] ⚠️ {symbol}: Move {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
+                        f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x | Blocked: {blocked_count}/{self.BLOCKED_SCANS_THRESHOLD})")
                     continue
                 
                 await self.db.log(user_id, "INFO", 
-                    f"[MOVE-CHECK] ✅ {symbol}: Erwartete Bewegung {expected_move:.3f}% > Min {self.MIN_EXPECTED_MOVE_PCT:.3f}%")
+                    f"[MOVE-CHECK] ✅ {symbol}: Move {expected_move:.3f}% > Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
+                    f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x)")
                 # ============ END MINIMUM MOVE FILTER ============
                 
                 # Get current price from 15m data
@@ -1382,6 +1418,10 @@ class MultiUserTradingWorker:
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
+                    
+                    # Dynamischer Filter: Counter Reset nach erfolgreichem Trade
+                    self.update_dynamic_move_filter(user_id, trade_executed=True)
+                    
                     decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     # ============ RL LEARNING: Record Trade Entry ============
@@ -1434,6 +1474,9 @@ class MultiUserTradingWorker:
         else:
             # NO SIGNALS FOUND - Rotate to next batch of coins
             await self.rotate_to_next_batch(user_id, settings)
+            
+            # Dynamischer Filter: Blocked-Counter erhöhen
+            self.update_dynamic_move_filter(user_id, trade_executed=False)
             
             await self.db.update_settings(user_id, {
                 'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins → Nächster Batch',

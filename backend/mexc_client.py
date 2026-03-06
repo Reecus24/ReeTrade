@@ -303,7 +303,11 @@ class MexcClient:
                 # Tier 4: Infrastructure & DeFi (12)
                 "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
                 "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
-                "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT"
+                "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT",
+                
+                # Tier 5: NEUE VOLATILERE COINS (10) - für bessere Bewegung
+                "PEPEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
+                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT"
             ]
         
         # Erstelle Lookup für schnellen Zugriff
