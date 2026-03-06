@@ -840,11 +840,15 @@ class MultiUserTradingWorker:
                         regime, regime_ctx = self.regime_detector.detect_regime(klines_4h)
                         
                         # AI Aggressive: Accept ALL regimes (BULLISH prioritized, then SIDEWAYS, then BEARISH)
+                        # RL-AI Mode: Accept BULLISH and SIDEWAYS (not BEARISH)
                         # Other modes: Only BULLISH
                         acceptable_regimes = ["BULLISH"]
                         if trading_mode == TradingMode.AI_AGGRESSIVE:
                             acceptable_regimes = ["BULLISH", "SIDEWAYS", "BEARISH"]
                         elif trading_mode == TradingMode.AI_MODERATE:
+                            acceptable_regimes = ["BULLISH", "SIDEWAYS"]
+                        elif trading_mode == TradingMode.RL_AI:
+                            # RL-AI: BULLISH und SIDEWAYS für mehr Trading-Opportunities
                             acceptable_regimes = ["BULLISH", "SIDEWAYS"]
                         
                         if regime in acceptable_regimes:
