@@ -1212,9 +1212,9 @@ class MultiUserTradingWorker:
             signal_candidates.sort(key=lambda x: x['score'], reverse=True)
             
             # ═══════════════════════════════════════════════════════════════════
-            # GLOBAL BUY COOLDOWN CHECK
+            # GLOBAL BUY COOLDOWN CHECK (PERSISTENT)
             # ═══════════════════════════════════════════════════════════════════
-            is_on_cooldown, remaining_seconds, last_buy = self.check_buy_cooldown(user_id)
+            is_on_cooldown, remaining_seconds, last_buy = await self.check_buy_cooldown_async(user_id)
             
             if is_on_cooldown:
                 minutes = remaining_seconds // 60
@@ -1274,7 +1274,7 @@ class MultiUserTradingWorker:
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
-                    self.set_last_buy_time(user_id)  # Set global buy cooldown
+                    await self.set_last_buy_time_async(user_id)  # Set global buy cooldown (PERSISTENT)
                     decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     # ============ RL LEARNING: Record Trade Entry ============
@@ -2129,16 +2129,42 @@ class MultiUserTradingWorker:
         logger.info("Multi-user trading worker stopped")
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # GLOBAL BUY COOLDOWN METHODS
+    # GLOBAL BUY COOLDOWN METHODS (PERSISTENT IN MONGODB)
     # ═══════════════════════════════════════════════════════════════════════════
     
-    def check_buy_cooldown(self, user_id: str) -> tuple:
+    async def check_buy_cooldown_async(self, user_id: str) -> tuple:
         """
-        Check if buy cooldown is active
+        Check if buy cooldown is active (PERSISTENT - reads from MongoDB)
         
         Returns:
             (is_on_cooldown: bool, remaining_seconds: int, last_buy_time: datetime or None)
         """
+        # First check RAM cache
+        if user_id in self.user_last_buy_time:
+            last_buy = self.user_last_buy_time[user_id]
+        else:
+            # Load from MongoDB
+            cooldown_doc = await self.db.db.buy_cooldowns.find_one({"user_id": user_id})
+            if cooldown_doc and cooldown_doc.get("last_buy_time"):
+                last_buy = cooldown_doc["last_buy_time"]
+                # Handle timezone
+                if last_buy.tzinfo is None:
+                    last_buy = last_buy.replace(tzinfo=timezone.utc)
+                # Update RAM cache
+                self.user_last_buy_time[user_id] = last_buy
+            else:
+                return False, 0, None
+        
+        elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
+        remaining = self.BUY_COOLDOWN_SECONDS - elapsed
+        
+        if remaining > 0:
+            return True, int(remaining), last_buy
+        else:
+            return False, 0, last_buy
+    
+    def check_buy_cooldown(self, user_id: str) -> tuple:
+        """Sync version - uses RAM cache only (for non-async contexts)"""
         if user_id not in self.user_last_buy_time:
             return False, 0, None
         
@@ -2151,13 +2177,49 @@ class MultiUserTradingWorker:
         else:
             return False, 0, last_buy
     
+    async def set_last_buy_time_async(self, user_id: str):
+        """Record timestamp of last BUY order (PERSISTENT - saves to MongoDB)"""
+        now = datetime.now(timezone.utc)
+        self.user_last_buy_time[user_id] = now
+        
+        # Save to MongoDB for persistence
+        await self.db.db.buy_cooldowns.update_one(
+            {"user_id": user_id},
+            {"$set": {"user_id": user_id, "last_buy_time": now}},
+            upsert=True
+        )
+        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.BUY_COOLDOWN_SECONDS}s (saved to DB)")
+    
     def set_last_buy_time(self, user_id: str):
-        """Record timestamp of last BUY order"""
+        """Sync version - updates RAM only (DB save happens in async context)"""
         self.user_last_buy_time[user_id] = datetime.now(timezone.utc)
         logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.BUY_COOLDOWN_SECONDS}s")
     
+    async def get_buy_cooldown_status_async(self, user_id: str) -> dict:
+        """Get cooldown status for API/UI (PERSISTENT)"""
+        is_active, remaining, last_buy = await self.check_buy_cooldown_async(user_id)
+        
+        if is_active:
+            minutes = remaining // 60
+            seconds = remaining % 60
+            return {
+                "cooldown_active": True,
+                "remaining_seconds": remaining,
+                "remaining_formatted": f"{minutes}m {seconds}s",
+                "last_buy_time": last_buy.isoformat() if last_buy else None,
+                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+            }
+        else:
+            return {
+                "cooldown_active": False,
+                "remaining_seconds": 0,
+                "remaining_formatted": "Ready",
+                "last_buy_time": last_buy.isoformat() if last_buy else None,
+                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+            }
+    
     def get_buy_cooldown_status(self, user_id: str) -> dict:
-        """Get cooldown status for API/UI"""
+        """Sync version for backwards compatibility"""
         is_active, remaining, last_buy = self.check_buy_cooldown(user_id)
         
         if is_active:

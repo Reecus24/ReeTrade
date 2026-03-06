@@ -2782,14 +2782,14 @@ async def get_rl_trading_stats(
 @app.get("/api/rl/buy-cooldown")
 async def get_buy_cooldown_status(current_user: dict = Depends(get_current_user)):
     """
-    Get Global Buy Cooldown Status
+    Get Global Buy Cooldown Status (PERSISTENT)
     
     Returns cooldown status for the UI display
     """
     user_id = current_user['user_id']
     
     try:
-        status = worker.get_buy_cooldown_status(user_id)
+        status = await worker.get_buy_cooldown_status_async(user_id)
         return status
     except Exception as e:
         return {
