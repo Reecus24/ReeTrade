@@ -515,7 +515,7 @@ class RLTradingAI:
         self._load_model()
     
     def _load_model(self):
-        """Lade trainiertes Modell"""
+        """Lade trainiertes Modell MIT Memory"""
         try:
             if os.path.exists(self.MODEL_PATH):
                 with open(self.MODEL_PATH, 'rb') as f:
@@ -524,27 +524,54 @@ class RLTradingAI:
                     self.brain.total_trades = data.get('total_trades', 0)
                     self.brain.winning_trades = data.get('winning_trades', 0)
                     self.brain.total_reward = data.get('total_reward', 0)
+                    self.brain.training_episodes = data.get('training_episodes', 0)
+                    
                     if 'q_table' in data and self.brain.model_type == 'q_table':
                         self.brain.q_table = data['q_table']
-                    logger.info(f"RL Model geladen: {self.brain.total_trades} Trades, {self.brain.win_rate:.1%} Win-Rate")
+                    
+                    # WICHTIG: Memory laden!
+                    if 'memory' in data and data['memory']:
+                        for exp in data['memory']:
+                            self.brain.memory.push(exp)
+                        logger.info(f"[RL] Memory geladen: {len(data['memory'])} Erfahrungen")
+                    
+                    # Lade neuronales Netz wenn vorhanden
+                    if 'model' in data and data['model'] is not None:
+                        self.brain.model = data['model']
+                        logger.info(f"[RL] Neural Network geladen")
+                    
+                    logger.info(f"RL Model geladen: {self.brain.total_trades} Trades, {self.brain.win_rate:.1%} Win-Rate, Memory: {len(self.brain.memory)}")
         except Exception as e:
             logger.warning(f"Konnte RL Model nicht laden: {e}")
     
     def _save_model(self):
-        """Speichere Modell"""
+        """Speichere Modell MIT Memory"""
         try:
+            # Erstelle Ordner falls nicht vorhanden
+            import os
+            os.makedirs(os.path.dirname(self.MODEL_PATH), exist_ok=True)
+            
             data = {
                 'epsilon': self.brain.epsilon,
                 'total_trades': self.brain.total_trades,
                 'winning_trades': self.brain.winning_trades,
                 'total_reward': self.brain.total_reward,
-                'training_episodes': self.brain.training_episodes
+                'training_episodes': self.brain.training_episodes,
+                # WICHTIG: Memory auch speichern!
+                'memory': list(self.brain.memory.buffer) if hasattr(self.brain.memory, 'buffer') else [],
+                'memory_priorities': list(self.brain.memory.priorities[:len(self.brain.memory)]) if hasattr(self.brain.memory, 'priorities') else [],
             }
             if self.brain.model_type == 'q_table':
                 data['q_table'] = self.brain.q_table
             
+            # Speichere auch das neuronale Netz wenn vorhanden
+            if hasattr(self.brain, 'model') and self.brain.model is not None:
+                data['model'] = self.brain.model
+            
             with open(self.MODEL_PATH, 'wb') as f:
                 pickle.dump(data, f)
+            
+            logger.info(f"[RL] Model gespeichert: {self.brain.total_trades} Trades, Memory: {len(self.brain.memory)}")
         except Exception as e:
             logger.error(f"Konnte RL Model nicht speichern: {e}")
     
