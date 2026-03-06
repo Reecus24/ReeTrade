@@ -345,7 +345,6 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'reserve_usdt': settings.reserve_usdt,
             'trading_budget_usdt': settings.trading_budget_usdt,
             'max_order_notional_usdt': settings.max_order_notional_usdt,
-            'live_daily_cap_usdt': settings.live_daily_cap_usdt,
             'live_max_order_usdt': settings.live_max_order_usdt,
             'live_min_notional_usdt': settings.live_min_notional_usdt,
             # BOT STATUS TRACKING
@@ -355,8 +354,6 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'live_last_symbol': settings.live_last_symbol,
             'live_budget_used': settings.live_budget_used,
             'live_budget_available': settings.live_budget_available,
-            'live_daily_used': settings.live_daily_used,
-            'live_daily_remaining': settings.live_daily_remaining,
             'live_positions_count': settings.live_positions_count,
         },
         'live_account': {
@@ -988,11 +985,6 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         budget_remaining = max(0, settings.trading_budget_usdt - entry_value)
         remaining_budget = min(available_to_bot, budget_remaining)
         
-        # DAILY CAP
-        today_exposure = await db.get_today_exposure(user_id, 'live')
-        daily_cap = settings.live_daily_cap_usdt
-        daily_remaining = max(0, daily_cap - today_exposure)
-        
         # Get non-zero balances for display
         non_zero_balances = [
             {
@@ -1051,12 +1043,6 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
                 'usdt_free': round(usdt_free, 2),
                 'used_budget': round(invested_value, 2),
             },
-            # Daily Cap
-            'daily_cap': {
-                'cap': daily_cap,
-                'used': round(today_exposure, 2),
-                'remaining': round(daily_remaining, 2)
-            },
             # Open positions from local DB (source of truth)
             'open_positions': open_positions_serialized,
             'open_positions_count': local_positions_count,
@@ -1074,16 +1060,9 @@ async def get_account_balance(current_user: dict = Depends(get_current_user)):
         )
 
 def get_ai_max_positions(settings) -> int:
-    """Get max positions based on AI profile"""
-    from ai_engine_v2 import TradingMode, RISK_PROFILES_V2
-    
-    trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
-    
-    if trading_mode == TradingMode.MANUAL:
-        return settings.max_positions or 3
-    
-    profile = RISK_PROFILES_V2.get(trading_mode, {})
-    return profile.get('max_positions', settings.max_positions or 3)
+    """Get max positions - USER SETTING HAT IMMER PRIORITÄT"""
+    # Die User-Einstellung hat immer Priorität, nicht das AI-Profil
+    return settings.max_positions or 3
 
 
 def calculate_ai_position_range(settings, usdt_free: float, open_value: float) -> dict:

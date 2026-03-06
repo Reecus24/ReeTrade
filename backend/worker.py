@@ -988,12 +988,10 @@ class MultiUserTradingWorker:
         budget_info = self.calculate_live_budget(settings, used_budget, live_usdt_free)
         available_budget = budget_info['remaining_budget']
         
-        # DAILY CAP CHECK
+        # DAILY CAP ENTFERNT - User hat volle Kontrolle
         today_exposure = await self.db.get_today_exposure(user_id, 'live')
         today_trades = await self.db.get_today_trades_count(user_id, 'live')
         today_pnl = await self.db.get_today_pnl(user_id, 'live')
-        daily_cap = settings.live_daily_cap_usdt
-        daily_remaining = max(0, daily_cap - today_exposure)
         
         # Calculate drawdown
         initial_equity = self.user_initial_equity.get(user_id, live_usdt_free)
@@ -1010,7 +1008,7 @@ class MultiUserTradingWorker:
         
         is_ai_mode = trading_mode == TradingMode.RL_AI
         
-        effective_max_positions = settings.max_positions
+        # USER SETTING HAT PRIORITÄT - max_positions kommt aus User Settings, NICHT aus AI Profil
         effective_position_size = settings.live_max_order_usdt
         ai_min_position = None
         ai_max_position = None
@@ -1018,7 +1016,8 @@ class MultiUserTradingWorker:
         # Get AI V2 profile limits and calculate expected position sizes based on AVAILABLE USDT
         if is_ai_mode:
             profile = RISK_PROFILES_V2.get(trading_mode, {})
-            effective_max_positions = profile.get('max_positions', settings.max_positions)
+            # WICHTIG: max_positions wird NICHT aus dem Profil überschrieben!
+            # Der User bestimmt selbst, wie viele Positionen erlaubt sind
             
             # NEW: Calculate AI position size based on AVAILABLE USDT (not trading budget!)
             position_pct_min = profile.get('position_pct_min', 5.0)
@@ -1038,7 +1037,7 @@ class MultiUserTradingWorker:
             effective_position_size = round((ai_min_position + ai_max_position) / 2, 2)
             
             await self.db.log(user_id, "INFO", 
-                f"[LIVE] 🤖 AI V2 Mode: {trading_mode.value} | Position: {position_pct_min:.0f}%-{position_pct_max:.0f}% USDT | Berechnet: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {effective_max_positions}")
+                f"[LIVE] 🤖 AI V2 Mode: {trading_mode.value} | Position: {position_pct_min:.0f}%-{position_pct_max:.0f}% USDT | Berechnet: ${ai_min_position:.0f}-${ai_max_position:.0f} | Max Pos: {settings.max_positions}")
         
         # Update status - use calculated AI values if in AI mode
         await self.db.update_settings(user_id, {
@@ -1046,8 +1045,6 @@ class MultiUserTradingWorker:
             'live_last_decision': 'SCANNING',
             'live_budget_used': round(used_budget, 2),
             'live_budget_available': round(available_budget, 2),
-            'live_daily_used': round(today_exposure, 2),
-            'live_daily_remaining': round(daily_remaining, 2),
             'live_positions_count': positions_count,
             'ai_confidence': 85 if is_ai_mode else None,  # RL-AI doesn't output confidence
             'ai_risk_score': None,
@@ -1060,7 +1057,7 @@ class MultiUserTradingWorker:
         mode_label = f"🤖 {trading_mode.value}" if is_ai_mode else "Manual"
         trade_size_label = f"${ai_min_position:.0f}-${ai_max_position:.0f}" if is_ai_mode and ai_min_position else f"${effective_position_size:.0f}"
         await self.db.log(user_id, "INFO", 
-            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ USDT Free: ${live_usdt_free:.2f} | Trade: {trade_size_label} | Positions: {positions_count}/{effective_max_positions}")
+            f"[LIVE] ═══ SCAN START ({mode_label}) ═══ USDT Free: ${live_usdt_free:.2f} | Trade: {trade_size_label} | Positions: {positions_count}/{settings.max_positions}")
         
         # Budget checks
         min_notional = settings.live_min_notional_usdt
@@ -1073,19 +1070,14 @@ class MultiUserTradingWorker:
             })
             return
         
-        if daily_remaining < min_notional:
-            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Tageslimit erreicht (${today_exposure:.2f}/${daily_cap:.2f})")
-            await self.db.update_settings(user_id, {
-                'live_last_decision': 'BLOCKED: Tageslimit',
-                'live_last_symbol': '-'
-            })
-            return
+        # TAGESLIMIT ENTFERNT - Kein tägliches Handelslimit mehr
+        # Der Benutzer hat volle Kontrolle über sein Handelsbudget
         
-        # Use AI-adjusted max positions
-        if positions_count >= effective_max_positions:
-            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Max Positionen erreicht ({positions_count}/{effective_max_positions})")
+        # Use user's max_positions setting (NOT from AI profile - user setting has priority)
+        if positions_count >= settings.max_positions:
+            await self.db.log(user_id, "INFO", f"[LIVE] ⛔ BLOCKED: Max Positionen erreicht ({positions_count}/{settings.max_positions})")
             await self.db.update_settings(user_id, {
-                'live_last_decision': f'BLOCKED: Max Positionen ({positions_count}/{effective_max_positions})',
+                'live_last_decision': f'BLOCKED: Max Positionen ({positions_count}/{settings.max_positions})',
                 'live_last_symbol': '-'
             })
             return
