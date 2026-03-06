@@ -358,8 +358,6 @@ async def get_status(current_user: dict = Depends(get_current_user)):
             'live_daily_used': settings.live_daily_used,
             'live_daily_remaining': settings.live_daily_remaining,
             'live_positions_count': settings.live_positions_count,
-            # Cooldown
-            'cooldown_candles': settings.cooldown_candles,
         },
         'live_account': {
             'user_id': account.user_id,
