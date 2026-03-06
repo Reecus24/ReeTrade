@@ -246,12 +246,22 @@ class MexcClient:
         # Return top N symbols
         return [p['symbol'] for p in usdt_pairs[:limit]]
     
-    async def get_momentum_universe(self, quote: str = "USDT", base_limit: int = 50) -> List[Dict]:
-        """Get momentum-scored universe
+    async def get_momentum_universe(self, quote: str = "USDT", base_limit: int = 50, 
+                                      curated_list: List[str] = None,
+                                      min_volume_24h: float = 20_000_000,
+                                      max_spread_pct: float = 0.20) -> List[Dict]:
+        """Get momentum-scored universe with liquidity filter
         
-        Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume
+        Args:
+            quote: Quote currency (default: USDT)
+            base_limit: Max coins to return
+            curated_list: Optional whitelist of preferred coins
+            min_volume_24h: Minimum 24h volume in USDT (default: 20M)
+            max_spread_pct: Maximum spread in % (default: 0.20%)
+        
+        Returns list of dicts with: symbol, score, return_24h, return_4h, quoteVolume, spread_pct
         """
-        # Get top 50 by volume as base universe
+        # Get all tickers
         tickers = await self.get_ticker_24h()
         
         usdt_pairs = [
@@ -259,12 +269,76 @@ class MexcClient:
             if isinstance(t, dict) and t.get('symbol', '').endswith(quote)
         ]
         
-        # Sort by volume and take top 50
-        usdt_pairs.sort(
-            key=lambda x: float(x.get('quoteVolume', 0)), 
-            reverse=True
-        )
-        base_universe = usdt_pairs[:base_limit]
+        # ═══════════════════════════════════════════════════════════════════════════
+        # CURATED MID-CAP TRADING UNIVERSE
+        # These coins have good liquidity, reasonable spreads, and enough volatility
+        # ═══════════════════════════════════════════════════════════════════════════
+        if curated_list is None:
+            curated_list = [
+                # Tier 1: High Liquidity Mid-Caps
+                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
+                "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
+                "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
+                
+                # Tier 2: DeFi & Layer 1
+                "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
+                "IMXUSDT", "FTMUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
+                
+                # Tier 3: Gaming & Metaverse
+                "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
+                
+                # Tier 4: Infrastructure & DeFi
+                "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
+                "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
+                "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT"
+            ]
+        
+        # Filter to curated list first
+        curated_set = set(curated_list)
+        filtered_pairs = [t for t in usdt_pairs if t.get('symbol') in curated_set]
+        
+        # If curated list yields too few results, add top volume coins
+        if len(filtered_pairs) < 15:
+            # Sort all by volume and add top ones
+            usdt_pairs.sort(key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)
+            for t in usdt_pairs[:50]:
+                if t.get('symbol') not in curated_set and t not in filtered_pairs:
+                    filtered_pairs.append(t)
+                    if len(filtered_pairs) >= 30:
+                        break
+        
+        # Apply liquidity filters
+        liquid_pairs = []
+        for ticker in filtered_pairs:
+            try:
+                volume_24h = float(ticker.get('quoteVolume', 0))
+                
+                # Calculate spread from bid/ask if available, otherwise estimate
+                bid = float(ticker.get('bidPrice', 0))
+                ask = float(ticker.get('askPrice', 0))
+                last_price = float(ticker.get('lastPrice', 1))
+                
+                if bid > 0 and ask > 0:
+                    spread_pct = ((ask - bid) / last_price) * 100
+                else:
+                    # Estimate spread based on volume (higher volume = lower spread)
+                    spread_pct = max(0.05, 1.0 / (volume_24h / 1_000_000 + 1))
+                
+                # Apply filters
+                if volume_24h >= min_volume_24h and spread_pct <= max_spread_pct:
+                    ticker['spread_pct'] = spread_pct
+                    ticker['volume_24h'] = volume_24h
+                    liquid_pairs.append(ticker)
+                    
+            except Exception as e:
+                logger.warning(f"Error filtering {ticker.get('symbol')}: {e}")
+                continue
+        
+        logger.info(f"[UNIVERSE] {len(filtered_pairs)} curated -> {len(liquid_pairs)} after liquidity filter (Vol>{min_volume_24h/1e6:.0f}M, Spread<{max_spread_pct}%)")
+        
+        # Sort by volume for base universe
+        liquid_pairs.sort(key=lambda x: float(x.get('quoteVolume', 0)), reverse=True)
+        base_universe = liquid_pairs[:base_limit]
         
         # Calculate momentum scores
         momentum_pairs = []
@@ -293,6 +367,7 @@ class MexcClient:
                     'return_24h': price_change_pct,
                     'return_4h': return_4h,
                     'quoteVolume': float(ticker.get('quoteVolume', 0)),
+                    'spread_pct': ticker.get('spread_pct', 0),
                     'price': current_price if len(klines_4h) >= 2 else float(ticker.get('lastPrice', 0))
                 })
             except Exception as e:

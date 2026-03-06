@@ -770,12 +770,25 @@ class MultiUserTradingWorker:
                 f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | USDT Free: ${usdt_free:.2f} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
-            # ============ REDUCED UNIVERSE: Top 30 by Volume ============
-            # Weniger Noise für stabileres RL-Lernen bei 10-Min Trades
-            COIN_UNIVERSE_SIZE = 30  # Reduziert auf 30 für fokussiertes Training
-            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=COIN_UNIVERSE_SIZE)
+            # ═══════════════════════════════════════════════════════════════════════════
+            # OPTIMIZED MID-CAP TRADING UNIVERSE
+            # - Curated list of liquid mid-cap coins
+            # - Dynamic liquidity filter (Volume > 20M, Spread < 0.20%)
+            # - Active trading set: 15-20 coins
+            # ═══════════════════════════════════════════════════════════════════════════
+            COIN_UNIVERSE_SIZE = 40  # Pool size
+            MIN_VOLUME_24H = 20_000_000  # 20M USDT minimum
+            MAX_SPREAD_PCT = 0.20  # 0.20% max spread
             
-            await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} Top-Volume USDT Coins gefunden")
+            momentum_pairs = await mexc.get_momentum_universe(
+                quote="USDT", 
+                base_limit=COIN_UNIVERSE_SIZE,
+                min_volume_24h=MIN_VOLUME_24H,
+                max_spread_pct=MAX_SPREAD_PCT
+            )
+            
+            await self.db.log(user_id, "INFO", 
+                f"📊 {len(momentum_pairs)} liquide Mid-Cap Coins gefunden (Vol>{MIN_VOLUME_24H/1e6:.0f}M, Spread<{MAX_SPREAD_PCT}%)")
             
             filtered_pairs = []
             skipped_bearish = 0
@@ -858,9 +871,12 @@ class MultiUserTradingWorker:
                 x.get('adx', 0)
             ), reverse=True)
             
-            # ============ REDUCED ACTIVE SET: Top 20 ============
-            # Für 10-Min Trading: weniger Coins, mehr Fokus
-            MAX_TRADABLE_COINS = 20  # Reduziert auf 20 für stabiles Training
+            # ═══════════════════════════════════════════════════════════════════════════
+            # ACTIVE TRADING SET: 15-20 COINS
+            # Für fokussiertes RL-Training: weniger Coins, mehr Qualität
+            # ═══════════════════════════════════════════════════════════════════════════
+            MAX_TRADABLE_COINS = 20  # Max 20 Coins für stabiles Training
+            self.COINS_PER_BATCH = 15  # 15 Coins pro Scan-Batch
             all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
             
             # Save first batch (20) as active, store all for rotation
