@@ -456,7 +456,7 @@ class QLearningBrain:
         # Log Lernfortschritt alle 10 Episoden
         if self.training_episodes % 10 == 0:
             avg_td_error = np.mean(np.abs(td_errors)) if td_errors else 0
-            logger.info(f"[RL] 🎓 LERNFORTSCHRITT (PER):")
+            logger.info("[RL] 🎓 LERNFORTSCHRITT (PER):")
             logger.info(f"[RL]    → Episoden: {self.training_episodes}")
             logger.info(f"[RL]    → Exploration: {old_epsilon*100:.1f}% → {self.epsilon*100:.1f}%")
             logger.info(f"[RL]    → Avg TD-Error: {avg_td_error:.4f}")
@@ -515,7 +515,7 @@ class RLTradingAI:
         self._load_model()
     
     def _load_model(self):
-        """Lade trainiertes Modell MIT Memory"""
+        """Lade trainiertes Modell MIT Memory UND Neural Networks"""
         try:
             if os.path.exists(self.MODEL_PATH):
                 with open(self.MODEL_PATH, 'rb') as f:
@@ -526,8 +526,16 @@ class RLTradingAI:
                     self.brain.total_reward = data.get('total_reward', 0)
                     self.brain.training_episodes = data.get('training_episodes', 0)
                     
+                    # Lade Q-Table wenn vorhanden
                     if 'q_table' in data and self.brain.model_type == 'q_table':
                         self.brain.q_table = data['q_table']
+                        logger.info(f"[RL] Q-Table geladen mit {len(self.brain.q_table)} Einträgen")
+                    
+                    # KRITISCH: Lade Neural Networks (q_networks Dictionary)
+                    if 'q_networks' in data and data['q_networks']:
+                        self.brain.q_networks = data['q_networks']
+                        self.brain.model_type = 'neural_network'
+                        logger.info("[RL] ✅ Neural Networks (3 MLPs) geladen!")
                     
                     # WICHTIG: Memory laden!
                     if 'memory' in data and data['memory']:
@@ -535,17 +543,20 @@ class RLTradingAI:
                             self.brain.memory.push(exp)
                         logger.info(f"[RL] Memory geladen: {len(data['memory'])} Erfahrungen")
                     
-                    # Lade neuronales Netz wenn vorhanden
-                    if 'model' in data and data['model'] is not None:
-                        self.brain.model = data['model']
-                        logger.info(f"[RL] Neural Network geladen")
+                    # Lade auch Priorities wenn vorhanden
+                    if 'memory_priorities' in data and data['memory_priorities']:
+                        for i, priority in enumerate(data['memory_priorities']):
+                            if i < len(self.brain.memory):
+                                self.brain.memory.priorities[i] = priority
                     
-                    logger.info(f"RL Model geladen: {self.brain.total_trades} Trades, {self.brain.win_rate:.1%} Win-Rate, Memory: {len(self.brain.memory)}")
+                    logger.info(f"[RL] ✅ Model geladen: {self.brain.total_trades} Trades, {self.brain.win_rate:.1%} Win-Rate, Memory: {len(self.brain.memory)}, Typ: {self.brain.model_type}")
+            else:
+                logger.info(f"[RL] Kein gespeichertes Model gefunden unter {self.MODEL_PATH} - starte neu")
         except Exception as e:
-            logger.warning(f"Konnte RL Model nicht laden: {e}")
+            logger.warning(f"[RL] ⚠️ Konnte Model nicht laden: {e} - starte neu")
     
     def _save_model(self):
-        """Speichere Modell MIT Memory"""
+        """Speichere Modell MIT Memory UND Neural Networks"""
         try:
             # Erstelle Ordner falls nicht vorhanden
             import os
@@ -557,23 +568,27 @@ class RLTradingAI:
                 'winning_trades': self.brain.winning_trades,
                 'total_reward': self.brain.total_reward,
                 'training_episodes': self.brain.training_episodes,
+                'model_type': self.brain.model_type,
                 # WICHTIG: Memory auch speichern!
                 'memory': list(self.brain.memory.buffer) if hasattr(self.brain.memory, 'buffer') else [],
                 'memory_priorities': list(self.brain.memory.priorities[:len(self.brain.memory)]) if hasattr(self.brain.memory, 'priorities') else [],
             }
+            
+            # Speichere Q-Table wenn vorhanden
             if self.brain.model_type == 'q_table':
                 data['q_table'] = self.brain.q_table
             
-            # Speichere auch das neuronale Netz wenn vorhanden
-            if hasattr(self.brain, 'model') and self.brain.model is not None:
-                data['model'] = self.brain.model
+            # KRITISCH: Speichere Neural Networks (q_networks Dictionary)
+            if hasattr(self.brain, 'q_networks') and self.brain.q_networks:
+                data['q_networks'] = self.brain.q_networks
+                logger.info("[RL] Neural Networks (3 MLPs) werden gespeichert")
             
             with open(self.MODEL_PATH, 'wb') as f:
                 pickle.dump(data, f)
             
-            logger.info(f"[RL] Model gespeichert: {self.brain.total_trades} Trades, Memory: {len(self.brain.memory)}")
+            logger.info(f"[RL] ✅ Model gespeichert: {self.brain.total_trades} Trades, Memory: {len(self.brain.memory)}, Typ: {self.brain.model_type}")
         except Exception as e:
-            logger.error(f"Konnte RL Model nicht speichern: {e}")
+            logger.error(f"[RL] ❌ Konnte Model nicht speichern: {e}")
     
     async def analyze_market(self, symbol: str, klines: List, ticker: Dict, position=None) -> MarketState:
         """
