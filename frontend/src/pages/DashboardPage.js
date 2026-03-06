@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { 
   Activity, Play, Square, AlertTriangle, Settings, FileText,
   Wifi, WifiOff, RefreshCw, LogOut, Wallet, Brain, Zap,
-  TrendingUp, Info, ChevronRight
+  TrendingUp, Info, ChevronRight, Clock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import TradesTab from '@/components/TradesTab';
