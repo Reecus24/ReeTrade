@@ -252,13 +252,26 @@ class Trade(BaseModel):
     qty: float
     entry: float
     exit: Optional[float] = None
-    pnl: Optional[float] = None
-    pnl_pct: Optional[float] = None  # PnL percentage
+    pnl: Optional[float] = None  # NET PnL after costs
+    pnl_pct: Optional[float] = None  # NET PnL percentage
     fees_paid: Optional[float] = None  # Total fees (entry + exit)
     slippage_cost: Optional[float] = None  # Slippage cost
     mode: Literal["paper", "live"] = "paper"
-    reason: Optional[str] = None
+    reason: Optional[str] = None  # Exit reason: ai_exit, time_limit, emergency_sl, manual
     notional: Optional[float] = None  # Position notional value
+    
+    # Extended fields for Phase 1
+    duration_seconds: Optional[float] = None  # Hold duration
+    gross_pnl: Optional[float] = None  # PnL before costs
+    gross_pnl_pct: Optional[float] = None  # Gross PnL percentage
+    
+    # Market context at entry (will be populated in Phase 2)
+    spread_at_entry: Optional[float] = None
+    orderbook_imbalance: Optional[float] = None
+    
+    # AI context
+    epsilon_at_trade: Optional[float] = None
+    exit_reason_category: Optional[str] = None  # ai_exit, time_limit, emergency_sl, stop_loss, take_profit, manual
 
 class DailyMetrics(BaseModel):
     user_id: str

@@ -340,7 +340,10 @@ class MultiUserTradingWorker:
             await self.db.update_live_account(account)
     
     async def check_exits_for_user(self, user_id: str):
-        """Quick exit check for a user - runs every 30 seconds"""
+        """Quick exit check for a user - runs every 1 second
+        
+        10-MINUTE HARD EXIT: Position wird automatisch geschlossen nach 10 Minuten
+        """
         settings = await self.db.get_settings(user_id)
         
         # Only check live mode
@@ -362,6 +365,9 @@ class MultiUserTradingWorker:
         trading_mode = TradingMode(settings.trading_mode) if settings.trading_mode else TradingMode.MANUAL
         profile = RISK_PROFILES_V2.get(trading_mode, {}) if trading_mode != TradingMode.MANUAL else {}
         
+        # ============ HARD EXIT LIMIT ============
+        HARD_EXIT_MINUTES = 10  # 10 Minuten Maximum Haltezeit
+        
         for position in account.open_positions[:]:
             # Skip if already being sold (prevent duplicate sells)
             position_key = f"{user_id}_{position.symbol}_{position.id}"
@@ -375,126 +381,136 @@ class MultiUserTradingWorker:
                 # Calculate current PnL for logging
                 pnl_pct = ((current_price - position.entry_price) / position.entry_price) * 100
                 
+                # Calculate hold duration
+                entry_time = position.entry_time
+                if entry_time.tzinfo is None:
+                    entry_time = entry_time.replace(tzinfo=timezone.utc)
+                hold_duration = datetime.now(timezone.utc) - entry_time
+                hold_minutes = hold_duration.total_seconds() / 60
+                hold_seconds = hold_duration.total_seconds()
+                
                 should_exit = False
                 exit_reason = ""
                 
-                # ============ PARTIAL PROFIT LOGIC ============
-                partial_enabled = profile.get('partial_profit_enabled', False)
-                partial_trigger = profile.get('partial_profit_trigger_pct', 8.0)
-                partial_close_pct = profile.get('partial_profit_close_pct', 50.0)
-                move_sl_to_entry = profile.get('partial_profit_move_sl_to_entry', True)
-                
-                if partial_enabled and not position.partial_profit_taken and pnl_pct >= partial_trigger:
-                    # Mark as selling to prevent duplicates
-                    partial_key = f"{position_key}_partial"
-                    if partial_key in self._selling_positions:
-                        continue
-                    self._selling_positions.add(partial_key)
-                    
-                    # Time for partial profit!
+                # ============ 10-MINUTE HARD EXIT (HÖCHSTE PRIORITÄT) ============
+                if hold_minutes >= HARD_EXIT_MINUTES:
+                    should_exit = True
+                    exit_reason = f"⏰ TIME_LIMIT: {hold_minutes:.1f}min >= {HARD_EXIT_MINUTES}min (PnL: {pnl_pct:+.2f}%)"
                     await self.db.log(user_id, "WARNING", 
-                        f"[PARTIAL] 🎯 {position.symbol} +{pnl_pct:.1f}% >= {partial_trigger}% → Teilgewinn {partial_close_pct}%!")
-                    
-                    try:
-                        await self.take_partial_profit(
-                            user_id, position, current_price, account, settings, mexc,
-                            partial_close_pct, move_sl_to_entry
-                        )
-                        await self.db.update_live_account(account)
-                    finally:
-                        self._selling_positions.discard(partial_key)
-                    continue  # Skip full exit check this iteration
+                        f"[HARD EXIT] {position.symbol} nach {hold_minutes:.1f}min | PnL: {pnl_pct:+.2f}%")
                 
-                # ============ RL-KI EXIT ENTSCHEIDUNG (HOCHFREQUENZ) ============
-                # KEINE Mindest-Haltezeit mehr - KI kann sofort verkaufen!
-                
-                # ========== RL-KI EXIT ENTSCHEIDUNG ==========
-                try:
-                    # Hole Marktdaten für RL-KI (kürzerer Timeframe für Hochfrequenz)
-                    klines = await mexc.get_klines(position.symbol, "15m", limit=50)  # 15min statt 60min
-                    closes = [float(k[4]) for k in klines]
+                # ============ PARTIAL PROFIT LOGIC ============
+                if not should_exit:
+                    partial_enabled = profile.get('partial_profit_enabled', False)
+                    partial_trigger = profile.get('partial_profit_trigger_pct', 8.0)
+                    partial_close_pct = profile.get('partial_profit_close_pct', 50.0)
+                    move_sl_to_entry = profile.get('partial_profit_move_sl_to_entry', True)
                     
-                    # Berechne Indikatoren für Logging
-                    rsi = self._calculate_rsi(closes) if len(closes) >= 14 else 50
-                    momentum_1h = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) >= 2 else 0
-                    
-                    # Frage RL-KI ob verkaufen
-                    rl_market_state = await self.rl_ai.analyze_market(
-                        symbol=position.symbol,
-                        klines=klines,
-                        ticker=ticker,
-                        position={
-                            'entry_price': position.entry_price,
-                            'entry_time': position.entry_time,
-                            'current_price': current_price,
-                            'pnl_pct': pnl_pct,
-                            'stop_loss': position.stop_loss,
-                            'take_profit': position.take_profit
-                        }
-                    )
-                    
-                    rl_decision = await self.rl_ai.should_sell(
-                        symbol=position.symbol,
-                        state=rl_market_state
-                    )
-                    
-                    # Log ALLE RL-Entscheidungen (nicht nur SELL)
-                    logger.info(f"[RL] {position.symbol}: {rl_decision['reasoning']}")
-                    
-                    if rl_decision['should_sell']:
-                        should_exit = True
-                        exit_reason = f"🧠 RL-EXIT: {rl_decision['reasoning']}"
+                    if partial_enabled and not position.partial_profit_taken and pnl_pct >= partial_trigger:
+                        # Mark as selling to prevent duplicates
+                        partial_key = f"{position_key}_partial"
+                        if partial_key in self._selling_positions:
+                            continue
+                        self._selling_positions.add(partial_key)
                         
+                        # Time for partial profit!
                         await self.db.log(user_id, "WARNING", 
-                            f"[RL EXIT] {position.symbol} | "
-                            f"Action: {rl_decision['action']} | "
-                            f"RSI: {rsi:.0f} | "
-                            f"Momentum: {momentum_1h:.2f}%")
+                            f"[PARTIAL] 🎯 {position.symbol} +{pnl_pct:.1f}% >= {partial_trigger}% → Teilgewinn {partial_close_pct}%!")
                         
-                        # Telegram über RL-Entscheidung
-                        await self.notify_telegram('smart_exit', {
-                            'symbol': position.symbol,
-                            'exit_type': 'rl_decision',
-                            'confidence': 100,  # RL doesn't output confidence
-                            'reasons': [rl_decision['reasoning']]
-                        }, user_id)
+                        try:
+                            await self.take_partial_profit(
+                                user_id, position, current_price, account, settings, mexc,
+                                partial_close_pct, move_sl_to_entry
+                            )
+                            await self.db.update_live_account(account)
+                        finally:
+                            self._selling_positions.discard(partial_key)
+                        continue  # Skip full exit check this iteration
                 
-                except Exception as smart_err:
-                    logger.warning(f"Smart Exit error for {position.symbol}: {smart_err}")
-                    # Fallback auf normale SL/TP Checks
+                # ============ RL-KI EXIT ENTSCHEIDUNG ============
+                if not should_exit:
+                    try:
+                        # Hole Marktdaten für RL-KI (kürzerer Timeframe für Hochfrequenz)
+                        klines = await mexc.get_klines(position.symbol, "1m", limit=50)  # 1min für 10-Min Trading
+                        closes = [float(k[4]) for k in klines]
+                        
+                        # Berechne Indikatoren für Logging
+                        rsi = self._calculate_rsi(closes) if len(closes) >= 14 else 50
+                        momentum_1h = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) >= 2 else 0
+                        
+                        # Frage RL-KI ob verkaufen
+                        rl_market_state = await self.rl_ai.analyze_market(
+                            symbol=position.symbol,
+                            klines=klines,
+                            ticker=ticker,
+                            position={
+                                'entry_price': position.entry_price,
+                                'entry_time': position.entry_time,
+                                'current_price': current_price,
+                                'pnl_pct': pnl_pct,
+                                'stop_loss': position.stop_loss,
+                                'take_profit': position.take_profit
+                            }
+                        )
+                        
+                        rl_decision = await self.rl_ai.should_sell(
+                            symbol=position.symbol,
+                            state=rl_market_state
+                        )
+                        
+                        # Log ALLE RL-Entscheidungen (nicht nur SELL)
+                        logger.info(f"[RL] {position.symbol}: {rl_decision['reasoning']} | Hold: {hold_seconds:.0f}s")
+                        
+                        if rl_decision['should_sell']:
+                            should_exit = True
+                            exit_reason = f"🧠 AI_EXIT: {rl_decision['reasoning']}"
+                            
+                            await self.db.log(user_id, "WARNING", 
+                                f"[RL EXIT] {position.symbol} | "
+                                f"Action: {rl_decision['action']} | "
+                                f"RSI: {rsi:.0f} | "
+                                f"Hold: {hold_seconds:.0f}s")
+                            
+                            # Telegram über RL-Entscheidung
+                            await self.notify_telegram('smart_exit', {
+                                'symbol': position.symbol,
+                                'exit_type': 'rl_decision',
+                                'confidence': 100,
+                                'reasons': [rl_decision['reasoning']]
+                            }, user_id)
+                    
+                    except Exception as smart_err:
+                        logger.warning(f"Smart Exit error for {position.symbol}: {smart_err}")
                 
-                # ============ NOTFALL STOP LOSS (nur bei extremem Verlust) ============
-                # KI entscheidet normalerweise - aber bei -10% wird automatisch verkauft
+                # ============ NOTFALL STOP LOSS (-10%) ============
                 emergency_sl_pct = -10.0
                 if not should_exit and pnl_pct <= emergency_sl_pct:
                     should_exit = True
-                    exit_reason = f"🚨 NOTFALL-STOP @ {current_price:.4f} (PnL: {pnl_pct:.1f}%)"
+                    exit_reason = f"🚨 EMERGENCY_SL: {pnl_pct:.1f}% <= {emergency_sl_pct}%"
                     await self.db.log(user_id, "ERROR", f"[EMERGENCY] {position.symbol} erreichte {pnl_pct:.1f}% - Notfall-Verkauf!")
                 
-                # KEIN Take Profit mehr - KI entscheidet selbst wann Gewinn mitnehmen!
-                
+                # ============ EXECUTE EXIT ============
                 if should_exit:
                     # Mark position as being sold BEFORE attempting sell
                     self._selling_positions.add(position_key)
                     
-                    await self.db.log(user_id, "WARNING", f"[EXIT] {position.symbol} - {exit_reason} | PnL: {pnl_pct:.1f}%")
+                    await self.db.log(user_id, "WARNING", f"[EXIT] {position.symbol} - {exit_reason}")
                     try:
                         await self.close_position(user_id, position, current_price, account, settings, exit_reason, mexc)
                         await self.db.update_live_account(account)
                     finally:
-                        # Remove from selling set after done (success or fail)
                         self._selling_positions.discard(position_key)
                 else:
-                    # Log check every 5 minutes (10 checks)
+                    # Log check every 30 seconds (30 checks at 1s interval)
                     if not hasattr(self, '_exit_log_counter'):
                         self._exit_log_counter = {}
                     counter_key = f"{user_id}_{position.symbol}"
                     self._exit_log_counter[counter_key] = self._exit_log_counter.get(counter_key, 0) + 1
-                    if self._exit_log_counter[counter_key] >= 10:
+                    if self._exit_log_counter[counter_key] >= 30:
                         sl_label = "BE" if position.sl_moved_to_entry else f"{position.stop_loss:.4f}"
                         partial_label = " [50% verkauft]" if position.partial_profit_taken else ""
                         await self.db.log(user_id, "INFO", 
-                            f"[EXIT CHECK] {position.symbol}: Preis={current_price:.4f} | SL={sl_label} | PnL={pnl_pct:.1f}%{partial_label}")
+                            f"[HOLD] {position.symbol}: Preis={current_price:.4f} | PnL={pnl_pct:+.1f}% | Hold={hold_seconds:.0f}s/{HARD_EXIT_MINUTES*60}s{partial_label}")
                         self._exit_log_counter[counter_key] = 0
                     
             except Exception as e:
@@ -681,10 +697,12 @@ class MultiUserTradingWorker:
                 f"🔍 Intelligente Coin-Suche gestartet | Modus: {trading_mode.value} | USDT Free: ${usdt_free:.2f} | Erwartete Order: ${expected_position_size:.2f}")
             
             mexc = MexcClient()
-            # Fetch 500 coins for maximum opportunities
-            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=500)
+            # ============ REDUCED UNIVERSE: Top 50 by Volume ============
+            # Weniger Noise für stabileres RL-Lernen
+            COIN_UNIVERSE_SIZE = 50  # Reduziert von 500 auf 50
+            momentum_pairs = await mexc.get_momentum_universe(quote="USDT", base_limit=COIN_UNIVERSE_SIZE)
             
-            await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} USDT Coins gefunden - starte Filterung...")
+            await self.db.log(user_id, "INFO", f"📊 {len(momentum_pairs)} Top-Volume USDT Coins gefunden")
             
             filtered_pairs = []
             skipped_bearish = 0
@@ -767,8 +785,10 @@ class MultiUserTradingWorker:
                 x.get('adx', 0)
             ), reverse=True)
             
-            # Store ALL filtered coins for rotation (up to 100)
-            all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:100]]
+            # ============ REDUCED ACTIVE SET: Top 20-30 ============
+            # Für 10-Min Trading: weniger Coins, mehr Fokus
+            MAX_TRADABLE_COINS = 30  # Reduziert von 100 auf 30
+            all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
             
             # Save first batch (20) as active, store all for rotation
             active_batch = all_tradable_symbols[:self.COINS_PER_BATCH]
@@ -1169,7 +1189,15 @@ class MultiUserTradingWorker:
                     decision_text = f'🤖 RL-AI TRADE [{trade_type}]: {symbol} (Score: {candidate["score"]:.1f})'
                     
                     # ============ RL LEARNING: Record Trade Entry ============
-                    await self.rl_ai.start_episode(symbol, candidate['current_price'])
+                    # Hole MarketState für Episode
+                    try:
+                        entry_klines = await mexc.get_klines(symbol, interval="1m", limit=50)
+                        entry_ticker = await mexc.get_ticker_24h(symbol)
+                        entry_state = await self.rl_ai.analyze_market(symbol, entry_klines, entry_ticker, None)
+                        entry_value = candidate['current_price'] * (effective_position_size / candidate['current_price']) if candidate['current_price'] > 0 else effective_position_size
+                        await self.rl_ai.start_episode(symbol, entry_state, candidate['current_price'], entry_value)
+                    except Exception as rl_start_err:
+                        logger.warning(f"RL episode start error: {rl_start_err}")
                     await self.db.log(user_id, "INFO", 
                         f"[RL] 📈 Trade gestartet: {symbol} @ {candidate['current_price']}")
                     # ============ END RL LEARNING ============
@@ -1451,10 +1479,10 @@ class MultiUserTradingWorker:
             # === RL TRADING AI: Starte Episode ===
             try:
                 ticker_data = await mexc.get_ticker_24h(symbol)
-                klines_for_rl = await mexc.get_klines(symbol, interval="4h", limit=50)
+                klines_for_rl = await mexc.get_klines(symbol, interval="1m", limit=50)  # 1m für 10-Min Trading
                 rl_state = await self.rl_ai.analyze_market(symbol, klines_for_rl, ticker_data, None)
-                await self.rl_ai.start_episode(symbol, rl_state, avg_price)
-                await self.db.log(user_id, "INFO", f"[RL] 🎮 Episode gestartet: {symbol}")
+                await self.rl_ai.start_episode(symbol, rl_state, avg_price, actual_notional)
+                await self.db.log(user_id, "INFO", f"[RL] 🎮 Episode gestartet: {symbol} | Value: ${actual_notional:.2f}")
             except Exception as rl_err:
                 logger.warning(f"RL episode start error: {rl_err}")
             # === END RL TRADING AI ===
@@ -1506,7 +1534,7 @@ class MultiUserTradingWorker:
         self, user_id: str, position: Position, exit_price: float,
         account: PaperAccount, settings: UserSettings, reason: str, mexc: MexcClient
     ):
-        """Close a SPOT position with real SELL order"""
+        """Close a SPOT position with real SELL order - Enhanced with cost tracking"""
         try:
             # Place REAL SELL order
             await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING SELL ORDER: {position.symbol} SELL {position.qty}")
@@ -1530,11 +1558,13 @@ class MultiUserTradingWorker:
             
             # IMPORTANT: For MARKET orders, use cummulativeQuoteQty / executedQty
             actual_exit_price = 0
+            cumm_quote_qty = 0
             
             # Method 1 (BEST): Calculate from cummulativeQuoteQty / executedQty
             cumm_quote = order_result.get('cummulativeQuoteQty')
             if cumm_quote is not None and cumm_quote != 'None':
                 cumm_quote = float(cumm_quote)
+                cumm_quote_qty = cumm_quote
                 if cumm_quote > 0 and executed_qty > 0:
                     actual_exit_price = cumm_quote / executed_qty
                     logger.info(f"[MEXC] {position.symbol} Exit price from cummulativeQuoteQty: {cumm_quote} / {executed_qty} = ${actual_exit_price:.6f}")
@@ -1547,6 +1577,7 @@ class MultiUserTradingWorker:
                     total_cost = sum(float(f.get('qty', 0)) * float(f.get('price', 0)) for f in fills)
                     if total_qty > 0:
                         actual_exit_price = total_cost / total_qty
+                        cumm_quote_qty = total_cost
                         logger.info(f"[MEXC] {position.symbol} Exit price from fills: ${actual_exit_price:.6f}")
             
             # Method 3: Use price field
@@ -1554,22 +1585,72 @@ class MultiUserTradingWorker:
                 price_field = order_result.get('price')
                 if price_field and price_field != '0' and price_field != 0:
                     actual_exit_price = float(price_field)
+                    cumm_quote_qty = actual_exit_price * executed_qty
                     logger.info(f"[MEXC] {position.symbol} Exit price from price field: ${actual_exit_price:.6f}")
                 
             # Final fallback to current ticker price
             if actual_exit_price == 0:
                 actual_exit_price = exit_price
+                cumm_quote_qty = exit_price * executed_qty
                 logger.warning(f"[MEXC] {position.symbol} Exit price FALLBACK (UNRELIABLE!): ${exit_price:.6f}")
             
+            # ============ COST CALCULATION ============
+            # MEXC Spot Fee: 0.1% Maker/Taker (0.001)
+            FEE_RATE = 0.001  # 0.1%
+            
+            # Entry costs
+            entry_notional = position.entry_price * executed_qty
+            entry_fee = entry_notional * FEE_RATE
+            
+            # Exit costs
+            exit_notional = actual_exit_price * executed_qty
+            exit_fee = exit_notional * FEE_RATE
+            
+            # Total fees
+            fees_paid = entry_fee + exit_fee
+            
+            # Slippage estimation (difference between expected and actual)
+            # Slippage = |ticker_price - actual_execution_price| * qty
+            expected_exit = exit_price  # Ticker price at decision time
+            slippage_per_unit = abs(actual_exit_price - expected_exit)
+            slippage_cost = slippage_per_unit * executed_qty
+            
             # Calculate PnL
-            pnl = (actual_exit_price - position.entry_price) * executed_qty
-            pnl_pct = ((actual_exit_price - position.entry_price) / position.entry_price) * 100
+            gross_pnl = (actual_exit_price - position.entry_price) * executed_qty
+            gross_pnl_pct = ((actual_exit_price - position.entry_price) / position.entry_price) * 100
+            
+            # Net PnL after all costs
+            net_pnl = gross_pnl - fees_paid
+            net_pnl_pct = (net_pnl / entry_notional) * 100 if entry_notional > 0 else 0
+            
+            # Calculate duration
+            duration_seconds = 0
+            if hasattr(position, 'entry_time') and position.entry_time:
+                entry_time = position.entry_time
+                if entry_time.tzinfo is None:
+                    entry_time = entry_time.replace(tzinfo=timezone.utc)
+                duration_seconds = (datetime.now(timezone.utc) - entry_time).total_seconds()
+            
+            # Determine exit_reason category
+            exit_reason_category = "ai_exit"
+            if "TIME_LIMIT" in reason.upper():
+                exit_reason_category = "time_limit"
+            elif "EMERGENCY" in reason.upper() or "NOTFALL" in reason.upper():
+                exit_reason_category = "emergency_sl"
+            elif "STOP" in reason.upper():
+                exit_reason_category = "stop_loss"
+            elif "PROFIT" in reason.upper() or "TP" in reason.upper():
+                exit_reason_category = "take_profit"
+            elif "MANUAL" in reason.upper():
+                exit_reason_category = "manual"
+            elif "AI_EXIT" in reason.upper() or "RL" in reason.upper():
+                exit_reason_category = "ai_exit"
             
             # Remove from account
             account.open_positions.remove(position)
-            account.cash += (executed_qty * actual_exit_price)
+            account.cash += exit_notional
             
-            # Record trade
+            # Record trade with EXTENDED SCHEMA
             trade = Trade(
                 user_id=user_id,
                 ts=datetime.now(timezone.utc),
@@ -1578,98 +1659,77 @@ class MultiUserTradingWorker:
                 qty=executed_qty,
                 entry=position.entry_price,
                 exit=actual_exit_price,
-                pnl=pnl,
-                pnl_pct=pnl_pct,
+                pnl=round(net_pnl, 4),  # NET PnL after costs
+                pnl_pct=round(net_pnl_pct, 4),  # NET PnL %
+                fees_paid=round(fees_paid, 6),
+                slippage_cost=round(slippage_cost, 6),
                 mode='live',
-                reason=reason,
-                notional=position.entry_price * executed_qty
+                reason=f"{exit_reason_category}: {reason}",
+                notional=round(entry_notional, 2)
             )
             await self.db.add_trade(trade)
             
-            # === ML DATA COLLECTION: Update Snapshot mit Exit-Ergebnis ===
-            try:
-                exit_reason_ml = "UNKNOWN"
-                if "STOP" in reason.upper():
-                    exit_reason_ml = "STOP_LOSS"
-                elif "PROFIT" in reason.upper() or "TP" in reason.upper():
-                    exit_reason_ml = "TAKE_PROFIT"
-                elif "PARTIAL" in reason.upper():
-                    exit_reason_ml = "PARTIAL"
-                elif "MANUAL" in reason.upper():
-                    exit_reason_ml = "MANUAL"
-                elif "BREAK" in reason.upper() or "EVEN" in reason.upper():
-                    exit_reason_ml = "BREAK_EVEN"
-                
-                # Log exit for RL tracking
-                await self.db.log(user_id, "INFO", 
-                    f"[RL] 📉 Trade geschlossen: {position.symbol} | PnL: {pnl_pct:.1f}% | Grund: {exit_reason_ml}")
-            except Exception as ml_err:
-                logger.warning(f"Exit log error: {ml_err}")
+            # === EXTENDED LOGGING ===
+            await self.db.log(user_id, "INFO", 
+                f"[COST] {position.symbol}: Gross PnL: ${gross_pnl:.4f} ({gross_pnl_pct:+.2f}%) | "
+                f"Fees: ${fees_paid:.4f} | Slip: ${slippage_cost:.4f} | "
+                f"Net: ${net_pnl:.4f} ({net_pnl_pct:+.2f}%)")
             
-            await self.db.log(user_id, "WARNING" if pnl < 0 else "INFO",
-                f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.1f}%)")
+            await self.db.log(user_id, "WARNING" if net_pnl < 0 else "INFO",
+                f"[LIVE] ✅ SELL CONFIRMED: {position.symbol} | Exit: ${actual_exit_price:.4f} | "
+                f"Net PnL: ${net_pnl:.2f} ({net_pnl_pct:+.1f}%) | Duration: {duration_seconds:.0f}s")
             
-            # === TELEGRAM BENACHRICHTIGUNG: Trade geschlossen ===
-            # Berechne Duration
-            duration_str = "?"
-            if hasattr(position, 'entry_time') and position.entry_time:
-                duration = datetime.now(timezone.utc) - position.entry_time
-                hours = int(duration.total_seconds() // 3600)
-                minutes = int((duration.total_seconds() % 3600) // 60)
-                duration_str = f"{hours}h {minutes}m"
+            # === TELEGRAM BENACHRICHTIGUNG ===
+            duration_str = f"{int(duration_seconds//60)}m {int(duration_seconds%60)}s"
             
-            # Bestimme Benachrichtigungstyp
-            if "STOP" in reason.upper():
+            if "STOP" in reason.upper() or "EMERGENCY" in reason.upper():
                 await self.notify_telegram('stop_loss', {
                     'symbol': position.symbol,
                     'entry_price': position.entry_price,
                     'exit_price': actual_exit_price,
-                    'pnl': pnl,
-                    'pnl_pct': pnl_pct
+                    'pnl': net_pnl,
+                    'pnl_pct': net_pnl_pct
                 }, user_id)
             elif "PROFIT" in reason.upper() or "TP" in reason.upper():
                 await self.notify_telegram('take_profit', {
                     'symbol': position.symbol,
                     'entry_price': position.entry_price,
                     'exit_price': actual_exit_price,
-                    'pnl': pnl,
-                    'pnl_pct': pnl_pct
-                }, user_id)
-            elif "SMART" in reason.upper() or "KI" in reason.upper():
-                await self.notify_telegram('smart_exit', {
-                    'symbol': position.symbol,
-                    'exit_type': 'smart_analysis',
-                    'confidence': 75,
-                    'reasons': [reason]
+                    'pnl': net_pnl,
+                    'pnl_pct': net_pnl_pct
                 }, user_id)
             else:
                 await self.notify_telegram('trade_closed', {
                     'symbol': position.symbol,
                     'entry_price': position.entry_price,
                     'exit_price': actual_exit_price,
-                    'pnl': pnl,
-                    'pnl_pct': pnl_pct,
-                    'exit_reason': reason,
+                    'pnl': net_pnl,
+                    'pnl_pct': net_pnl_pct,
+                    'exit_reason': exit_reason_category,
                     'duration': duration_str
                 }, user_id)
             
             # ============ RL TRADING AI: Beende Episode und Lerne ============
             try:
-                # Hole finale Marktdaten
-                klines = await mexc.get_klines(position.symbol, "4h", limit=50)
+                # Hole finale Marktdaten (1m für 10-Min Trading)
+                klines = await mexc.get_klines(position.symbol, "1m", limit=50)
                 ticker = await mexc.get_ticker_24h(position.symbol)
                 final_state = await self.rl_ai.analyze_market(position.symbol, klines, ticker, None)
                 
-                # Beende Episode und lerne
+                # Beende Episode mit ALLEN Kosten
                 await self.rl_ai.end_episode(
                     symbol=position.symbol,
                     final_state=final_state,
                     exit_price=actual_exit_price,
-                    pnl_pct=pnl_pct
+                    pnl_pct=gross_pnl_pct,  # Gross für Vergleich
+                    fees_paid=fees_paid,
+                    slippage_cost=slippage_cost,
+                    exit_reason=exit_reason_category,
+                    gross_pnl_usdt=gross_pnl
                 )
                 
                 rl_status = self.rl_ai.get_status()
-                emoji = "✅" if pnl > 0 else "❌"
+                emoji = "✅" if net_pnl > 0 else "❌"
                 await self.db.log(user_id, "INFO", 
                     f"[RL] {emoji} Episode beendet: {position.symbol} | "
                     f"Win-Rate: {rl_status['win_rate']*100:.1f}% | "
@@ -1680,7 +1740,7 @@ class MultiUserTradingWorker:
             # ============ END RL TRADING AI ============
             
             # Check consecutive losses
-            if pnl < 0:
+            if net_pnl < 0:
                 recent_losses = await self.db.get_recent_symbol_losses(user_id, position.symbol, hours=12)
                 if recent_losses >= 3:
                     await self.db.set_symbol_pause(user_id, position.symbol, 24, "3 losses in 12h", recent_losses)

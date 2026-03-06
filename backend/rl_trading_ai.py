@@ -153,8 +153,8 @@ class QLearningBrain:
         learning_rate: float = 0.001,
         gamma: float = 0.95,  # Discount für zukünftige Rewards
         epsilon_start: float = 1.0,  # Start-Exploration
-        epsilon_end: float = 0.1,  # End-Exploration
-        epsilon_decay: float = 0.995  # Wie schnell Exploration sinkt
+        epsilon_end: float = 0.05,  # End-Exploration (5% minimum)
+        epsilon_decay: float = 0.997  # Langsamer Decay für stabileres Lernen
     ):
         self.state_size = state_size
         self.action_size = action_size
@@ -618,7 +618,8 @@ class RLTradingAI:
         """
         Soll verkauft werden? - 100% KI-ENTSCHEIDUNG
         
-        WICHTIG: Mindest-Haltezeit von 2 Minuten nach Kauf!
+        Anti-Flip: 10 Sekunden Mindest-Haltezeit (nur gegen API-Spam)
+        Hard Exit: 10 Minuten wird in worker.py erzwungen
         """
         if not state.has_position:
             return {
@@ -631,15 +632,17 @@ class RLTradingAI:
         
         pnl = state.position_pnl_pct
         hold_hours = state.position_hold_hours if hasattr(state, 'position_hold_hours') else 0
+        hold_seconds = hold_hours * 3600
         hold_minutes = hold_hours * 60
         
-        # ============ MINDEST-HALTEZEIT: 2 Minuten ============
-        # Verhindert sofortiges Verkaufen nach Kauf (Churn)
-        if hold_minutes < 2:
+        # ============ ANTI-FLIP: 10 Sekunden ============
+        # Nur gegen API-Spam, keine Strategie-Einschränkung
+        MIN_HOLD_SECONDS = 10
+        if hold_seconds < MIN_HOLD_SECONDS:
             return {
                 'should_sell': False,
                 'confidence': 0,
-                'reasoning': f'⏳ Mindest-Haltezeit: {hold_minutes:.1f}min < 2min',
+                'reasoning': f'⏳ Anti-Flip: {hold_seconds:.0f}s < {MIN_HOLD_SECONDS}s',
                 'action': 'HOLD',
                 'exploration': False
             }
@@ -651,18 +654,12 @@ class RLTradingAI:
         is_exploration = random.random() < self.brain.epsilon
         
         if is_exploration:
-            # PROFIT-BIAS: Bei Gewinn höhere Wahrscheinlichkeit zu verkaufen
-            if pnl >= 0.5:
-                sell_prob = 0.8  # 80% SELL bei Profit >= 0.5%
-            elif pnl > 0:
-                sell_prob = 0.6  # 60% SELL bei kleinem Profit
-            elif pnl > -2:
-                sell_prob = 0.3  # 30% SELL bei kleinem Verlust (Geduld!)
-            else:
-                sell_prob = 0.5  # 50/50 bei größerem Verlust
+            # Exploration ohne starken Profit-Bias - KI soll selbst lernen
+            # Leichte Tendenz zu HOLD um Overtrading zu reduzieren
+            sell_prob = 0.4  # 40% SELL, 60% HOLD bei Exploration
             
             action = Action.SELL if random.random() < sell_prob else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (Bias: {sell_prob*100:.0f}%) | PnL: {pnl:+.2f}% | {hold_minutes:.0f}min"
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} | PnL: {pnl:+.2f}% | {hold_minutes:.1f}min"
             logger.info(f"[RL] {symbol}: {reason}")
         else:
             # Exploitation: Nutze gelerntes Wissen
@@ -681,16 +678,17 @@ class RLTradingAI:
             'exploration': is_exploration
         }
     
-    async def start_episode(self, symbol: str, state: MarketState, entry_price: float):
+    async def start_episode(self, symbol: str, state: MarketState, entry_price: float, entry_value: float = 0.0):
         """Starte neue Episode (Trade eröffnet)"""
         self.current_episode[symbol] = {
             'start_state': state.to_array(),
             'entry_price': entry_price,
+            'entry_value': entry_value,  # Notional in USDT
             'start_time': datetime.now(timezone.utc),
             'states': [state.to_array()],
             'actions': [Action.BUY]
         }
-        logger.info(f"[RL] Episode gestartet: {symbol} @ ${entry_price:.4f}")
+        logger.info(f"[RL] Episode gestartet: {symbol} @ ${entry_price:.4f} | Value: ${entry_value:.2f}")
     
     async def update_episode(self, symbol: str, state: MarketState, action: int):
         """Update Episode mit neuem State"""
@@ -698,79 +696,107 @@ class RLTradingAI:
             self.current_episode[symbol]['states'].append(state.to_array())
             self.current_episode[symbol]['actions'].append(action)
     
-    async def end_episode(self, symbol: str, final_state: MarketState, exit_price: float, pnl_pct: float):
+    async def end_episode(
+        self, 
+        symbol: str, 
+        final_state: MarketState, 
+        exit_price: float, 
+        pnl_pct: float,
+        fees_paid: float = 0.0,
+        slippage_cost: float = 0.0,
+        exit_reason: str = "ai_exit",
+        gross_pnl_usdt: float = 0.0
+    ):
         """
         Beende Episode (Trade geschlossen) und lerne daraus
         
-        HOCHFREQUENZ-TRADING REWARDS:
-        - Schnelle profitable Trades = HOHER Reward
-        - Langes Halten = BESTRAFUNG
-        - Kleine Gewinne schnell > Große Gewinne langsam
+        NET PnL REWARD SYSTEM:
+        - reward = net_pnl_pct (nach Gebühren und Slippage)
+        - Keine Zeit-Bonus/Malus mehr
+        - KI lernt aus realistischen Netto-Ergebnissen
         """
         if symbol not in self.current_episode:
             return
         
         episode = self.current_episode[symbol]
-        duration_hours = (datetime.now(timezone.utc) - episode['start_time']).total_seconds() / 3600
-        duration_minutes = duration_hours * 60
+        duration_seconds = (datetime.now(timezone.utc) - episode['start_time']).total_seconds()
+        duration_minutes = duration_seconds / 60
         
-        # ============ HOCHFREQUENZ REWARD SYSTEM ============
-        # Basis: PnL Prozent
-        reward = pnl_pct
+        # ============ NET PnL REWARD SYSTEM ============
+        # Berechne Net PnL nach Kosten
+        # gross_pnl = entry_value * (pnl_pct / 100)
+        # net_pnl = gross_pnl - fees - slippage
         
-        # BONUS für schnelle Trades (Hochfrequenz!)
-        if pnl_pct > 0:
-            if duration_minutes < 5:      # Unter 5 Min = MEGA BONUS
-                reward *= 3.0
-                logger.info(f"[RL] ⚡ BLITZ-TRADE! {duration_minutes:.1f}min → 3x Reward")
-            elif duration_minutes < 15:   # Unter 15 Min = Großer Bonus
-                reward *= 2.0
-                logger.info(f"[RL] 🚀 SCHNELL-TRADE! {duration_minutes:.1f}min → 2x Reward")
-            elif duration_minutes < 30:   # Unter 30 Min = Bonus
-                reward *= 1.5
-            elif duration_hours > 2:      # Über 2 Stunden = Reduziert
+        entry_price = episode['entry_price']
+        
+        # Wenn gross_pnl_usdt nicht übergeben, berechne aus pnl_pct
+        if gross_pnl_usdt == 0 and pnl_pct != 0:
+            # Schätze basierend auf typischer Position
+            gross_pnl_usdt = pnl_pct  # Vereinfacht: verwende pnl_pct als Proxy
+        
+        # Net PnL nach allen Kosten
+        total_costs = fees_paid + slippage_cost
+        net_pnl_usdt = gross_pnl_usdt - total_costs
+        
+        # Net PnL Prozent (für Reward)
+        # Schätze entry_value wenn nicht bekannt
+        entry_value = episode.get('entry_value', entry_price * 100)  # Fallback
+        if entry_value > 0:
+            net_pnl_pct = (net_pnl_usdt / entry_value) * 100
+        else:
+            net_pnl_pct = pnl_pct - (total_costs / max(entry_price, 1) * 100)
+        
+        # REWARD = Net PnL Prozent (KEINE Zeit-Multiplikatoren!)
+        reward = net_pnl_pct
+        
+        # Logging
+        cost_info = f"Fees: ${fees_paid:.4f}, Slip: ${slippage_cost:.4f}" if fees_paid > 0 or slippage_cost > 0 else "Costs: estimated"
+        logger.info(f"[RL] 💰 {symbol}: Gross PnL: {pnl_pct:+.2f}% → Net: {net_pnl_pct:+.2f}% | {cost_info}")
+        
+        # ============ TRAINING FILTER ============
+        # Filtere fehlerhafte Trades aus dem Training
+        should_learn = True
+        
+        # API Error oder extrem kurze Trades (< 5s) nicht lernen
+        if exit_reason == "api_error":
+            should_learn = False
+            logger.warning(f"[RL] ⚠️ {symbol}: API Error Trade - NICHT in Training")
+        
+        # Extremer Slippage (> 2%) markieren
+        if entry_value > 0 and slippage_cost > 0:
+            slippage_pct = (slippage_cost / entry_value) * 100
+            if slippage_pct > 2.0:
+                logger.warning(f"[RL] ⚠️ {symbol}: Hoher Slippage {slippage_pct:.2f}% - Trade markiert")
+                # Weiterhin lernen, aber mit reduziertem Reward
                 reward *= 0.5
-                logger.info(f"[RL] 🐢 Zu langsam gehalten ({duration_hours:.1f}h) → 0.5x Reward")
         
-        # BESTRAFUNG für langes Halten bei Verlust
-        if pnl_pct < 0:
-            if duration_hours > 1:  # Verlust über 1 Stunde gehalten
-                reward *= 1.5  # Verstärke negative Strafe
-                logger.info(f"[RL] ⚠️ Verlust zu lange gehalten → Extra Strafe")
-            if duration_minutes < 10 and pnl_pct > -1:  # Schneller kleiner Verlust ist OK
-                reward *= 0.5  # Reduziere Strafe für schnelles Aussteigen
-                logger.info(f"[RL] 👍 Schnell bei kleinem Verlust raus → Reduzierte Strafe")
-        
-        # BONUS für viele Trades (KI soll aktiv sein)
-        if self.brain.total_trades > 0 and self.brain.total_trades % 10 == 0:
-            reward += 1.0  # Bonus alle 10 Trades
-        
-        # Lerne aus der Erfahrung
-        states = episode['states']
-        actions = episode['actions']
-        
-        for i in range(len(states) - 1):
+        if should_learn:
+            # Lerne aus der Erfahrung
+            states = episode['states']
+            actions = episode['actions']
+            
+            for i in range(len(states) - 1):
+                exp = Experience(
+                    state=states[i],
+                    action=actions[i],
+                    reward=reward / len(states),
+                    next_state=states[i + 1],
+                    done=(i == len(states) - 2)
+                )
+                self.brain.learn(exp)
+            
+            # Finale Experience
             exp = Experience(
-                state=states[i],
-                action=actions[i],
-                reward=reward / len(states),
-                next_state=states[i + 1],
-                done=(i == len(states) - 2)
+                state=states[-1],
+                action=Action.SELL,
+                reward=reward,
+                next_state=final_state.to_array(),
+                done=True
             )
             self.brain.learn(exp)
         
-        # Finale Experience
-        exp = Experience(
-            state=states[-1],
-            action=Action.SELL,
-            reward=reward,
-            next_state=final_state.to_array(),
-            done=True
-        )
-        self.brain.learn(exp)
-        
-        # Statistiken
-        self.brain.record_trade_result(reward, pnl_pct > 0)
+        # Statistiken (immer aktualisieren)
+        self.brain.record_trade_result(reward, net_pnl_pct > 0)
         
         # Speichere Modell
         self._save_model()
@@ -778,8 +804,12 @@ class RLTradingAI:
         # Cleanup
         del self.current_episode[symbol]
         
-        emoji = "✅" if pnl_pct > 0 else "❌"
-        logger.info(f"[RL] {emoji} Episode beendet: {symbol} | PnL: {pnl_pct:.2f}% | Dauer: {duration_minutes:.0f}min | Reward: {reward:.2f}")
+        emoji = "✅" if net_pnl_pct > 0 else "❌"
+        exit_label = f"[{exit_reason.upper()}]" if exit_reason != "ai_exit" else ""
+        logger.info(f"[RL] {emoji} Episode beendet: {symbol} {exit_label}")
+        logger.info(f"[RL]    → Gross PnL: {pnl_pct:+.2f}% | Net PnL: {net_pnl_pct:+.2f}%")
+        logger.info(f"[RL]    → Dauer: {duration_seconds:.0f}s ({duration_minutes:.1f}min)")
+        logger.info(f"[RL]    → Kosten: ${total_costs:.4f} | Reward: {reward:.3f}")
         
         # Detailliertes Lern-Log
         logger.info(f"[RL] 📊 LERNSTATUS nach {symbol}:")
