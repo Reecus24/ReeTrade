@@ -26,8 +26,9 @@ class MultiUserTradingWorker:
     
     # ═══════════════════════════════════════════════════════════════════════════
     # GLOBAL BUY COOLDOWN - Anti-Overtrading Safety
+    # Default value - can be overridden per-user via settings.buy_cooldown_seconds
     # ═══════════════════════════════════════════════════════════════════════════
-    BUY_COOLDOWN_SECONDS = 1200  # 20 Minuten zwischen BUY Orders
+    DEFAULT_BUY_COOLDOWN_SECONDS = 1200  # 20 Minuten zwischen BUY Orders
     
     def __init__(self, db: Database):
         self.db = db
@@ -1214,7 +1215,8 @@ class MultiUserTradingWorker:
             # ═══════════════════════════════════════════════════════════════════
             # GLOBAL BUY COOLDOWN CHECK (PERSISTENT)
             # ═══════════════════════════════════════════════════════════════════
-            is_on_cooldown, remaining_seconds, last_buy = await self.check_buy_cooldown_async(user_id)
+            result = await self.check_buy_cooldown_async(user_id)
+            is_on_cooldown, remaining_seconds, last_buy, cooldown_seconds = result
             
             if is_on_cooldown:
                 minutes = remaining_seconds // 60
@@ -1222,7 +1224,7 @@ class MultiUserTradingWorker:
                 await self.db.log(user_id, "WARNING", 
                     f"[BUY COOLDOWN] ⏳ Skipping BUY - cooldown active | "
                     f"Remaining: {minutes}m {seconds}s | "
-                    f"Next buy available at: {(last_buy + timedelta(seconds=self.BUY_COOLDOWN_SECONDS)).strftime('%H:%M:%S')}"
+                    f"Next buy available at: {(last_buy + timedelta(seconds=cooldown_seconds)).strftime('%H:%M:%S')}"
                 )
                 return  # Skip all BUY signals, continue with exit checks
             # ═══════════════════════════════════════════════════════════════════
@@ -2130,7 +2132,16 @@ class MultiUserTradingWorker:
 
     # ═══════════════════════════════════════════════════════════════════════════
     # GLOBAL BUY COOLDOWN METHODS (PERSISTENT IN MONGODB)
+    # User-configurable via settings.buy_cooldown_seconds
     # ═══════════════════════════════════════════════════════════════════════════
+    
+    async def get_user_cooldown_seconds(self, user_id: str) -> int:
+        """Get user-specific cooldown from settings, fallback to default"""
+        try:
+            settings = await self.db.get_settings(user_id)
+            return getattr(settings, 'buy_cooldown_seconds', None) or self.DEFAULT_BUY_COOLDOWN_SECONDS
+        except Exception:
+            return self.DEFAULT_BUY_COOLDOWN_SECONDS
     
     async def check_buy_cooldown_async(self, user_id: str) -> tuple:
         """
@@ -2139,6 +2150,8 @@ class MultiUserTradingWorker:
         Returns:
             (is_on_cooldown: bool, remaining_seconds: int, last_buy_time: datetime or None)
         """
+        cooldown_seconds = await self.get_user_cooldown_seconds(user_id)
+        
         # First check RAM cache
         if user_id in self.user_last_buy_time:
             last_buy = self.user_last_buy_time[user_id]
@@ -2153,34 +2166,38 @@ class MultiUserTradingWorker:
                 # Update RAM cache
                 self.user_last_buy_time[user_id] = last_buy
             else:
-                return False, 0, None
+                return False, 0, None, cooldown_seconds
         
         elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
-        remaining = self.BUY_COOLDOWN_SECONDS - elapsed
+        remaining = cooldown_seconds - elapsed
         
         if remaining > 0:
-            return True, int(remaining), last_buy
+            return True, int(remaining), last_buy, cooldown_seconds
         else:
-            return False, 0, last_buy
+            return False, 0, last_buy, cooldown_seconds
     
-    def check_buy_cooldown(self, user_id: str) -> tuple:
+    def check_buy_cooldown(self, user_id: str, cooldown_seconds: int = None) -> tuple:
         """Sync version - uses RAM cache only (for non-async contexts)"""
+        if cooldown_seconds is None:
+            cooldown_seconds = self.DEFAULT_BUY_COOLDOWN_SECONDS
+            
         if user_id not in self.user_last_buy_time:
-            return False, 0, None
+            return False, 0, None, cooldown_seconds
         
         last_buy = self.user_last_buy_time[user_id]
         elapsed = (datetime.now(timezone.utc) - last_buy).total_seconds()
-        remaining = self.BUY_COOLDOWN_SECONDS - elapsed
+        remaining = cooldown_seconds - elapsed
         
         if remaining > 0:
-            return True, int(remaining), last_buy
+            return True, int(remaining), last_buy, cooldown_seconds
         else:
-            return False, 0, last_buy
+            return False, 0, last_buy, cooldown_seconds
     
     async def set_last_buy_time_async(self, user_id: str):
         """Record timestamp of last BUY order (PERSISTENT - saves to MongoDB)"""
         now = datetime.now(timezone.utc)
         self.user_last_buy_time[user_id] = now
+        cooldown_seconds = await self.get_user_cooldown_seconds(user_id)
         
         # Save to MongoDB for persistence
         await self.db.db.buy_cooldowns.update_one(
@@ -2188,16 +2205,17 @@ class MultiUserTradingWorker:
             {"$set": {"user_id": user_id, "last_buy_time": now}},
             upsert=True
         )
-        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.BUY_COOLDOWN_SECONDS}s (saved to DB)")
+        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {cooldown_seconds}s (saved to DB)")
     
     def set_last_buy_time(self, user_id: str):
         """Sync version - updates RAM only (DB save happens in async context)"""
         self.user_last_buy_time[user_id] = datetime.now(timezone.utc)
-        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.BUY_COOLDOWN_SECONDS}s")
+        logger.info(f"[BUY COOLDOWN] Set for user {user_id[:8]}... - Next buy in {self.DEFAULT_BUY_COOLDOWN_SECONDS}s")
     
     async def get_buy_cooldown_status_async(self, user_id: str) -> dict:
         """Get cooldown status for API/UI (PERSISTENT)"""
-        is_active, remaining, last_buy = await self.check_buy_cooldown_async(user_id)
+        result = await self.check_buy_cooldown_async(user_id)
+        is_active, remaining, last_buy, cooldown_seconds = result
         
         if is_active:
             minutes = remaining // 60
@@ -2207,7 +2225,7 @@ class MultiUserTradingWorker:
                 "remaining_seconds": remaining,
                 "remaining_formatted": f"{minutes}m {seconds}s",
                 "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+                "cooldown_seconds": cooldown_seconds
             }
         else:
             return {
@@ -2215,12 +2233,12 @@ class MultiUserTradingWorker:
                 "remaining_seconds": 0,
                 "remaining_formatted": "Ready",
                 "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+                "cooldown_seconds": cooldown_seconds
             }
     
-    def get_buy_cooldown_status(self, user_id: str) -> dict:
+    def get_buy_cooldown_status(self, user_id: str, cooldown_seconds: int = None) -> dict:
         """Sync version for backwards compatibility"""
-        is_active, remaining, last_buy = self.check_buy_cooldown(user_id)
+        is_active, remaining, last_buy, cooldown_secs = self.check_buy_cooldown(user_id, cooldown_seconds)
         
         if is_active:
             minutes = remaining // 60
@@ -2230,7 +2248,7 @@ class MultiUserTradingWorker:
                 "remaining_seconds": remaining,
                 "remaining_formatted": f"{minutes}m {seconds}s",
                 "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+                "cooldown_seconds": cooldown_secs
             }
         else:
             return {
@@ -2238,6 +2256,6 @@ class MultiUserTradingWorker:
                 "remaining_seconds": 0,
                 "remaining_formatted": "Ready",
                 "last_buy_time": last_buy.isoformat() if last_buy else None,
-                "cooldown_seconds": self.BUY_COOLDOWN_SECONDS
+                "cooldown_seconds": cooldown_secs
             }
 

@@ -93,6 +93,7 @@ class UserSettings(BaseModel):
     live_daily_cap_usdt: float = 200.0  # Daily trading limit
     live_max_order_usdt: float = 50.0  # Max order size
     live_min_notional_usdt: float = 10.0  # Min order size for live
+    buy_cooldown_seconds: int = 1200  # Cooldown between buys (user-configurable)
     
     # Legacy (for backwards compat)
     fee_bps: int = 10
@@ -179,6 +180,8 @@ class SettingsUpdate(BaseModel):
     live_daily_cap_usdt: Optional[float] = None
     live_max_order_usdt: Optional[float] = None
     live_min_notional_usdt: Optional[float] = None
+    buy_cooldown_seconds: Optional[int] = None  # User-configurable cooldown
+    max_notional_usdt: Optional[float] = None  # Alias for max order
     
     # Coin Selection
     selected_spot_coins: Optional[List[str]] = None

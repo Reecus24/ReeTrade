@@ -41,7 +41,9 @@ const SettingsTab = () => {
   // Settings
   const [settings, setSettings] = useState({
     min_notional_usdt: 10,
-    max_positions: 5
+    max_notional_usdt: 50,
+    max_positions: 5,
+    buy_cooldown_seconds: 1200
   });
 
   useEffect(() => {
@@ -171,7 +173,9 @@ const SettingsTab = () => {
         selected_spot_coins: spotSelectAll ? [] : selectedSpotCoins,
         spot_trade_all: spotSelectAll,
         min_notional_usdt: settings.min_notional_usdt,
-        max_positions: settings.max_positions
+        max_notional_usdt: settings.max_notional_usdt,
+        max_positions: settings.max_positions,
+        buy_cooldown_seconds: settings.buy_cooldown_seconds
       }, getAuthHeaders());
       toast.success('EINSTELLUNGEN GESPEICHERT');
     } catch (error) {
@@ -366,7 +370,7 @@ const SettingsTab = () => {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MIN ORDER (USDT)</label>
             <Input
@@ -379,6 +383,19 @@ const SettingsTab = () => {
           </div>
           
           <div>
+            <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MAX ORDER (USDT)</label>
+            <Input
+              type="number"
+              value={settings.max_notional_usdt || 50}
+              onChange={(e) => setSettings(prev => ({ ...prev, max_notional_usdt: parseFloat(e.target.value) || 50 }))}
+              className="cyber-input"
+              data-testid="max-order-input"
+            />
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
             <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">MAX POSITIONS</label>
             <Input
               type="number"
@@ -388,12 +405,26 @@ const SettingsTab = () => {
               data-testid="max-positions-input"
             />
           </div>
+          
+          <div>
+            <label className="block text-xs text-zinc-500 mb-2 font-mono-cyber">BUY COOLDOWN (Sekunden)</label>
+            <Input
+              type="number"
+              value={settings.buy_cooldown_seconds || 1200}
+              onChange={(e) => setSettings(prev => ({ ...prev, buy_cooldown_seconds: parseInt(e.target.value) || 1200 }))}
+              className="cyber-input"
+              data-testid="buy-cooldown-input"
+            />
+            <p className="text-[10px] text-zinc-600 mt-1 font-mono-cyber">
+              {Math.floor((settings.buy_cooldown_seconds || 1200) / 60)} Minuten zwischen Käufen
+            </p>
+          </div>
         </div>
         
         <div className="p-4 bg-cyan-500/5 border border-cyan-500/20">
           <p className="text-xs text-cyan-400 font-mono-cyber">
             <Zap className="w-3 h-3 inline mr-1" />
-            RL-KI berechnet Position Size automatisch basierend auf Portfolio und Market State
+            RL-KI berechnet Position Size automatisch zwischen MIN und MAX | Keine doppelten Coins | Cooldown nach jedem Kauf
           </p>
         </div>
       </div>
