@@ -2374,6 +2374,146 @@ async def get_rl_status(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/api/rl/trading-stats")
+async def get_rl_trading_stats(
+    current_user: dict = Depends(get_current_user),
+    hours: int = 24
+):
+    """
+    Get detailed RL Trading Statistics
+    
+    Includes:
+    - average hold duration
+    - average theoretical vs net pnl
+    - sell_source breakdown
+    - fee analysis
+    """
+    user_id = current_user['user_id']
+    
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    
+    # Hole alle Trades im Zeitraum
+    trades = await db.db.trades.find({
+        "user_id": user_id,
+        "ts": {"$gte": cutoff},
+        "side": "SELL"  # Nur abgeschlossene Trades
+    }).to_list(1000)
+    
+    if not trades:
+        return {
+            "period_hours": hours,
+            "total_trades": 0,
+            "message": "Keine Trades im Zeitraum"
+        }
+    
+    # Statistiken berechnen
+    durations = []
+    theoretical_pnls = []
+    net_pnls = []
+    fees_total = 0
+    slippage_total = 0
+    notional_total = 0
+    
+    sell_sources = {
+        "exploitation": 0,
+        "random_exploration": 0,
+        "emergency": 0,
+        "time_limit": 0,
+        "unknown": 0
+    }
+    
+    for t in trades:
+        # Duration
+        duration = t.get('duration_seconds')
+        if duration:
+            durations.append(duration)
+        
+        # PnL
+        gross_pnl = t.get('gross_pnl_pct') or t.get('pnl_pct', 0)
+        net_pnl = t.get('pnl_pct', 0)
+        
+        if gross_pnl:
+            theoretical_pnls.append(gross_pnl)
+        net_pnls.append(net_pnl)
+        
+        # Fees
+        fees = t.get('fees_paid', 0) or 0
+        slippage = t.get('slippage_cost', 0) or 0
+        notional = t.get('notional', 0) or 0
+        
+        fees_total += fees
+        slippage_total += slippage
+        notional_total += notional
+        
+        # Sell source (aus reason extrahieren)
+        reason = t.get('reason', '') or ''
+        reason_lower = reason.lower()
+        
+        if 'time_limit' in reason_lower:
+            sell_sources['time_limit'] += 1
+        elif 'emergency' in reason_lower:
+            sell_sources['emergency'] += 1
+        elif 'random_exploration' in reason_lower or 'exploration sell' in reason_lower:
+            sell_sources['random_exploration'] += 1
+        elif 'exploitation' in reason_lower or 'ai_exit' in reason_lower:
+            sell_sources['exploitation'] += 1
+        else:
+            sell_sources['unknown'] += 1
+    
+    # Durchschnitte berechnen
+    total = len(trades)
+    avg_duration = sum(durations) / len(durations) if durations else 0
+    avg_theoretical_pnl = sum(theoretical_pnls) / len(theoretical_pnls) if theoretical_pnls else 0
+    avg_net_pnl = sum(net_pnls) / len(net_pnls) if net_pnls else 0
+    
+    # Fee ratio
+    fee_ratio = (fees_total / notional_total * 100) if notional_total > 0 else 0
+    
+    # Sell source percentages
+    sell_source_pct = {k: (v / total * 100) if total > 0 else 0 for k, v in sell_sources.items()}
+    
+    # Profitable trades
+    profitable = sum(1 for p in net_pnls if p > 0)
+    win_rate = (profitable / total * 100) if total > 0 else 0
+    
+    return {
+        "period_hours": hours,
+        "total_trades": total,
+        
+        # Duration
+        "avg_hold_duration_seconds": round(avg_duration, 1),
+        "avg_hold_duration_formatted": f"{int(avg_duration//60)}m {int(avg_duration%60)}s",
+        "min_duration": round(min(durations), 1) if durations else 0,
+        "max_duration": round(max(durations), 1) if durations else 0,
+        
+        # PnL
+        "avg_theoretical_pnl_pct": round(avg_theoretical_pnl, 3),
+        "avg_net_pnl_pct": round(avg_net_pnl, 3),
+        "total_net_pnl_pct": round(sum(net_pnls), 3),
+        "pnl_difference": round(avg_theoretical_pnl - avg_net_pnl, 3),
+        
+        # Win Rate
+        "profitable_trades": profitable,
+        "losing_trades": total - profitable,
+        "win_rate_pct": round(win_rate, 1),
+        
+        # Fees
+        "total_fees_usd": round(fees_total, 4),
+        "total_slippage_usd": round(slippage_total, 4),
+        "total_costs_usd": round(fees_total + slippage_total, 4),
+        "fee_ratio_pct": round(fee_ratio, 3),
+        
+        # Sell Sources
+        "sell_sources": sell_sources,
+        "sell_sources_pct": {k: round(v, 1) for k, v in sell_source_pct.items()},
+        
+        # Summary Message
+        "summary": f"{total} Trades | Avg Hold: {int(avg_duration//60)}m | Net PnL: {avg_net_pnl:+.2f}% | Win: {win_rate:.0f}%"
+    }
+
+
+
 
 
 

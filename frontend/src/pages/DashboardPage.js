@@ -32,12 +32,18 @@ const getAuthHeaders = () => {
 
 const RLStatusPanel = () => {
   const [rlStatus, setRlStatus] = useState(null);
+  const [tradingStats, setTradingStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [statsHours, setStatsHours] = useState(24);
 
   const fetchStatus = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/api/rl/status`, getAuthHeaders());
-      setRlStatus(response.data);
+      const [statusRes, statsRes] = await Promise.all([
+        axios.get(`${BACKEND_URL}/api/rl/status`, getAuthHeaders()),
+        axios.get(`${BACKEND_URL}/api/rl/trading-stats?hours=${statsHours}`, getAuthHeaders())
+      ]);
+      setRlStatus(statusRes.data);
+      setTradingStats(statsRes.data);
     } catch (error) {
       console.error('RL Status error:', error);
     } finally {
@@ -49,7 +55,7 @@ const RLStatusPanel = () => {
     fetchStatus();
     const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [statsHours]);
 
   if (loading) {
     return (
@@ -63,6 +69,10 @@ const RLStatusPanel = () => {
   const learningPct = 100 - explorationPct;
   const winRate = (rlStatus?.win_rate || 0) * 100;
   const totalTrades = rlStatus?.total_trades || 0;
+
+  // Trading Stats
+  const stats = tradingStats || {};
+  const sellSources = stats.sell_sources_pct || {};
 
   return (
     <div className="cyber-panel p-6 box-glow-purple" data-testid="rl-status-panel">
@@ -102,8 +112,8 @@ const RLStatusPanel = () => {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Basic Stats Grid */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
           <p className="text-2xl font-cyber text-white">{totalTrades}</p>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider">TRADES</p>
@@ -119,6 +129,88 @@ const RLStatusPanel = () => {
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider">MEMORY</p>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* TRADING STATISTICS (NEW) */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {stats.total_trades > 0 && (
+        <div className="mt-4 border border-cyan-500/30 bg-black/30">
+          {/* Stats Header */}
+          <div className="flex items-center justify-between p-3 border-b border-cyan-500/20">
+            <span className="text-xs text-cyan-400 font-mono-cyber uppercase tracking-wider">
+              Trading Stats ({statsHours}h)
+            </span>
+            <div className="flex gap-1">
+              {[1, 6, 24].map(h => (
+                <button
+                  key={h}
+                  onClick={() => setStatsHours(h)}
+                  className={`px-2 py-0.5 text-xs font-mono ${statsHours === h ? 'bg-cyan-500/30 text-cyan-400' : 'text-zinc-500 hover:text-cyan-400'}`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Hold Duration & PnL */}
+          <div className="grid grid-cols-2 gap-px bg-cyan-500/10">
+            <div className="bg-black p-3">
+              <p className="text-xs text-zinc-500 mb-1">AVG HOLD</p>
+              <p className="text-lg font-cyber text-white">{stats.avg_hold_duration_formatted || '0m 0s'}</p>
+              <p className="text-[10px] text-zinc-600">{stats.min_duration?.toFixed(0)}s - {stats.max_duration?.toFixed(0)}s</p>
+            </div>
+            <div className="bg-black p-3">
+              <p className="text-xs text-zinc-500 mb-1">NET PnL (AVG)</p>
+              <p className={`text-lg font-cyber ${(stats.avg_net_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {(stats.avg_net_pnl_pct || 0) >= 0 ? '+' : ''}{(stats.avg_net_pnl_pct || 0).toFixed(2)}%
+              </p>
+              <p className="text-[10px] text-zinc-600">Theoretical: {(stats.avg_theoretical_pnl_pct || 0).toFixed(2)}%</p>
+            </div>
+          </div>
+
+          {/* Cost Analysis */}
+          <div className="grid grid-cols-3 gap-px bg-cyan-500/10 border-t border-cyan-500/20">
+            <div className="bg-black p-2 text-center">
+              <p className="text-[10px] text-zinc-500">TOTAL NET</p>
+              <p className={`text-sm font-cyber ${(stats.total_net_pnl_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {(stats.total_net_pnl_pct || 0) >= 0 ? '+' : ''}{(stats.total_net_pnl_pct || 0).toFixed(2)}%
+              </p>
+            </div>
+            <div className="bg-black p-2 text-center">
+              <p className="text-[10px] text-zinc-500">FEES</p>
+              <p className="text-sm font-cyber text-yellow-400">${(stats.total_fees_usd || 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-black p-2 text-center">
+              <p className="text-[10px] text-zinc-500">FEE RATIO</p>
+              <p className="text-sm font-cyber text-orange-400">{(stats.fee_ratio_pct || 0).toFixed(2)}%</p>
+            </div>
+          </div>
+
+          {/* Sell Source Breakdown */}
+          <div className="p-3 border-t border-cyan-500/20">
+            <p className="text-xs text-zinc-500 mb-2 font-mono-cyber">SELL SOURCES</p>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div>
+                <p className="text-sm font-cyber text-blue-400">{sellSources.exploitation?.toFixed(0) || 0}%</p>
+                <p className="text-[9px] text-zinc-600">EXPLOIT</p>
+              </div>
+              <div>
+                <p className="text-sm font-cyber text-purple-400">{sellSources.random_exploration?.toFixed(0) || 0}%</p>
+                <p className="text-[9px] text-zinc-600">RANDOM</p>
+              </div>
+              <div>
+                <p className="text-sm font-cyber text-red-400">{sellSources.emergency?.toFixed(0) || 0}%</p>
+                <p className="text-[9px] text-zinc-600">EMERG</p>
+              </div>
+              <div>
+                <p className="text-sm font-cyber text-yellow-400">{sellSources.time_limit?.toFixed(0) || 0}%</p>
+                <p className="text-[9px] text-zinc-600">TIME</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Active Episodes */}
       {rlStatus?.active_episodes && rlStatus.active_episodes.length > 0 && (
