@@ -89,24 +89,52 @@ async def lifespan(app: FastAPI):
 
 
 async def telegram_polling_loop():
-    """Polling loop für Telegram Befehle"""
+    """Polling loop für Telegram Befehle
+    
+    WICHTIG: Verwendet Distributed Lock um 409 Conflict zu vermeiden!
+    Nur die Leader-Instanz führt Polling aus.
+    """
     global telegram_bot
     
     if not telegram_bot:
         return
     
+    # Import hier um zirkuläre Imports zu vermeiden
+    from distributed_lock import get_telegram_lock
+    
+    # Hole Lock
+    tg_lock = get_telegram_lock(db)
+    await tg_lock.initialize()
+    
     offset = 0
     default_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-    
-    # Sende Startup-Nachricht
-    if default_chat_id:
-        await telegram_bot.send_message(
-            int(default_chat_id),
-            "🤖 <b>ReeTrade Bot gestartet!</b>\n\nTippe /help für alle Befehle."
-        )
+    startup_message_sent = False
     
     while True:
         try:
+            # ============ LEADER ELECTION ============
+            is_leader = await tg_lock.try_acquire()
+            
+            if not is_leader:
+                # Nicht Leader - warte und versuche erneut
+                logger.debug("[Telegram] Not leader, waiting...")
+                await asyncio.sleep(10)
+                continue
+            
+            # Wir sind Leader - starte Heartbeat wenn noch nicht aktiv
+            if tg_lock._heartbeat_task is None:
+                await tg_lock.start_heartbeat_loop(interval=10)
+            
+            # Sende Startup-Nachricht (nur einmal)
+            if not startup_message_sent and default_chat_id:
+                await telegram_bot.send_message(
+                    int(default_chat_id),
+                    "🤖 <b>ReeTrade Bot gestartet!</b>\n\nTippe /help für alle Befehle."
+                )
+                startup_message_sent = True
+                logger.info("[Telegram] ✅ Leader - starting polling")
+            
+            # ============ POLLING ============
             updates = await telegram_bot.get_updates(offset)
             
             for update in updates:
@@ -168,9 +196,20 @@ async def telegram_polling_loop():
             
             await asyncio.sleep(1)
         except asyncio.CancelledError:
+            # Cleanup: Release lock und stoppe heartbeat
+            logger.info("[Telegram] Polling cancelled, releasing lock...")
+            await tg_lock.stop_heartbeat_loop()
+            await tg_lock.release()
             break
         except Exception as e:
+            # Bei Fehler: Kurz warten, aber Lock verlieren wir nicht automatisch
             logger.error(f"Telegram polling error: {e}")
+            
+            # Bei 409 Conflict: Wir sind nicht mehr allein, Lock abgeben
+            if "409" in str(e) or "Conflict" in str(e):
+                logger.warning("[Telegram] 409 Conflict detected - releasing lock")
+                await tg_lock.release()
+            
             await asyncio.sleep(5)
 
 

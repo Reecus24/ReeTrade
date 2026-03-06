@@ -148,20 +148,118 @@ class Experience:
     done: bool  # Episode beendet (Trade geschlossen)
 
 
-class ReplayMemory:
-    """Speicher für Erfahrungen - KI lernt aus der Vergangenheit"""
+class PrioritizedReplayMemory:
+    """
+    Prioritized Experience Replay (PER)
     
-    def __init__(self, capacity: int = 10000):
-        self.memory = deque(maxlen=capacity)
+    Erfahrungen mit höherem TD-Error werden häufiger gesamplet.
+    Dies beschleunigt das Lernen signifikant.
+    
+    priority_i = |TD_error_i| + epsilon
+    P(i) = priority_i^alpha / sum(priority_j^alpha)
+    
+    Optional: Importance Sampling weights w_i = (N * P(i))^(-beta)
+    """
+    
+    def __init__(
+        self, 
+        capacity: int = 10000,
+        alpha: float = 0.6,  # Prioritization exponent (0 = uniform, 1 = full prioritization)
+        beta_start: float = 0.4,  # Importance sampling start (anneals to 1.0)
+        beta_frames: int = 10000,  # Frames to anneal beta
+        epsilon: float = 0.01  # Small constant to avoid zero priority
+    ):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.beta_start = beta_start
+        self.beta_frames = beta_frames
+        self.epsilon = epsilon
+        
+        # Storage
+        self.buffer: List[Experience] = []
+        self.priorities: np.ndarray = np.zeros(capacity, dtype=np.float32)
+        self.position = 0
+        self.frame = 0
+        
+        # Track max priority for new experiences
+        self.max_priority = 1.0
+    
+    @property
+    def beta(self) -> float:
+        """Current beta value (anneals from beta_start to 1.0)"""
+        return min(1.0, self.beta_start + (1.0 - self.beta_start) * self.frame / self.beta_frames)
     
     def push(self, experience: Experience):
-        self.memory.append(experience)
+        """Add experience with max priority (so it gets sampled at least once)"""
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(experience)
+        else:
+            self.buffer[self.position] = experience
+        
+        # New experiences get max priority
+        self.priorities[self.position] = self.max_priority
+        self.position = (self.position + 1) % self.capacity
     
-    def sample(self, batch_size: int) -> List[Experience]:
-        return random.sample(self.memory, min(batch_size, len(self.memory)))
+    def sample(self, batch_size: int) -> tuple:
+        """
+        Sample batch with prioritization
+        
+        Returns:
+            (experiences, indices, weights)
+        """
+        self.frame += 1
+        
+        if len(self.buffer) == 0:
+            return [], [], []
+        
+        n = len(self.buffer)
+        batch_size = min(batch_size, n)
+        
+        # Calculate sampling probabilities
+        priorities = self.priorities[:n]
+        probs = priorities ** self.alpha
+        probs_sum = probs.sum()
+        
+        if probs_sum == 0:
+            probs = np.ones(n) / n
+        else:
+            probs = probs / probs_sum
+        
+        # Sample indices based on priority
+        try:
+            indices = np.random.choice(n, batch_size, p=probs, replace=False)
+        except ValueError:
+            # Fallback to uniform if probabilities are invalid
+            indices = np.random.choice(n, batch_size, replace=False)
+        
+        # Calculate importance sampling weights
+        # w_i = (N * P(i))^(-beta)
+        weights = (n * probs[indices]) ** (-self.beta)
+        weights = weights / weights.max()  # Normalize
+        
+        experiences = [self.buffer[i] for i in indices]
+        
+        return experiences, indices, weights
+    
+    def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray):
+        """
+        Update priorities based on TD errors
+        
+        priority = |td_error| + epsilon
+        """
+        for idx, td_error in zip(indices, td_errors):
+            priority = abs(td_error) + self.epsilon
+            self.priorities[idx] = priority
+            self.max_priority = max(self.max_priority, priority)
     
     def __len__(self) -> int:
-        return len(self.memory)
+        return len(self.buffer)
+
+
+# Legacy alias for backwards compatibility
+class ReplayMemory(PrioritizedReplayMemory):
+    """Alias für PrioritizedReplayMemory (backwards compatible)"""
+    pass
 
 
 # ============ Q-LEARNING KI (Das "Gehirn") ============
@@ -291,17 +389,29 @@ class QLearningBrain:
         return int(np.argmax(q_values))
     
     def learn(self, experience: Experience):
-        """Lerne aus einer Erfahrung"""
+        """
+        Lerne aus einer Erfahrung mit Prioritized Experience Replay (PER)
+        
+        - Neue Erfahrungen bekommen max priority
+        - TD-Error bestimmt zukünftige Priorität
+        - Importance sampling weights korrigieren Bias
+        """
         self.memory.push(experience)
         
         # Batch-Learning wenn genug Erfahrungen
         if len(self.memory) < 32:
             return
         
-        batch = self.memory.sample(32)
+        # Sample mit Priorisierung
+        batch, indices, weights = self.memory.sample(32)
         
-        for exp in batch:
-            # Q-Learning Update
+        if not batch:
+            return
+        
+        td_errors = []
+        
+        for i, exp in enumerate(batch):
+            # Q-Learning Update mit TD-Error
             current_q = self.get_q_values(exp.state)[exp.action]
             
             if exp.done:
@@ -310,21 +420,33 @@ class QLearningBrain:
                 next_q_values = self.get_q_values(exp.next_state)
                 target_q = exp.reward + self.gamma * np.max(next_q_values)
             
-            # Update Q-Funktion
+            # TD-Error für Priority Update
+            td_error = target_q - current_q
+            td_errors.append(td_error)
+            
+            # Importance sampling weight (korrigiert Bias durch Priorisierung)
+            weight = weights[i] if isinstance(weights, (list, np.ndarray)) and len(weights) > i else 1.0
+            
+            # Update Q-Funktion (weighted)
             if self.model_type == "neural_network":
                 # Partial fit für Neural Network
+                # Note: sklearn doesn't support sample weights in partial_fit, 
+                # so we scale the target instead
                 state_2d = exp.state.reshape(1, -1)
-                self.q_networks[exp.action].partial_fit(state_2d, np.array([target_q]))
+                weighted_target = current_q + weight * (target_q - current_q)
+                self.q_networks[exp.action].partial_fit(state_2d, np.array([weighted_target]))
             else:
                 # Q-Table Update
                 key = self._discretize_state(exp.state)
                 if key not in self.q_table:
                     self.q_table[key] = np.zeros(self.action_size)
                 
-                # Q-Learning Formula
-                self.q_table[key][exp.action] += self.learning_rate * (
-                    target_q - self.q_table[key][exp.action]
-                )
+                # Weighted Q-Learning Formula
+                self.q_table[key][exp.action] += weight * self.learning_rate * td_error
+        
+        # ============ PER: UPDATE PRIORITIES ============
+        if indices and td_errors:
+            self.memory.update_priorities(np.array(indices), np.array(td_errors))
         
         # Decay Exploration
         old_epsilon = self.epsilon
@@ -333,9 +455,12 @@ class QLearningBrain:
         
         # Log Lernfortschritt alle 10 Episoden
         if self.training_episodes % 10 == 0:
-            logger.info(f"[RL] 🎓 LERNFORTSCHRITT:")
+            avg_td_error = np.mean(np.abs(td_errors)) if td_errors else 0
+            logger.info(f"[RL] 🎓 LERNFORTSCHRITT (PER):")
             logger.info(f"[RL]    → Episoden: {self.training_episodes}")
             logger.info(f"[RL]    → Exploration: {old_epsilon*100:.1f}% → {self.epsilon*100:.1f}%")
+            logger.info(f"[RL]    → Avg TD-Error: {avg_td_error:.4f}")
+            logger.info(f"[RL]    → Memory Beta: {self.memory.beta:.2f} (importance sampling)")
             logger.info(f"[RL]    → Die KI verlässt sich jetzt zu {(1-self.epsilon)*100:.1f}% auf gelerntes Wissen")
     
     def record_trade_result(self, reward: float, was_profitable: bool):
