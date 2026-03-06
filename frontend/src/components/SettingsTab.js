@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
-  Key, Search, Coins, TrendingUp, RefreshCw, Check, Zap
+  Key, Search, Coins, TrendingUp, RefreshCw, Check, Zap, MessageCircle, Link, Unlink
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -25,6 +25,11 @@ const SettingsTab = () => {
   const [spotConnected, setSpotConnected] = useState(false);
   const [showKeysInput, setShowKeysInput] = useState(false);
   
+  // Telegram State
+  const [telegramStatus, setTelegramStatus] = useState({ bot_configured: false, user_linked: false });
+  const [telegramCode, setTelegramCode] = useState('');
+  const [linkingTelegram, setLinkingTelegram] = useState(false);
+  
   // Coin Selection State
   const [availableSpotCoins, setAvailableSpotCoins] = useState([]);
   const [selectedSpotCoins, setSelectedSpotCoins] = useState([]);
@@ -42,6 +47,7 @@ const SettingsTab = () => {
   useEffect(() => {
     fetchKeysStatus();
     fetchSettings();
+    fetchTelegramStatus();
   }, []);
 
   useEffect(() => {
@@ -74,6 +80,56 @@ const SettingsTab = () => {
       setKeysConnected(response.data.connected);
       setSpotConnected(response.data.connected);
     } catch (error) {}
+  };
+
+  const fetchTelegramStatus = async () => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/telegram/status`, getAuthHeaders());
+      setTelegramStatus(response.data);
+    } catch (error) {
+      console.error('Telegram status error:', error);
+    }
+  };
+
+  const linkTelegram = async () => {
+    if (!telegramCode.trim()) {
+      toast.error('Bitte Code eingeben');
+      return;
+    }
+    
+    setLinkingTelegram(true);
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/link`, {
+        code: telegramCode.trim()
+      }, getAuthHeaders());
+      
+      setTelegramStatus(prev => ({ ...prev, user_linked: true }));
+      setTelegramCode('');
+      toast.success('TELEGRAM VERKNÜPFT!');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'FEHLER BEIM VERKNÜPFEN');
+    } finally {
+      setLinkingTelegram(false);
+    }
+  };
+
+  const unlinkTelegram = async () => {
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/unlink`, {}, getAuthHeaders());
+      setTelegramStatus(prev => ({ ...prev, user_linked: false }));
+      toast.success('TELEGRAM GETRENNT');
+    } catch (error) {
+      toast.error('FEHLER');
+    }
+  };
+
+  const testTelegram = async () => {
+    try {
+      await axios.post(`${BACKEND_URL}/api/telegram/test`, {}, getAuthHeaders());
+      toast.success('TEST GESENDET');
+    } catch (error) {
+      toast.error('TEST FEHLGESCHLAGEN');
+    }
   };
 
   const fetchAvailableCoins = async () => {
@@ -207,6 +263,91 @@ const SettingsTab = () => {
                 CANCEL
               </Button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Telegram Integration */}
+      <div className="cyber-panel p-6 box-glow-purple">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+              <MessageCircle className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">Telegram</h3>
+              <p className="text-xs text-zinc-500 font-mono-cyber">NOTIFICATIONS</p>
+            </div>
+          </div>
+          <Badge className={`cyber-badge ${telegramStatus.user_linked ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/50'}`}>
+            {telegramStatus.user_linked ? 'LINKED' : 'OFFLINE'}
+          </Badge>
+        </div>
+        
+        {telegramStatus.user_linked ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-green-500/5 border border-green-500/30">
+              <p className="text-sm text-green-400 flex items-center gap-2 font-mono-cyber">
+                <Check className="w-4 h-4" />
+                TELEGRAM ACCOUNT LINKED
+              </p>
+            </div>
+            
+            <div className="text-xs text-zinc-500 font-mono-cyber space-y-1">
+              <p>BEFEHLE: /status, /profit, /balance, /trades, /ki</p>
+              <p>ALERTS: Trade Open/Close, Daily Summary</p>
+            </div>
+            
+            <div className="flex gap-3">
+              <Button 
+                onClick={testTelegram}
+                className="flex-1 cyber-btn"
+                data-testid="test-telegram-btn"
+              >
+                TEST MESSAGE
+              </Button>
+              <Button 
+                onClick={unlinkTelegram}
+                className="cyber-btn bg-red-500/10 border-red-500 text-red-400 hover:bg-red-500/20"
+                data-testid="unlink-telegram-btn"
+              >
+                <Unlink className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        ) : telegramStatus.bot_configured ? (
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm text-zinc-400 font-mono-cyber">
+              <p>1. Öffne <strong className="text-purple-400">@ReeTrade_Bot</strong> in Telegram</p>
+              <p>2. Sende <code className="text-cyan-400 bg-black/30 px-1">/link</code></p>
+              <p>3. Gib den Code hier ein:</p>
+            </div>
+            
+            <div className="flex gap-2">
+              <Input
+                value={telegramCode}
+                onChange={(e) => setTelegramCode(e.target.value.toUpperCase())}
+                placeholder="CODE EINGEBEN"
+                className="flex-1 bg-black/50 border-purple-500/30 text-purple-300 font-mono text-lg tracking-widest text-center uppercase"
+                maxLength={6}
+                data-testid="telegram-code-input"
+              />
+              <Button 
+                onClick={linkTelegram}
+                disabled={linkingTelegram || !telegramCode.trim()}
+                className="cyber-btn bg-purple-500/20 border-purple-500 text-purple-400 hover:bg-purple-500/30"
+                data-testid="link-telegram-btn"
+              >
+                <Link className="w-4 h-4 mr-2" />
+                {linkingTelegram ? '...' : 'LINK'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 bg-zinc-900/50 border border-zinc-800">
+            <p className="text-xs text-zinc-600 font-mono-cyber text-center">
+              TELEGRAM BOT NICHT KONFIGURIERT (Server)
+            </p>
           </div>
         )}
       </div>

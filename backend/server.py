@@ -31,6 +31,7 @@ from risk_manager import RiskManager
 from ml_data_collector import get_ml_collector
 from ki_learning_engine import get_ki_engine
 from models import PaperAccount, Position
+from telegram_bot import TelegramBot, get_telegram_bot
 
 # Logging
 logging.basicConfig(
@@ -43,12 +44,14 @@ logger = logging.getLogger(__name__)
 db = Database()
 worker: MultiUserTradingWorker = None
 worker_task: asyncio.Task = None
+telegram_bot: TelegramBot = None
+telegram_polling_task: asyncio.Task = None
 limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global worker, worker_task
+    global worker, worker_task, telegram_bot, telegram_polling_task
     
     # Startup
     logger.info("Starting ReeTrade Terminal API")
@@ -58,6 +61,13 @@ async def lifespan(app: FastAPI):
     worker = MultiUserTradingWorker(db)
     worker_task = asyncio.create_task(worker.start())
     
+    # Start Telegram bot if configured
+    tg_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    if tg_token:
+        telegram_bot = get_telegram_bot(tg_token, db)
+        telegram_polling_task = asyncio.create_task(telegram_polling_loop())
+        logger.info("Telegram bot started")
+    
     yield
     
     # Shutdown
@@ -66,7 +76,50 @@ async def lifespan(app: FastAPI):
         await worker.stop()
     if worker_task:
         worker_task.cancel()
+    if telegram_polling_task:
+        telegram_polling_task.cancel()
+    if telegram_bot:
+        await telegram_bot.close()
     db.close()
+
+
+async def telegram_polling_loop():
+    """Polling loop für Telegram Befehle"""
+    global telegram_bot
+    
+    if not telegram_bot:
+        return
+    
+    offset = 0
+    logger.info("[TELEGRAM] Polling started")
+    
+    while True:
+        try:
+            updates = await telegram_bot.get_updates(offset)
+            
+            for update in updates:
+                offset = update['update_id'] + 1
+                
+                if 'message' in update and 'text' in update['message']:
+                    chat_id = update['message']['chat']['id']
+                    text = update['message']['text'].strip()
+                    
+                    # Finde user_id basierend auf chat_id
+                    user = await db.users.find_one({"telegram_chat_id": str(chat_id)})
+                    user_id = str(user['_id']) if user else None
+                    
+                    if text.startswith('/'):
+                        response = await telegram_bot.handle_command(chat_id, text, user_id)
+                        await telegram_bot.send_message(chat_id, response)
+            
+            await asyncio.sleep(1)
+            
+        except asyncio.CancelledError:
+            logger.info("[TELEGRAM] Polling stopped")
+            break
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Polling error: {e}")
+            await asyncio.sleep(5)
 
 
 app = FastAPI(
@@ -1380,6 +1433,135 @@ async def run_backtest(request: BacktestRequest, current_user: dict = Depends(ge
 async def root():
     """Health check"""
     return {"message": "ReeTrade Terminal API", "status": "healthy"}
+
+
+# ============ TELEGRAM ENDPOINTS ============
+
+@app.get("/api/telegram/status")
+async def get_telegram_status(current_user: dict = Depends(get_current_user)):
+    """Get Telegram connection status for current user"""
+    user_id = current_user['user_id']
+    
+    # Check if bot is configured
+    bot_configured = telegram_bot is not None
+    
+    # Check if user has linked Telegram
+    from bson import ObjectId
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    user_linked = bool(user and user.get('telegram_chat_id'))
+    
+    return {
+        "bot_configured": bot_configured,
+        "user_linked": user_linked,
+        "chat_id_preview": user['telegram_chat_id'][:5] + "..." if user_linked else None
+    }
+
+
+@app.post("/api/telegram/link")
+async def link_telegram(data: dict, current_user: dict = Depends(get_current_user)):
+    """
+    Link Telegram account using code from Telegram Bot
+    User tippt /link in Telegram → bekommt Code → gibt Code hier ein
+    """
+    user_id = current_user['user_id']
+    code = data.get('code', '').upper().strip()
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="Code ist erforderlich")
+    
+    # Suche Code in DB
+    link_doc = await db.db.telegram_link_codes.find_one({'code': code, 'used': False})
+    
+    if not link_doc:
+        raise HTTPException(
+            status_code=400, 
+            detail="Ungültiger Code. Tippe /link im Telegram Bot für einen neuen Code."
+        )
+    
+    # Prüfe Expiration
+    expires_at = link_doc.get('expires_at')
+    if expires_at:
+        now = datetime.now(timezone.utc)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if now > expires_at:
+            await db.db.telegram_link_codes.delete_one({'code': code})
+            raise HTTPException(
+                status_code=400, 
+                detail="Code abgelaufen. Tippe /link im Telegram Bot für einen neuen Code."
+            )
+    
+    chat_id = link_doc.get('chat_id')
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Ungültiger Code (keine Chat-ID)")
+    
+    # Verknüpfe User mit Telegram Chat
+    from bson import ObjectId
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"telegram_chat_id": chat_id}}
+    )
+    
+    # Markiere Code als verwendet
+    await db.db.telegram_link_codes.update_one(
+        {'code': code},
+        {'$set': {'used': True, 'linked_user_id': user_id}}
+    )
+    
+    # Log
+    await db.log(user_id, "INFO", f"Telegram verknüpft (Chat: {chat_id[:5]}...)")
+    
+    # Sende Bestätigung an Telegram
+    if telegram_bot:
+        await telegram_bot.send_message(
+            int(chat_id),
+            "✅ <b>Erfolgreich verknüpft!</b>\n\nDu erhältst jetzt Trading-Benachrichtigungen.\n\nTippe /help für alle Befehle."
+        )
+    
+    return {"message": "Telegram erfolgreich verknüpft!", "linked": True}
+
+
+@app.post("/api/telegram/unlink")
+async def unlink_telegram(current_user: dict = Depends(get_current_user)):
+    """Unlink Telegram account"""
+    user_id = current_user['user_id']
+    
+    from bson import ObjectId
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$unset": {"telegram_chat_id": ""}}
+    )
+    
+    await db.log(user_id, "INFO", "Telegram-Konto getrennt")
+    
+    return {"message": "Telegram getrennt", "linked": False}
+
+
+@app.post("/api/telegram/test")
+async def test_telegram(current_user: dict = Depends(get_current_user)):
+    """Send test message to linked Telegram"""
+    user_id = current_user['user_id']
+    
+    if not telegram_bot:
+        raise HTTPException(status_code=400, detail="Telegram Bot nicht konfiguriert")
+    
+    from bson import ObjectId
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    
+    if not user or not user.get('telegram_chat_id'):
+        raise HTTPException(status_code=400, detail="Telegram nicht verknüpft")
+    
+    chat_id = user['telegram_chat_id']
+    
+    success = await telegram_bot.send_message(
+        int(chat_id),
+        "🧪 <b>Test erfolgreich!</b>\n\nReeTrade ist mit deinem Telegram verbunden."
+    )
+    
+    if success:
+        return {"message": "Test-Nachricht gesendet!"}
+    else:
+        raise HTTPException(status_code=500, detail="Senden fehlgeschlagen")
 
 
 # ============ ML MODEL STATUS ============

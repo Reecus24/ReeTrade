@@ -142,6 +142,26 @@ Mit den neuen Filtern: **13-20 tradable Coins** (vorher: 0-5)
 - `frontend/src/components/SettingsTab.js`: Telegram & Cooldown UI entfernt
 - `frontend/src/pages/DashboardPage.js`: Cooldown-Anzeige entfernt
 
+### Telegram Integration (Neu aufgebaut) ✅ (März 2026)
+
+#### Architektur
+- **Pro-User Integration**: Jeder User kann seinen eigenen Telegram-Account verknüpfen
+- **Code-basiertes Linking**: 
+  1. User tippt `/link` im Telegram Bot
+  2. Bot generiert 6-stelligen Code (gültig 10 Min)
+  3. User gibt Code in Web-App ein
+  4. Verknüpfung wird hergestellt
+
+#### Features
+- **Bot-Befehle**: `/status`, `/balance`, `/profit`, `/trades`, `/ki`, `/help`
+- **Benachrichtigungen**: Trade Open/Close (pro User)
+- **Daten in DB**: `telegram_chat_id` in `users` Collection
+
+#### Dateien
+- `backend/telegram_bot.py` - Neuer, sauberer Bot
+- `backend/server.py` - Endpoints: `/api/telegram/status`, `/api/telegram/link`, `/api/telegram/unlink`, `/api/telegram/test`
+- `frontend/src/components/SettingsTab.js` - Telegram UI
+
 ## Aktiver Backlog
 
 ### P1.5 - Safety (Future)
