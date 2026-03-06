@@ -52,6 +52,30 @@ Vollständig autonome Reinforcement Learning KI für SPOT Trading auf MEXC Excha
   - Schnelleres Lernen mit weniger Trades
   - Importance sampling korrigiert Bias
 
+#### 3. Umfassendes RL Trading Stats System ✅ (Dezember 2025)
+- **Endpoint**: `GET /api/rl/trading-stats?hours={1,6,24}`
+- **Backend** (server.py:2377-2779):
+  - 8 Haupt-Datengruppen: hold_stats, pnl_stats, fee_stats, sell_sources, trade_counts, performance, rl_metrics, health
+  - Alle Werte aggregiert für gewählten Zeitraum (1h/6h/24h)
+  - Fee Ratio Berechnung: `(total_fees / total_notional) * 100`
+  - Health Status mit klarer Ampel-Logik (healthy/warning/critical)
+  
+- **Health Status Logik**:
+  - **Critical**: Net PnL < -0.5%, Profit Factor < 0.5, Random Exploration > 70%, Fee Ratio > 1%, Avg Hold < 60s
+  - **Warning**: Net PnL negativ, Profit Factor < 1.0, Random Exploration > 50%, PnL Gap > 0.3%, Fee Ratio > 0.5%, Avg Hold < 90s
+  - **Healthy**: Win Rate >= 50%, Profit Factor >= 1.0, Exploitation > 50%
+  
+- **Frontend** (DashboardPage.js:31-440):
+  - RLStatusPanel komplett überarbeitet
+  - Zeitraum-Buttons (1h/6h/24h)
+  - Auto-Refresh alle 10 Sekunden
+  - Health Status Ampel mit Gründen
+  - Sell Sources als visuelle Balken
+  - Vergleich Theoretical vs Net PnL
+  - Cyberpunk-Design beibehalten
+
+- **Test Coverage**: 23/23 Tests bestanden (100%)
+
 ## Aktiver Backlog
 
 ### P1.5 - Safety (Future)
