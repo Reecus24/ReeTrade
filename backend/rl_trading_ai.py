@@ -934,10 +934,18 @@ class RLTradingAI:
         is_exploration = random.random() < self.brain.epsilon
         
         if is_exploration:
-            # KONSERVATIVE Buy-Exploration: Nur 30% Chance zu kaufen
-            # Verhindert zu viele zufällige Käufe
-            action = Action.BUY if random.random() < 0.3 else Action.HOLD
-            reason = f"🎲 EXPLORATION: {Action.to_string(action)} (30% Buy-Chance)"
+            # ADAPTIVE Buy-Exploration basierend auf Trade-Anzahl
+            # Frische KI (wenige Trades): Höhere Buy-Chance um Daten zu sammeln
+            # Erfahrene KI (viele Trades): Niedrigere Buy-Chance, mehr Exploitation
+            if self.brain.total_trades < 20:
+                buy_prob = 0.50  # 50% bei wenigen Trades - schneller Daten sammeln
+            elif self.brain.total_trades < 50:
+                buy_prob = 0.40  # 40% bei mittlerer Erfahrung
+            else:
+                buy_prob = 0.30  # 30% bei erfahrener KI - konservativer
+            
+            action = Action.BUY if random.random() < buy_prob else Action.HOLD
+            reason = f"🎲 EXPLORATION: {Action.to_string(action)} ({int(buy_prob*100)}% Buy-Chance)"
         else:
             # Exploitation: Nutze gelerntes Wissen
             action = Action.BUY if q_values[1] > q_values[0] else Action.HOLD

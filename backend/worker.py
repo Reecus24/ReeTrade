@@ -1199,11 +1199,13 @@ class MultiUserTradingWorker:
                 # Check if symbol is paused (DB-based pause from consecutive losses)
                 is_paused = await self.db.is_symbol_paused(user_id, symbol)
                 if is_paused:
+                    logger.debug(f"[SCAN] {symbol}: Übersprungen (pausiert)")
                     continue
                 
                 # Get 4H klines for regime
                 klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
                 if len(klines_4h) < 200:
+                    logger.debug(f"[SCAN] {symbol}: Übersprungen (nur {len(klines_4h)} 4H Klines)")
                     continue
                 
                 # Detect regime
