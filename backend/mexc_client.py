@@ -290,7 +290,7 @@ class MexcClient:
         if curated_list is None:
             curated_list = [
                 # ══════════════════════════════════════════════════════════════════
-                # ORIGINAL LISTE (51 Coins - DIE FUNKTIONIERT HABEN!)
+                # ORIGINAL LISTE (51 Coins - NICHT LÖSCHEN!)
                 # ══════════════════════════════════════════════════════════════════
                 # Tier 1: High Liquidity Mid-Caps (15)
                 "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT",
@@ -311,7 +311,40 @@ class MexcClient:
                 
                 # Tier 5: Volatile Coins (9)
                 "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
-                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "PEPEUSDT"
+                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "PEPEUSDT",
+                
+                # ══════════════════════════════════════════════════════════════════
+                # NEU HINZUGEFÜGT (verifiziert auf MEXC)
+                # ══════════════════════════════════════════════════════════════════
+                # Layer 1 & 2 (20)
+                "XRPUSDT", "ADAUSDT", "LTCUSDT", "ETCUSDT", "VETUSDT",
+                "ICPUSDT", "HBARUSDT", "NEOUSDT", "XTZUSDT", "EOSUSDT",
+                "EGLDUSDT", "GRTUSDT", "ONEUSDT", "CKBUSDT", "CFXUSDT",
+                "IOTXUSDT", "SCUSDT", "STORJUSDT", "BLZUSDT", "SYSUSDT",
+                
+                # DeFi (20)
+                "1INCHUSDT", "SUSHIUSDT", "YFIUSDT", "ZRXUSDT", "LRCUSDT",
+                "KNCUSDT", "PENDLEUSDT", "STGUSDT", "PERPUSDT", "JUPUSDT",
+                "PYTHUSDT", "RAYUSDT", "JTOUSDT", "WUSDT", "OCEANUSDT",
+                "PHBUSDT", "RLCUSDT", "API3USDT", "BANDUSDT", "CTSIUSDT",
+                
+                # Gaming & NFT (15)
+                "ENJUSDT", "YGGUSDT", "SFPUSDT", "TLMUSDT", "ALICEUSDT",
+                "SLPUSDT", "PIXELUSDT", "ACEUSDT", "HIGHUSDT", "BLURUSDT",
+                "IDUSDT", "PORTALUSDT", "XAIUSDT", "BEAMUSDT", "METISUSDT",
+                
+                # Meme & Volatile (25)
+                "MEMEUSDT", "1000SATSUSDT", "BOMEUSDT", "MEWUSDT", "POPCATUSDT",
+                "TURBOUSDT", "PEOPLEUSDT", "LUNCUSDT", "NEIROUSDT", "NOTUSDT",
+                "DOGSUSDT", "CATIUSDT", "HMSTRUSDT", "GOATUSDT", "ACTUSDT",
+                "ELONUSDT", "LUNAUSDT", "BTTUSDT", "WINUSDT", "HOTUSDT",
+                "DENTUSDT", "JSTUSDT", "SUNUSDT", "LEVERUSDT", "AMBUSDT",
+                
+                # Utility & Others (20)
+                "CAKEUSDT", "MASKUSDT", "ENSUSDT", "LPTUSDT", "AUDIOUSDT",
+                "JASMYUSDT", "ACHUSDT", "TWTUSDT", "C98USDT", "LQTYUSDT",
+                "HOOKUSDT", "MAVUSDT", "WLDUSDT", "ARKMUSDT", "EDUUSDT",
+                "ARPAUSDT", "REQUSDT", "VOXELUSDT", "AGLDUSDT", "KAVAUSDT"
             ]
             
             # Duplikate entfernen
