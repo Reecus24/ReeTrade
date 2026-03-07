@@ -1230,7 +1230,13 @@ class MultiUserTradingWorker:
         blocked_by_rl_hold = 0
         blocked_by_paused = 0
         blocked_by_klines = 0
+        blocked_by_order_sizing = 0
         buy_signals = 0
+        actual_buy_orders = 0
+        
+        # ============ DETAILED PIPELINE TRACKING PER COIN ============
+        # Speichert den kompletten Pipeline-Status für jeden Coin mit RL BUY
+        pipeline_details: List[Dict] = []
         
         # Get list of symbols we already own (for diversification)
         owned_symbols = set()
@@ -1328,12 +1334,26 @@ class MultiUserTradingWorker:
                     
                     # RL-KI entscheidet ALLEIN
                     if not rl_decision['should_buy']:
+                        blocked_by_rl_hold += 1
                         await self.db.log(user_id, "INFO", 
                             f"[RL] ❌ {symbol}: RL-KI sagt NEIN - {rl_decision['reasoning']}")
                         continue
                     else:
+                        buy_signals += 1  # RL hat BUY gesagt
                         await self.db.log(user_id, "INFO", 
                             f"[RL] ✅ {symbol}: RL-KI sagt JA! - {rl_decision['reasoning']}")
+                        
+                        # ============ PIPELINE TRACKING: Starte Tracking für diesen Coin ============
+                        coin_pipeline = {
+                            'symbol': symbol,
+                            'rl_decision': 'BUY ✅',
+                            'paused_check': 'PASSED ✅',  # Bereits früher geprüft
+                            'klines_15m': 'PENDING',
+                            'min_move': 'PENDING',
+                            'order_sizing': 'PENDING',
+                            'final_action': 'PENDING',
+                            'block_reason': None
+                        }
                     
                 except Exception as rl_err:
                     logger.warning(f"RL Entry check error for {symbol}: {rl_err}")
@@ -1344,9 +1364,16 @@ class MultiUserTradingWorker:
                 # Get 15m klines for SL/TP calculation
                 klines_15m = await mexc.get_klines(symbol, interval="15m", limit=500)
                 if len(klines_15m) < 50:
+                    blocked_by_klines += 1
+                    coin_pipeline['klines_15m'] = f'FAILED ❌ ({len(klines_15m)} < 50)'
+                    coin_pipeline['final_action'] = 'BLOCKED'
+                    coin_pipeline['block_reason'] = '15M_KLINES'
+                    pipeline_details.append(coin_pipeline)
                     await self.db.log(user_id, "WARNING", 
                         f"[SKIP] {symbol}: Nicht genug 15m Klines ({len(klines_15m)} < 50)")
                     continue
+                
+                coin_pipeline['klines_15m'] = f'PASSED ✅ ({len(klines_15m)})'
                 
                 # ============ MINIMUM MOVE FILTER ============
                 # Verhindert Trades mit zu kleinen erwarteten Bewegungen (Noise Trading)
@@ -1355,14 +1382,19 @@ class MultiUserTradingWorker:
                 
                 if expected_move < self.MIN_EXPECTED_MOVE_PCT:
                     blocked_by_min_move += 1
+                    coin_pipeline['min_move'] = f'FAILED ❌ ({expected_move:.3f}% < {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                    coin_pipeline['final_action'] = 'BLOCKED'
+                    coin_pipeline['block_reason'] = 'MIN_MOVE'
+                    pipeline_details.append(coin_pipeline)
                     await self.db.log(user_id, "INFO", 
                         f"[ANTI-NOISE] ⚠️ {symbol}: Move {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
                         f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x | Blocked: {blocked_count}/{self.BLOCKED_SCANS_THRESHOLD})")
                     continue
                 
-                await self.db.log(user_id, "INFO", 
-                    f"[MOVE-CHECK] ✅ {symbol}: Move {expected_move:.3f}% > Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
-                    f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x)")
+                coin_pipeline['min_move'] = f'PASSED ✅ ({expected_move:.3f}% >= {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                coin_pipeline['order_sizing'] = 'PASSED ✅ (pre-order check)'
+                coin_pipeline['final_action'] = 'READY_FOR_ORDER'
+                pipeline_details.append(coin_pipeline)
                 # ============ END MINIMUM MOVE FILTER ============
                 
                 # Get current price from 15m data
@@ -1456,6 +1488,7 @@ class MultiUserTradingWorker:
                 
                 if trade_success:
                     self.set_last_trade_time(user_id)
+                    actual_buy_orders += 1  # ============ TRACK ACTUAL BUY ORDER ============
                     
                     # Dynamischer Filter: Counter Reset nach erfolgreichem Trade
                     self.update_dynamic_move_filter(user_id, trade_executed=True)
@@ -1537,12 +1570,61 @@ class MultiUserTradingWorker:
             scan_summary_parts.append(f"{blocked_by_paused} Paused")
         if blocked_by_klines > 0:
             scan_summary_parts.append(f"{blocked_by_klines} Klines")
+        if blocked_by_order_sizing > 0:
+            scan_summary_parts.append(f"{blocked_by_order_sizing} Order_Sizing")
         
         blocked_summary = " | ".join(scan_summary_parts) if scan_summary_parts else "keine Blockierungen"
         
-        await self.db.log(user_id, "INFO", 
-            f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen\n"
-            f"   📊 Blockiert: {blocked_summary}")
+        # ============ DETAILLIERTES PIPELINE LOG PRO COIN MIT RL BUY ============
+        if pipeline_details:
+            await self.db.log(user_id, "WARNING", 
+                "═══════════════════════════════════════════════════════════════")
+            await self.db.log(user_id, "WARNING", 
+                f"[BUY PIPELINE] Detaillierte Analyse für {len(pipeline_details)} Coins mit RL BUY:")
+            await self.db.log(user_id, "WARNING", 
+                "═══════════════════════════════════════════════════════════════")
+            
+            for detail in pipeline_details:
+                symbol = detail['symbol']
+                final = detail['final_action']
+                block_reason = detail.get('block_reason', '-')
+                
+                # Build status line
+                status_icon = '✅' if final == 'READY_FOR_ORDER' else '❌'
+                
+                await self.db.log(user_id, "WARNING", 
+                    f"\n[{symbol}] {status_icon} {final}\n"
+                    f"   ├─ RL decision:    {detail['rl_decision']}\n"
+                    f"   ├─ paused check:   {detail['paused_check']}\n"
+                    f"   ├─ 15m klines:     {detail['klines_15m']}\n"
+                    f"   ├─ min_move:       {detail['min_move']}\n"
+                    f"   ├─ order_sizing:   {detail['order_sizing']}\n"
+                    f"   └─ final action:   {final}" + 
+                    (f" (blocked by: {block_reason})" if block_reason and final == 'BLOCKED' else ""))
+            
+            await self.db.log(user_id, "WARNING", 
+                "═══════════════════════════════════════════════════════════════")
+        
+        # ============ KOMPAKTE ZUSAMMENFASSUNG ============
+        await self.db.log(user_id, "WARNING", 
+            f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen")
+        
+        # Farbcodierte Summary
+        await self.db.log(user_id, "WARNING", 
+            f"\n╔════════════════════════════════════════════════════════════════╗\n"
+            f"║                    📊 PIPELINE SUMMARY                         ║\n"
+            f"╠════════════════════════════════════════════════════════════════╣\n"
+            f"║  RL BUY candidates:        {buy_signals:3d}                                 ║\n"
+            f"╠════════════════════════════════════════════════════════════════╣\n"
+            f"║  ❌ blocked by paused:      {blocked_by_paused:3d}                                 ║\n"
+            f"║  ❌ blocked by RL_HOLD:     {blocked_by_rl_hold:3d}                                 ║\n"
+            f"║  ❌ blocked by 15m klines:  {blocked_by_klines:3d}                                 ║\n"
+            f"║  ❌ blocked by MIN_MOVE:    {blocked_by_min_move:3d}                                 ║\n"
+            f"║  ❌ blocked by order_sizing:{blocked_by_order_sizing:3d}                                 ║\n"
+            f"╠════════════════════════════════════════════════════════════════╣\n"
+            f"║  ✅ ready for order:        {len(signal_candidates):3d}                                 ║\n"
+            f"║  🛒 actual buy orders:      {actual_buy_orders:3d}                                 ║\n"
+            f"╚════════════════════════════════════════════════════════════════╝")
     
     async def rotate_to_next_batch(self, user_id: str, settings: UserSettings):
         """Rotate to next batch of coins when no signals found

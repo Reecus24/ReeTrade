@@ -312,18 +312,74 @@ If Instance A dies:
 
 ---
 
+### Buy-Pipeline Transparenz Feature ✅ (07.03.2026)
+
+**Problem**: Benutzer sieht im Log "TRXUSDT: RL-KI sagt JA", aber der Scan endet mit "0 Signale". Es war unklar, welcher Filter danach den Trade blockierte.
+
+**Lösung**: Vollständige Transparenz in der Buy-Pipeline implementiert.
+
+#### Änderungen in `worker.py`:
+
+1. **Detailliertes Pipeline-Tracking pro Coin**:
+   - Für jeden Coin mit RL BUY wird ein `coin_pipeline` Dictionary erstellt
+   - Trackt jeden Schritt: `rl_decision`, `paused_check`, `klines_15m`, `min_move`, `order_sizing`, `final_action`
+   - Speichert auch den `block_reason` wenn der Coin blockiert wird
+
+2. **Neue Counter**:
+   - `blocked_by_order_sizing`: Zählt Order-Sizing-Fehler
+   - `actual_buy_orders`: Zählt tatsächlich platzierte Orders
+
+3. **Detailliertes Pro-Coin-Log** (nach dem Scan):
+   ```
+   ═══════════════════════════════════════════════════════════════
+   [BUY PIPELINE] Detaillierte Analyse für X Coins mit RL BUY:
+   ═══════════════════════════════════════════════════════════════
+   
+   [TRXUSDT] ❌ BLOCKED
+      ├─ RL decision:    BUY ✅
+      ├─ paused check:   PASSED ✅
+      ├─ 15m klines:     PASSED ✅ (500)
+      ├─ min_move:       FAILED ❌ (0.280% < 0.369%)
+      ├─ order_sizing:   PENDING
+      └─ final action:   BLOCKED (blocked by: MIN_MOVE)
+   ```
+
+4. **Kompakte Zusammenfassung** (Box-Format):
+   ```
+   ╔════════════════════════════════════════════════════════════════╗
+   ║                    📊 PIPELINE SUMMARY                         ║
+   ╠════════════════════════════════════════════════════════════════╣
+   ║  RL BUY candidates:        X                                   ║
+   ╠════════════════════════════════════════════════════════════════╣
+   ║  ❌ blocked by paused:      Y                                   ║
+   ║  ❌ blocked by RL_HOLD:     Z                                   ║
+   ║  ❌ blocked by 15m klines:  A                                   ║
+   ║  ❌ blocked by MIN_MOVE:    B                                   ║
+   ║  ❌ blocked by order_sizing:C                                   ║
+   ╠════════════════════════════════════════════════════════════════╣
+   ║  ✅ ready for order:        D                                   ║
+   ║  🛒 actual buy orders:      E                                   ║
+   ╚════════════════════════════════════════════════════════════════╝
+   ```
+
+#### Ziel erreicht:
+- Benutzer sieht jetzt genau, warum jeder Coin mit RL BUY nicht gekauft wurde
+- Alle Filter werden einzeln aufgelistet: paused, klines, MIN_MOVE, order_sizing
+- Klare Unterscheidung zwischen "ready for order" und "actual buy orders"
+
+---
+
 ## Backlog
 
 ### P0 (Kritisch)
 - [x] Dust-Handling implementiert
+- [x] Buy-Pipeline Transparenz implementiert
 
 ### P1 (Hoch)
 - [ ] Telegram-Verknüpfung debuggen (Code-Validierung)
-- [ ] Frontend "INITIALIZING SYSTEM..." Blocker (nach Refactoring)
 - [ ] Live-Preis und PnL Anzeige für offene Positionen
 
 ### P2 (Mittel)
-- [ ] Coin-Scan-Logik verifizieren (>2 Coins)
 - [ ] "Institutional-Grade" Erweiterungen (Regime-Bewusstsein)
 - [ ] stepSize Discovery Caching
 

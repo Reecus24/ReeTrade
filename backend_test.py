@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 class TradingBotAPITester:
-    def __init__(self, base_url="https://pnl-tracker-13.preview.emergentagent.com"):
+    def __init__(self, base_url="https://ai-trade-monitor-1.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
