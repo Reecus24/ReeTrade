@@ -293,13 +293,13 @@ class MexcClient:
                 # ORIGINAL LISTE (51 Coins - DIE FUNKTIONIERT HABEN!)
                 # ══════════════════════════════════════════════════════════════════
                 # Tier 1: High Liquidity Mid-Caps (15)
-                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
+                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT",
                 "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
                 "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
                 
                 # Tier 2: DeFi & Layer 1 (10)
                 "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
-                "IMXUSDT", "FTMUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
+                "IMXUSDT", "TONUSDT", "FLOWUSDT", "MINAUSDT", "RENDERUSDT",
                 
                 # Tier 3: Gaming & Metaverse (5)
                 "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
@@ -311,7 +311,7 @@ class MexcClient:
                 
                 # Tier 5: Volatile Coins (9)
                 "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
-                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT"
+                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "PEPEUSDT"
             ]
             
             # Duplikate entfernen
