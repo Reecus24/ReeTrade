@@ -290,64 +290,28 @@ class MexcClient:
         if curated_list is None:
             curated_list = [
                 # ══════════════════════════════════════════════════════════════════
-                # ORIGINAL FUNKTIONIERENDE COINS (die 51 von vorher)
+                # ORIGINAL LISTE (51 Coins - DIE FUNKTIONIERT HABEN!)
                 # ══════════════════════════════════════════════════════════════════
-                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT",
+                # Tier 1: High Liquidity Mid-Caps (15)
+                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
                 "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
                 "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
+                
+                # Tier 2: DeFi & Layer 1 (10)
                 "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
-                "IMXUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
+                "IMXUSDT", "FTMUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
+                
+                # Tier 3: Gaming & Metaverse (5)
                 "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
+                
+                # Tier 4: Infrastructure & DeFi (12)
                 "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
                 "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
                 "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT",
+                
+                # Tier 5: Volatile Coins (9)
                 "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
-                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: Top Liquid Coins
-                # ══════════════════════════════════════════════════════════════════
-                "XRPUSDT", "ADAUSDT", "LTCUSDT", "ETCUSDT", "VETUSDT",
-                "ICPUSDT", "HBARUSDT", "TONUSDT", "NEOUSDT", "QNTUSDT",
-                "EGLDUSDT", "XTZUSDT", "GRTUSDT", "KAVAUSDT", "KSMUSDT",
-                "ONEUSDT", "CKBUSDT", "CFXUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: DeFi
-                # ══════════════════════════════════════════════════════════════════
-                "1INCHUSDT", "SUSHIUSDT", "YFIUSDT", "ZRXUSDT", "LRCUSDT",
-                "KNCUSDT", "PENDLEUSDT", "RDNTUSDT", "MAGICUSDT", "STGUSDT",
-                "PERPUSDT", "JUPUSDT", "PYTHUSDT", "RAYUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: Gaming & Metaverse
-                # ══════════════════════════════════════════════════════════════════
-                "ENJUSDT", "ILVUSDT", "YGGUSDT", "SUPERUSDT", "SFPUSDT",
-                "TLMUSDT", "ALICEUSDT", "SLPUSDT", "PIXELUSDT", "PORTALUSDT",
-                "XAIUSDT", "ACEUSDT", "GMTUSDT", "HIGHUSDT", "BEAMUSDT",
-                "PRIMEUSDT", "METISUSDT", "BLURUSDT", "IDUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: AI Tokens
-                # ══════════════════════════════════════════════════════════════════
-                "OCEANUSDT", "ARKMUSDT", "WLDUSDT", "RENDERUSDT", "PHBUSDT",
-                "RLCUSDT", "IOTXUSDT", "STORJUSDT", "TAOUSDT", "AKTUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: Meme & High Volatility
-                # ══════════════════════════════════════════════════════════════════
-                "PEPEUSDT", "MEMEUSDT", "1000SATSUSDT", "BOMEUSDT", "MEWUSDT",
-                "POPCATUSDT", "TURBOUSDT", "PEOPLEUSDT", "LUNCUSDT",
-                "NEIROUSDT", "GOATUSDT", "DOGSUSDT", "CATIUSDT", "HMSTRUSDT",
-                "NOTUSDT", "TONSUSDT",
-                
-                # ══════════════════════════════════════════════════════════════════
-                # ERWEITERT: Infrastructure & Utility
-                # ══════════════════════════════════════════════════════════════════
-                "ARPAUSDT", "BLZUSDT", "SYSUSDT", "CTSIUSDT",
-                "API3USDT", "BANDUSDT", "JASMYUSDT", "ACHUSDT",
-                "TWTUSDT", "C98USDT", "CAKEUSDT", "MASKUSDT", "ENSUSDT",
-                "HOTUSDT", "LEVERUSDT", "LQTYUSDT", "HOOKUSDT", "MAVUSDT"
+                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT"
             ]
             
             # Duplikate entfernen
