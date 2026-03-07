@@ -367,6 +367,47 @@ If Instance A dies:
 - Alle Filter werden einzeln aufgelistet: paused, klines, MIN_MOVE, order_sizing
 - Klare Unterscheidung zwischen "ready for order" und "actual buy orders"
 
+### MIN_MOVE Filter Toleranz ✅ (07.03.2026)
+
+**Problem**: RL BUY-Signale wurden durch den MIN_MOVE Filter blockiert, auch bei minimalen Differenzen wie 0.367% vs 0.369%.
+
+**Lösung**: Toleranz-System und schnellere dynamische Anpassung implementiert.
+
+#### Änderungen:
+
+1. **Neue Konstanten in `__init__`**:
+   ```python
+   self.MIN_MOVE_TOLERANCE_PCT = 0.02  # 0.02% Toleranz für Grenzfälle
+   self.consecutive_rl_buy_blocked = {}  # Zählt RL BUYs die am MIN_MOVE scheitern
+   self.RL_BUY_BLOCKED_THRESHOLD = 5  # Nach 5 RL BUYs -> schneller lockern
+   ```
+
+2. **Neue Filter-Logik mit Toleranz**:
+   ```python
+   effective_move = expected_move + tolerance
+   passes_filter = effective_move >= min_threshold
+   ```
+   - Trades scheitern nicht mehr an minimalen Differenzen
+   - Grenzfälle wie 0.367% vs 0.369% werden jetzt durchgelassen
+
+3. **Erweitertes Logging**:
+   - `expected_move`: Berechnete erwartete Bewegung
+   - `tolerance`: +0.02%
+   - `effective_move`: expected_move + tolerance
+   - `min_threshold`: Aktueller Schwellenwert (basierend auf Multiplier)
+   - `diff`: Differenz zum Threshold
+   - `RL BUY blocked`: Counter für RL BUYs die am MIN_MOVE scheitern
+
+4. **Schnellere dynamische Anpassung**:
+   - Nach nur 5 RL BUYs die am MIN_MOVE scheitern (statt 10 Scans) wird der Multiplier reduziert
+   - Zählt nur RL BUY-Signale, nicht alle Scans
+   - `update_dynamic_move_filter()` erhält neuen Parameter `rl_buy_blocked_by_min_move`
+
+#### Effekt:
+- Trades mit expected_move >= 0.349% werden jetzt durchgelassen (statt erst ab 0.369%)
+- KI wird nicht mehr künstlich ausgebremst bei knappen Grenzfällen
+- Filter lockert schneller wenn RL BUYs systematisch blockiert werden
+
 ---
 
 ## Backlog

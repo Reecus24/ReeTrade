@@ -50,9 +50,15 @@ class MultiUserTradingWorker:
         self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_DEFAULT  # Aktueller Wert
         self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER  # ~0.37%
         
+        # ============ TOLERANZ FÜR GRENZFÄLLE ============
+        # Verhindert, dass Trades an minimalen Differenzen scheitern (z.B. 0.367% vs 0.369%)
+        self.MIN_MOVE_TOLERANCE_PCT = 0.02  # 0.02% Toleranz für Grenzfälle
+        
         # Tracking für dynamische Anpassung
         self.consecutive_blocked_scans: Dict[str, int] = {}  # {user_id: count}
+        self.consecutive_rl_buy_blocked: Dict[str, int] = {}  # {user_id: count} - Zählt RL BUYs die am MIN_MOVE scheitern
         self.BLOCKED_SCANS_THRESHOLD = 10  # Nach 10 blockierten Scans -> Multiplier reduzieren
+        self.RL_BUY_BLOCKED_THRESHOLD = 5  # Nach 5 RL BUYs die am MIN_MOVE scheitern -> schneller lockern
         
         # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
         self.TRADE_COOLDOWN_SECONDS = 180  # 3 Minuten zwischen Trades (kontrolliertes Lernen)
@@ -72,16 +78,18 @@ class MultiUserTradingWorker:
         # Reinforcement Learning KI (echtes Lernen!)
         self.rl_ai = get_rl_trading_ai(db)
     
-    def update_dynamic_move_filter(self, user_id: str, trade_executed: bool):
+    def update_dynamic_move_filter(self, user_id: str, trade_executed: bool, rl_buy_blocked_by_min_move: int = 0):
         """
         Passt den MIN_MOVE_MULTIPLIER dynamisch an basierend auf Marktbedingungen.
         
         - Nach BLOCKED_SCANS_THRESHOLD blockierten Scans: Multiplier reduzieren
+        - Nach RL_BUY_BLOCKED_THRESHOLD RL BUYs die am MIN_MOVE scheitern: Multiplier reduzieren (schneller!)
         - Nach erfolgreichem Trade: Multiplier zurück auf Standard
         """
         if trade_executed:
             # Trade ausgeführt -> Reset auf Standard
             self.consecutive_blocked_scans[user_id] = 0
+            self.consecutive_rl_buy_blocked[user_id] = 0
             if self.MIN_MOVE_MULTIPLIER != self.MIN_MOVE_MULTIPLIER_DEFAULT:
                 self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_DEFAULT
                 self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER
@@ -91,7 +99,19 @@ class MultiUserTradingWorker:
             self.consecutive_blocked_scans[user_id] = self.consecutive_blocked_scans.get(user_id, 0) + 1
             blocked_count = self.consecutive_blocked_scans[user_id]
             
-            # Nach Threshold: Multiplier reduzieren
+            # ============ NEU: Zähle RL BUYs die am MIN_MOVE scheitern ============
+            if rl_buy_blocked_by_min_move > 0:
+                self.consecutive_rl_buy_blocked[user_id] = self.consecutive_rl_buy_blocked.get(user_id, 0) + rl_buy_blocked_by_min_move
+                rl_blocked_count = self.consecutive_rl_buy_blocked[user_id]
+                
+                # SCHNELLER LOCKERN: Wenn RL BUYs am MIN_MOVE scheitern
+                if rl_blocked_count >= self.RL_BUY_BLOCKED_THRESHOLD and self.MIN_MOVE_MULTIPLIER > self.MIN_MOVE_MULTIPLIER_REDUCED:
+                    self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_REDUCED
+                    self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER
+                    logger.info(f"[FILTER] 📉 MIN_MOVE_MULTIPLIER reduziert (RL BUY blocked): {self.MIN_MOVE_MULTIPLIER}x ({self.MIN_EXPECTED_MOVE_PCT:.3f}%) nach {rl_blocked_count} RL BUYs blockiert")
+                    return  # Bereits gelockt, nicht nochmal prüfen
+            
+            # Nach Threshold: Multiplier reduzieren (alter Mechanismus als Fallback)
             if blocked_count >= self.BLOCKED_SCANS_THRESHOLD and self.MIN_MOVE_MULTIPLIER > self.MIN_MOVE_MULTIPLIER_REDUCED:
                 self.MIN_MOVE_MULTIPLIER = self.MIN_MOVE_MULTIPLIER_REDUCED
                 self.MIN_EXPECTED_MOVE_PCT = self.TRADING_COST_PCT * self.MIN_MOVE_MULTIPLIER
@@ -1375,23 +1395,56 @@ class MultiUserTradingWorker:
                 
                 coin_pipeline['klines_15m'] = f'PASSED ✅ ({len(klines_15m)})'
                 
-                # ============ MINIMUM MOVE FILTER ============
+                # ============ MINIMUM MOVE FILTER MIT TOLERANZ ============
                 # Verhindert Trades mit zu kleinen erwarteten Bewegungen (Noise Trading)
+                # TOLERANZ: Grenzfälle wie 0.367% vs 0.369% werden durchgelassen
                 expected_move = self.calculate_expected_move(klines_15m, lookback=20)
                 blocked_count = self.consecutive_blocked_scans.get(user_id, 0)
+                rl_blocked_count = self.consecutive_rl_buy_blocked.get(user_id, 0)
                 
-                if expected_move < self.MIN_EXPECTED_MOVE_PCT:
+                # Berechne effektiven Threshold mit Toleranz
+                effective_threshold = self.MIN_EXPECTED_MOVE_PCT - self.MIN_MOVE_TOLERANCE_PCT
+                move_with_tolerance = expected_move + self.MIN_MOVE_TOLERANCE_PCT
+                
+                # Prüfe ob Move (mit Toleranz) den Threshold erreicht
+                passes_filter = move_with_tolerance >= self.MIN_EXPECTED_MOVE_PCT
+                
+                if not passes_filter:
                     blocked_by_min_move += 1
-                    coin_pipeline['min_move'] = f'FAILED ❌ ({expected_move:.3f}% < {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                    diff = self.MIN_EXPECTED_MOVE_PCT - expected_move
+                    coin_pipeline['min_move'] = (
+                        f'FAILED ❌ ({expected_move:.3f}% + {self.MIN_MOVE_TOLERANCE_PCT:.2f}% tol = '
+                        f'{move_with_tolerance:.3f}% < {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                    )
                     coin_pipeline['final_action'] = 'BLOCKED'
                     coin_pipeline['block_reason'] = 'MIN_MOVE'
                     pipeline_details.append(coin_pipeline)
                     await self.db.log(user_id, "INFO", 
-                        f"[ANTI-NOISE] ⚠️ {symbol}: Move {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
-                        f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x | Blocked: {blocked_count}/{self.BLOCKED_SCANS_THRESHOLD})")
+                        f"[ANTI-NOISE] ⚠️ {symbol}: BLOCKED\n"
+                        f"   ├─ expected_move:     {expected_move:.3f}%\n"
+                        f"   ├─ tolerance:         +{self.MIN_MOVE_TOLERANCE_PCT:.2f}%\n"
+                        f"   ├─ effective_move:    {move_with_tolerance:.3f}%\n"
+                        f"   ├─ min_threshold:     {self.MIN_EXPECTED_MOVE_PCT:.3f}% (Multiplier: {self.MIN_MOVE_MULTIPLIER}x)\n"
+                        f"   ├─ diff:              -{diff:.3f}%\n"
+                        f"   └─ RL BUY blocked:    {rl_blocked_count}/{self.RL_BUY_BLOCKED_THRESHOLD}")
                     continue
                 
-                coin_pipeline['min_move'] = f'PASSED ✅ ({expected_move:.3f}% >= {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                # Filter bestanden (evtl. durch Toleranz)
+                tolerance_helped = expected_move < self.MIN_EXPECTED_MOVE_PCT
+                if tolerance_helped:
+                    coin_pipeline['min_move'] = (
+                        f'PASSED ✅ (via Toleranz: {expected_move:.3f}% + {self.MIN_MOVE_TOLERANCE_PCT:.2f}% = '
+                        f'{move_with_tolerance:.3f}% >= {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                    )
+                    await self.db.log(user_id, "INFO", 
+                        f"[ANTI-NOISE] ✅ {symbol}: PASSED (via Toleranz)\n"
+                        f"   ├─ expected_move:     {expected_move:.3f}%\n"
+                        f"   ├─ tolerance:         +{self.MIN_MOVE_TOLERANCE_PCT:.2f}%\n"
+                        f"   ├─ effective_move:    {move_with_tolerance:.3f}%\n"
+                        f"   └─ min_threshold:     {self.MIN_EXPECTED_MOVE_PCT:.3f}%")
+                else:
+                    coin_pipeline['min_move'] = f'PASSED ✅ ({expected_move:.3f}% >= {self.MIN_EXPECTED_MOVE_PCT:.3f}%)'
+                
                 coin_pipeline['order_sizing'] = 'PASSED ✅ (pre-order check)'
                 coin_pipeline['final_action'] = 'READY_FOR_ORDER'
                 pipeline_details.append(coin_pipeline)
@@ -1546,8 +1599,8 @@ class MultiUserTradingWorker:
             # NO SIGNALS FOUND - Rotate to next batch of coins
             await self.rotate_to_next_batch(user_id, settings)
             
-            # Dynamischer Filter: Blocked-Counter erhöhen
-            self.update_dynamic_move_filter(user_id, trade_executed=False)
+            # Dynamischer Filter: Blocked-Counter erhöhen + RL BUY blocked count übergeben
+            self.update_dynamic_move_filter(user_id, trade_executed=False, rl_buy_blocked_by_min_move=blocked_by_min_move)
             
             await self.db.update_settings(user_id, {
                 'live_last_decision': f'KEIN SIGNAL bei {symbols_checked} Coins → Nächster Batch',
