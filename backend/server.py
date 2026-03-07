@@ -1731,6 +1731,84 @@ async def reset_rl_model(
     }
 
 
+@app.get("/api/coin-stats")
+async def get_coin_stats(current_user: dict = Depends(get_current_user)):
+    """
+    Holt aggregierte Statistiken pro Coin.
+    
+    Zeigt für jeden gehandelten Coin:
+    - Durchschnittlicher Spread
+    - Durchschnittliche Slippage
+    - Durchschnittlicher Net PnL
+    - Winrate
+    - Profit Factor
+    - Edge After Costs
+    - Anzahl Trades
+    - MFE/MAE Durchschnitte
+    """
+    user_id = current_user['user_id']
+    
+    stats = await db.get_coin_stats(user_id)
+    
+    # Formatiere für Frontend
+    formatted_stats = []
+    for s in stats:
+        formatted_stats.append({
+            'symbol': s.get('symbol', ''),
+            'trade_count': s.get('trade_count', 0),
+            'avg_spread_pct': round(s.get('avg_spread', 0) or 0, 4),
+            'avg_slippage_pct': round(s.get('avg_slippage', 0) or 0, 4),
+            'avg_net_pnl_pct': round(s.get('avg_net_pnl', 0) or 0, 3),
+            'avg_gross_pnl_pct': round(s.get('avg_gross_pnl', 0) or 0, 3),
+            'winrate': round(s.get('winrate', 0) or 0, 1),
+            'profit_factor': round(s.get('profit_factor', 0) or 0, 2),
+            'edge_after_costs': round(s.get('edge_after_costs', 0) or 0, 4),
+            'total_net_pnl_dollar': round(s.get('total_net_pnl', 0) or 0, 2),
+            'avg_hold_seconds': round(s.get('avg_hold_seconds', 0) or 0, 0),
+            'avg_mfe_pct': round(s.get('avg_mfe', 0) or 0, 3),
+            'avg_mae_pct': round(s.get('avg_mae', 0) or 0, 3),
+            'total_fees': round(s.get('total_fees', 0) or 0, 4),
+            'total_notional': round(s.get('total_notional', 0) or 0, 2),
+            # Bewertung: Ist dieser Coin profitabel?
+            'is_profitable': (s.get('edge_after_costs', 0) or 0) > 0,
+            'recommendation': (
+                '✅ Profitabel' if (s.get('edge_after_costs', 0) or 0) > 0.1 else
+                '⚠️ Grenzwertig' if (s.get('edge_after_costs', 0) or 0) > -0.1 else
+                '❌ Unprofitabel'
+            )
+        })
+    
+    return {
+        'coins': formatted_stats,
+        'total_coins': len(formatted_stats),
+        'profitable_coins': sum(1 for s in formatted_stats if s['is_profitable']),
+        'summary': {
+            'best_coin': max(formatted_stats, key=lambda x: x['edge_after_costs'])['symbol'] if formatted_stats else None,
+            'worst_coin': min(formatted_stats, key=lambda x: x['edge_after_costs'])['symbol'] if formatted_stats else None,
+        }
+    }
+
+
+@app.get("/api/mfe-mae-analysis")
+async def get_mfe_mae_analysis(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 100
+):
+    """
+    Analysiert MFE (Maximum Favorable Excursion) und MAE (Maximum Adverse Excursion).
+    
+    Gibt Insights darüber:
+    - Wieviel vom maximalen Profit wurde realisiert?
+    - Werden Trades zu früh oder zu spät geschlossen?
+    - Wie tief gehen Trades ins Minus bevor sie sich erholen/geschlossen werden?
+    """
+    user_id = current_user['user_id']
+    
+    analysis = await db.get_mfe_mae_analysis(user_id, limit)
+    
+    return analysis
+
+
 @app.get("/api/rl/trading-stats")
 async def get_rl_trading_stats(
     current_user: dict = Depends(get_current_user),

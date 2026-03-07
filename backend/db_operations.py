@@ -28,6 +28,7 @@ class Database:
         self.symbol_pauses = self.db.symbol_pauses
         self.ki_states = self.db.ki_states
         self.live_accounts = self.db.live_accounts
+        self.coin_stats = self.db.coin_stats  # NEU: Coin-spezifische Statistiken
     
     async def initialize(self):
         # Initialize database indexes
@@ -42,6 +43,7 @@ class Database:
         await self.audit_logs.create_index('action')
         await self.symbol_pauses.create_index([('user_id', 1), ('symbol', 1)])
         await self.symbol_pauses.create_index('pause_until')
+        await self.coin_stats.create_index([('user_id', 1), ('symbol', 1)], unique=True)
         logger.info("Database initialized with indexes")
     
     # ========== USER OPERATIONS ==========
@@ -626,3 +628,182 @@ class Database:
         
         total_pnl = sum(t.get('pnl', 0) or 0 for t in trades)
         return total_pnl
+
+
+    # ========== COIN STATS (Pro-Coin Performance Tracking) ==========
+    
+    async def update_coin_stats(self, user_id: str, symbol: str, trade_data: dict):
+        """
+        Aktualisiert die aggregierten Statistiken für einen bestimmten Coin.
+        Wird nach jedem abgeschlossenen Trade aufgerufen.
+        
+        trade_data sollte enthalten:
+        - spread_at_entry: Spread beim Kauf (%)
+        - slippage: Tatsächliche Slippage (%)
+        - net_pnl: Net PnL nach Fees (%)
+        - gross_pnl: Brutto PnL vor Fees (%)
+        - fees: Gesamte Fees ($)
+        - notional: Trade-Größe ($)
+        - hold_seconds: Haltezeit
+        - mfe: Maximum Favorable Excursion (%)
+        - mae: Maximum Adverse Excursion (%)
+        - won: True wenn profitabel
+        """
+        try:
+            # Hole existierende Stats oder erstelle neue
+            existing = await self.coin_stats.find_one({
+                'user_id': user_id,
+                'symbol': symbol
+            })
+            
+            if existing:
+                # Update existierende Stats
+                n = existing.get('trade_count', 0)
+                
+                # Running averages berechnen
+                def update_avg(old_avg, new_val, count):
+                    if new_val is None:
+                        return old_avg
+                    if old_avg is None:
+                        return new_val
+                    return ((old_avg * count) + new_val) / (count + 1)
+                
+                new_stats = {
+                    'trade_count': n + 1,
+                    'avg_spread': update_avg(existing.get('avg_spread', 0), trade_data.get('spread_at_entry'), n),
+                    'avg_slippage': update_avg(existing.get('avg_slippage', 0), trade_data.get('slippage'), n),
+                    'avg_net_pnl': update_avg(existing.get('avg_net_pnl', 0), trade_data.get('net_pnl'), n),
+                    'avg_gross_pnl': update_avg(existing.get('avg_gross_pnl', 0), trade_data.get('gross_pnl'), n),
+                    'avg_hold_seconds': update_avg(existing.get('avg_hold_seconds', 0), trade_data.get('hold_seconds'), n),
+                    'avg_mfe': update_avg(existing.get('avg_mfe', 0), trade_data.get('mfe'), n),
+                    'avg_mae': update_avg(existing.get('avg_mae', 0), trade_data.get('mae'), n),
+                    'total_fees': (existing.get('total_fees', 0) or 0) + (trade_data.get('fees') or 0),
+                    'total_notional': (existing.get('total_notional', 0) or 0) + (trade_data.get('notional') or 0),
+                    'wins': (existing.get('wins', 0) or 0) + (1 if trade_data.get('won') else 0),
+                    'losses': (existing.get('losses', 0) or 0) + (0 if trade_data.get('won') else 1),
+                    'total_net_pnl': (existing.get('total_net_pnl', 0) or 0) + (trade_data.get('net_pnl_dollar') or 0),
+                    'total_gross_profit': (existing.get('total_gross_profit', 0) or 0) + (trade_data.get('gross_pnl_dollar') if trade_data.get('won') else 0),
+                    'total_gross_loss': (existing.get('total_gross_loss', 0) or 0) + (abs(trade_data.get('gross_pnl_dollar') or 0) if not trade_data.get('won') else 0),
+                    'last_updated': datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Winrate und Profit Factor berechnen
+                total_trades = new_stats['wins'] + new_stats['losses']
+                new_stats['winrate'] = round(new_stats['wins'] / total_trades * 100, 2) if total_trades > 0 else 0
+                
+                if new_stats['total_gross_loss'] > 0:
+                    new_stats['profit_factor'] = round(new_stats['total_gross_profit'] / new_stats['total_gross_loss'], 2)
+                else:
+                    new_stats['profit_factor'] = new_stats['total_gross_profit'] if new_stats['total_gross_profit'] > 0 else 0
+                
+                # Edge After Costs = Avg Net PnL (wenn positiv = profitabler Edge)
+                new_stats['edge_after_costs'] = round(new_stats['avg_net_pnl'], 4)
+                
+                await self.coin_stats.update_one(
+                    {'user_id': user_id, 'symbol': symbol},
+                    {'$set': new_stats}
+                )
+            else:
+                # Neue Stats erstellen
+                new_doc = {
+                    'user_id': user_id,
+                    'symbol': symbol,
+                    'trade_count': 1,
+                    'avg_spread': trade_data.get('spread_at_entry') or 0,
+                    'avg_slippage': trade_data.get('slippage') or 0,
+                    'avg_net_pnl': trade_data.get('net_pnl') or 0,
+                    'avg_gross_pnl': trade_data.get('gross_pnl') or 0,
+                    'avg_hold_seconds': trade_data.get('hold_seconds') or 0,
+                    'avg_mfe': trade_data.get('mfe') or 0,
+                    'avg_mae': trade_data.get('mae') or 0,
+                    'total_fees': trade_data.get('fees') or 0,
+                    'total_notional': trade_data.get('notional') or 0,
+                    'wins': 1 if trade_data.get('won') else 0,
+                    'losses': 0 if trade_data.get('won') else 1,
+                    'total_net_pnl': trade_data.get('net_pnl_dollar') or 0,
+                    'total_gross_profit': trade_data.get('gross_pnl_dollar') if trade_data.get('won') else 0,
+                    'total_gross_loss': abs(trade_data.get('gross_pnl_dollar') or 0) if not trade_data.get('won') else 0,
+                    'winrate': 100.0 if trade_data.get('won') else 0.0,
+                    'profit_factor': 0,
+                    'edge_after_costs': trade_data.get('net_pnl') or 0,
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                    'last_updated': datetime.now(timezone.utc).isoformat()
+                }
+                await self.coin_stats.insert_one(new_doc)
+            
+            logger.info(f"[User {user_id[:8]}] [COIN_STATS] Updated {symbol}")
+            
+        except Exception as e:
+            logger.error(f"[User {user_id[:8]}] [COIN_STATS] Error updating {symbol}: {e}")
+    
+    async def get_coin_stats(self, user_id: str) -> list:
+        """
+        Holt alle Coin-Statistiken für einen Benutzer.
+        Sortiert nach Trade-Count (meistgehandelte zuerst).
+        """
+        cursor = self.coin_stats.find({'user_id': user_id}).sort('trade_count', -1)
+        stats = await cursor.to_list(length=100)
+        
+        # Remove MongoDB _id
+        for s in stats:
+            s.pop('_id', None)
+        
+        return stats
+    
+    async def get_mfe_mae_analysis(self, user_id: str, limit: int = 100) -> dict:
+        """
+        Analysiert MFE/MAE Daten aus den letzten Trades.
+        Gibt Insights darüber, ob Trades zu früh oder zu spät geschlossen werden.
+        """
+        cursor = self.trades.find({
+            'user_id': user_id,
+            'mfe': {'$exists': True, '$ne': None},
+            'mae': {'$exists': True, '$ne': None}
+        }).sort('ts', -1).limit(limit)
+        
+        trades = await cursor.to_list(length=limit)
+        
+        if not trades:
+            return {
+                'total_analyzed': 0,
+                'message': 'Keine Trades mit MFE/MAE Daten gefunden'
+            }
+        
+        # Analyse berechnen
+        mfe_values = [t['mfe'] for t in trades if t.get('mfe') is not None]
+        mae_values = [t['mae'] for t in trades if t.get('mae') is not None]
+        pnl_values = [t.get('net_pnl_pct') or t.get('pnl_pct') or 0 for t in trades]
+        
+        # Wieviel vom MFE wurde realisiert?
+        mfe_captured = []
+        for t in trades:
+            mfe = t.get('mfe') or 0
+            pnl = t.get('net_pnl_pct') or t.get('pnl_pct') or 0
+            if mfe > 0:
+                captured = (pnl / mfe) * 100 if mfe != 0 else 0
+                mfe_captured.append(min(captured, 100))  # Cap at 100%
+        
+        # Trades die im Plus waren aber negativ geschlossen wurden
+        missed_profits = sum(1 for t in trades if (t.get('mfe') or 0) > 0.3 and (t.get('net_pnl_pct') or t.get('pnl_pct') or 0) < 0)
+        
+        # Trades die stark im Minus waren (MAE < -1%)
+        deep_drawdowns = sum(1 for t in trades if (t.get('mae') or 0) < -1.0)
+        
+        return {
+            'total_analyzed': len(trades),
+            'avg_mfe': round(sum(mfe_values) / len(mfe_values), 3) if mfe_values else 0,
+            'avg_mae': round(sum(mae_values) / len(mae_values), 3) if mae_values else 0,
+            'avg_pnl': round(sum(pnl_values) / len(pnl_values), 3) if pnl_values else 0,
+            'max_mfe': round(max(mfe_values), 3) if mfe_values else 0,
+            'min_mae': round(min(mae_values), 3) if mae_values else 0,
+            'avg_mfe_captured_pct': round(sum(mfe_captured) / len(mfe_captured), 1) if mfe_captured else 0,
+            'missed_profit_trades': missed_profits,
+            'missed_profit_pct': round(missed_profits / len(trades) * 100, 1) if trades else 0,
+            'deep_drawdown_trades': deep_drawdowns,
+            'deep_drawdown_pct': round(deep_drawdowns / len(trades) * 100, 1) if trades else 0,
+            'interpretation': {
+                'mfe_utilization': 'gut' if (sum(mfe_captured) / len(mfe_captured) if mfe_captured else 0) > 50 else 'verbesserungswürdig',
+                'exit_timing': 'zu spät' if missed_profits > len(trades) * 0.3 else ('optimal' if missed_profits < len(trades) * 0.1 else 'akzeptabel'),
+                'risk_management': 'kritisch' if deep_drawdowns > len(trades) * 0.3 else ('gut' if deep_drawdowns < len(trades) * 0.1 else 'akzeptabel')
+            }
+        }

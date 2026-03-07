@@ -32,6 +32,8 @@ export default function KILogTab() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [rlStatus, setRlStatus] = useState(null);
+  const [coinStats, setCoinStats] = useState(null);
+  const [mfeAnalysis, setMfeAnalysis] = useState(null);
   const [error, setError] = useState(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -44,12 +46,16 @@ export default function KILogTab() {
 
   const fetchData = async () => {
     try {
-      const [kiRes, rlRes] = await Promise.all([
+      const [kiRes, rlRes, coinRes, mfeRes] = await Promise.all([
         axios.get(`${API}/api/ki/stats`, getAuthHeaders()),
-        axios.get(`${API}/api/rl/status`, getAuthHeaders())
+        axios.get(`${API}/api/rl/status`, getAuthHeaders()),
+        axios.get(`${API}/api/coin-stats`, getAuthHeaders()).catch(() => ({ data: null })),
+        axios.get(`${API}/api/mfe-mae-analysis`, getAuthHeaders()).catch(() => ({ data: null }))
       ]);
       setStats(kiRes.data);
       setRlStatus(rlRes.data);
+      setCoinStats(coinRes.data);
+      setMfeAnalysis(mfeRes.data);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Laden');
@@ -597,6 +603,169 @@ export default function KILogTab() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============ COIN-SPEZIFISCHE STATISTIKEN ============ */}
+      {coinStats?.coins && coinStats.coins.length > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-blue-500/20 border border-blue-500/50">
+              <Activity className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-blue-400 tracking-widest uppercase">COIN PERFORMANCE</h3>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                {coinStats.profitable_coins}/{coinStats.total_coins} Coins profitabel
+              </p>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono-cyber">
+              <thead>
+                <tr className="text-zinc-500 border-b border-zinc-800">
+                  <th className="text-left py-2">Coin</th>
+                  <th className="text-right py-2">Trades</th>
+                  <th className="text-right py-2">Winrate</th>
+                  <th className="text-right py-2">Avg PnL</th>
+                  <th className="text-right py-2">Edge</th>
+                  <th className="text-right py-2">Spread</th>
+                  <th className="text-right py-2">Slip</th>
+                  <th className="text-right py-2">PF</th>
+                  <th className="text-right py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coinStats.coins.map((coin, idx) => (
+                  <tr key={idx} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
+                    <td className="py-2 text-white font-bold">{coin.symbol.replace('USDT', '')}</td>
+                    <td className="py-2 text-right text-zinc-400">{coin.trade_count}</td>
+                    <td className={`py-2 text-right ${coin.winrate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                      {coin.winrate}%
+                    </td>
+                    <td className={`py-2 text-right ${coin.avg_net_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {coin.avg_net_pnl_pct >= 0 ? '+' : ''}{coin.avg_net_pnl_pct}%
+                    </td>
+                    <td className={`py-2 text-right font-bold ${coin.edge_after_costs >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {coin.edge_after_costs >= 0 ? '+' : ''}{(coin.edge_after_costs * 100).toFixed(2)}%
+                    </td>
+                    <td className="py-2 text-right text-zinc-500">{(coin.avg_spread_pct * 100).toFixed(3)}%</td>
+                    <td className="py-2 text-right text-zinc-500">{(coin.avg_slippage_pct * 100).toFixed(3)}%</td>
+                    <td className={`py-2 text-right ${coin.profit_factor >= 1 ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {coin.profit_factor}
+                    </td>
+                    <td className="py-2 text-right text-xs">
+                      {coin.recommendation}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {coinStats.summary?.best_coin && (
+            <div className="mt-4 p-3 bg-black/30 border border-zinc-800 grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] text-zinc-500 font-mono-cyber">BESTER COIN</p>
+                <p className="text-lg font-cyber text-green-400">{coinStats.summary.best_coin.replace('USDT', '')}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-zinc-500 font-mono-cyber">SCHLECHTESTER COIN</p>
+                <p className="text-lg font-cyber text-red-400">{coinStats.summary.worst_coin.replace('USDT', '')}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============ MFE/MAE ANALYSE ============ */}
+      {mfeAnalysis && mfeAnalysis.total_analyzed > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
+              <Target className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">MFE / MAE ANALYSE</h3>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">
+                Exit-Timing basierend auf {mfeAnalysis.total_analyzed} Trades
+              </p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className="bg-black/50 border border-green-500/20 p-3 text-center">
+              <p className="text-lg font-cyber text-green-400">{mfeAnalysis.avg_mfe}%</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Ø MFE (Max Profit)</p>
+            </div>
+            <div className="bg-black/50 border border-red-500/20 p-3 text-center">
+              <p className="text-lg font-cyber text-red-400">{mfeAnalysis.avg_mae}%</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Ø MAE (Max Loss)</p>
+            </div>
+            <div className="bg-black/50 border border-cyan-500/20 p-3 text-center">
+              <p className="text-lg font-cyber text-cyan-400">{mfeAnalysis.avg_mfe_captured_pct}%</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">MFE GENUTZT</p>
+            </div>
+            <div className="bg-black/50 border border-zinc-500/20 p-3 text-center">
+              <p className="text-lg font-cyber text-zinc-300">{mfeAnalysis.avg_pnl}%</p>
+              <p className="text-[10px] text-zinc-600 font-mono-cyber">Ø Net PnL</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-3 bg-black/30 border border-zinc-800">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-zinc-500 font-mono-cyber">VERPASSTE PROFITS</span>
+                <span className={`text-sm font-mono-cyber ${mfeAnalysis.missed_profit_pct > 30 ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {mfeAnalysis.missed_profit_trades} Trades ({mfeAnalysis.missed_profit_pct}%)
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-600">Trades die im Plus waren, aber negativ geschlossen wurden</p>
+            </div>
+            <div className="p-3 bg-black/30 border border-zinc-800">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-zinc-500 font-mono-cyber">TIEFE DRAWDOWNS</span>
+                <span className={`text-sm font-mono-cyber ${mfeAnalysis.deep_drawdown_pct > 30 ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {mfeAnalysis.deep_drawdown_trades} Trades ({mfeAnalysis.deep_drawdown_pct}%)
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-600">Trades die mehr als -1% im Minus waren</p>
+            </div>
+          </div>
+          
+          {/* Interpretation */}
+          <div className="mt-4 p-3 bg-black/30 border border-zinc-800">
+            <p className="text-xs text-zinc-500 font-mono-cyber mb-2">DIAGNOSE</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <span className="text-[10px] text-zinc-500">MFE Nutzung:</span>
+                <p className={`text-sm font-mono-cyber ${mfeAnalysis.interpretation?.mfe_utilization === 'gut' ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {mfeAnalysis.interpretation?.mfe_utilization === 'gut' ? '✅ Gut' : '⚠️ Verbesserungswürdig'}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500">Exit-Timing:</span>
+                <p className={`text-sm font-mono-cyber ${
+                  mfeAnalysis.interpretation?.exit_timing === 'optimal' ? 'text-green-400' : 
+                  mfeAnalysis.interpretation?.exit_timing === 'akzeptabel' ? 'text-yellow-400' : 'text-red-400'
+                }`}>
+                  {mfeAnalysis.interpretation?.exit_timing === 'optimal' ? '✅ Optimal' : 
+                   mfeAnalysis.interpretation?.exit_timing === 'akzeptabel' ? '⚠️ Akzeptabel' : '❌ Zu spät'}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500">Risk Management:</span>
+                <p className={`text-sm font-mono-cyber ${
+                  mfeAnalysis.interpretation?.risk_management === 'gut' ? 'text-green-400' : 
+                  mfeAnalysis.interpretation?.risk_management === 'akzeptabel' ? 'text-yellow-400' : 'text-red-400'
+                }`}>
+                  {mfeAnalysis.interpretation?.risk_management === 'gut' ? '✅ Gut' : 
+                   mfeAnalysis.interpretation?.risk_management === 'akzeptabel' ? '⚠️ Akzeptabel' : '❌ Kritisch'}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}

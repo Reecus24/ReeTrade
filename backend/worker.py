@@ -2045,6 +2045,27 @@ class MultiUserTradingWorker:
             )
             await self.db.add_trade(trade)
             
+            # ============ COIN-STATS UPDATE ============
+            # Aggregierte Statistiken pro Coin aktualisieren
+            try:
+                coin_trade_data = {
+                    'spread_at_entry': getattr(position, 'spread_at_entry', None),
+                    'slippage': slippage_pct if 'slippage_pct' in dir() else (slippage_cost / entry_notional * 100 if entry_notional > 0 else 0),
+                    'net_pnl': net_pnl_pct,
+                    'gross_pnl': gross_pnl_pct,
+                    'net_pnl_dollar': net_pnl,
+                    'gross_pnl_dollar': gross_pnl,
+                    'fees': fees_paid,
+                    'notional': entry_notional,
+                    'hold_seconds': duration_seconds,
+                    'mfe': mfe,
+                    'mae': mae,
+                    'won': net_pnl > 0
+                }
+                await self.db.update_coin_stats(user_id, position.symbol, coin_trade_data)
+            except Exception as coin_stats_err:
+                logger.warning(f"[COIN_STATS] Error: {coin_stats_err}")
+            
             # === EXTENDED LOGGING ===
             await self.db.log(user_id, "INFO", 
                 f"[COST] {position.symbol}: Gross PnL: ${gross_pnl:.4f} ({gross_pnl_pct:+.2f}%) | "
