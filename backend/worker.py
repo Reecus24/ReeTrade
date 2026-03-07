@@ -1223,6 +1223,15 @@ class MultiUserTradingWorker:
         symbols_checked = 0
         symbols_already_owned = 0
         
+        # ============ SCAN SUMMARY COUNTERS ============
+        blocked_by_min_move = 0
+        blocked_by_spread = 0
+        blocked_by_volume = 0
+        blocked_by_rl_hold = 0
+        blocked_by_paused = 0
+        blocked_by_klines = 0
+        buy_signals = 0
+        
         # Get list of symbols we already own (for diversification)
         owned_symbols = set()
         if account and account.open_positions:
@@ -1258,12 +1267,14 @@ class MultiUserTradingWorker:
                 # Check if symbol is paused (DB-based pause from consecutive losses)
                 is_paused = await self.db.is_symbol_paused(user_id, symbol)
                 if is_paused:
+                    blocked_by_paused += 1
                     logger.debug(f"[SCAN] {symbol}: Übersprungen (pausiert)")
                     continue
                 
                 # Get 4H klines for regime
                 klines_4h = await mexc.get_klines(symbol, interval="4h", limit=250)
                 if len(klines_4h) < 200:
+                    blocked_by_klines += 1
                     logger.debug(f"[SCAN] {symbol}: Übersprungen (nur {len(klines_4h)} 4H Klines)")
                     continue
                 
@@ -1343,6 +1354,7 @@ class MultiUserTradingWorker:
                 blocked_count = self.consecutive_blocked_scans.get(user_id, 0)
                 
                 if expected_move < self.MIN_EXPECTED_MOVE_PCT:
+                    blocked_by_min_move += 1
                     await self.db.log(user_id, "INFO", 
                         f"[ANTI-NOISE] ⚠️ {symbol}: Move {expected_move:.3f}% < Min {self.MIN_EXPECTED_MOVE_PCT:.3f}% "
                         f"(Multiplier: {self.MIN_MOVE_MULTIPLIER}x | Blocked: {blocked_count}/{self.BLOCKED_SCANS_THRESHOLD})")
@@ -1511,7 +1523,26 @@ class MultiUserTradingWorker:
             if symbols_already_owned > 0:
                 await self.db.log(user_id, "INFO", f"[LIVE] 💼 {symbols_already_owned} Coins übersprungen (bereits im Portfolio)")
         
-        await self.db.log(user_id, "INFO", f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen")
+        # ============ SCAN SUMMARY LOGGING ============
+        scan_summary_parts = []
+        if blocked_by_min_move > 0:
+            scan_summary_parts.append(f"{blocked_by_min_move} MIN_MOVE")
+        if blocked_by_spread > 0:
+            scan_summary_parts.append(f"{blocked_by_spread} Spread")
+        if blocked_by_volume > 0:
+            scan_summary_parts.append(f"{blocked_by_volume} Volume")
+        if blocked_by_rl_hold > 0:
+            scan_summary_parts.append(f"{blocked_by_rl_hold} RL_HOLD")
+        if blocked_by_paused > 0:
+            scan_summary_parts.append(f"{blocked_by_paused} Paused")
+        if blocked_by_klines > 0:
+            scan_summary_parts.append(f"{blocked_by_klines} Klines")
+        
+        blocked_summary = " | ".join(scan_summary_parts) if scan_summary_parts else "keine Blockierungen"
+        
+        await self.db.log(user_id, "INFO", 
+            f"[LIVE] ═══ SCAN COMPLETE ═══ {symbols_checked} Coins, {len(signal_candidates)} Signale, {symbols_already_owned} übersprungen\n"
+            f"   📊 Blockiert: {blocked_summary}")
     
     async def rotate_to_next_batch(self, user_id: str, settings: UserSettings):
         """Rotate to next batch of coins when no signals found

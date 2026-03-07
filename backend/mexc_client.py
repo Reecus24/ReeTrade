@@ -287,28 +287,34 @@ class MexcClient:
         # ERWEITERTES TRADING UNIVERSE (~200 Coins)
         # Nur verifizierte MEXC USDT Paare
         # ═══════════════════════════════════════════════════════════════════════════
+        # ERWEITERTES UNIVERSE (~57 Coins) für RL-Training
+        # ═══════════════════════════════════════════════════════════════════════════
         if curated_list is None:
             curated_list = [
-                # Tier 1: High Liquidity Mid-Caps (15)
-                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT",
-                "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
-                "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
+                # High Liquidity Layer 1 & 2
+                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "POLUSDT", "ATOMUSDT",
+                "LINKUSDT", "NEARUSDT", "FILUSDT", "INJUSDT", "APTUSDT",
+                "SUIUSDT", "SEIUSDT", "ARBUSDT", "OPUSDT", "TONUSDT",
                 
-                # Tier 2: DeFi & Layer 1 (10)
-                "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
-                "IMXUSDT", "TONUSDT", "FLOWUSDT", "MINAUSDT", "RENDERUSDT",
+                # DeFi
+                "LDOUSDT", "AAVEUSDT", "UNIUSDT", "COMPUSDT", "SNXUSDT",
+                "CRVUSDT", "DYDXUSDT", "GMXUSDT", "LRCUSDT", "ZRXUSDT",
+                "1INCHUSDT", "KAVAUSDT",
                 
-                # Tier 3: Gaming & Metaverse (5)
-                "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
+                # Gaming & Metaverse
+                "RENDERUSDT", "IMXUSDT", "GRTUSDT", "SANDUSDT", "MANAUSDT",
+                "APEUSDT", "AXSUSDT", "FLOWUSDT", "CHZUSDT", "ENJUSDT",
                 
-                # Tier 4: Infrastructure & DeFi (12)
-                "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
-                "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
-                "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT",
+                # Infrastructure
+                "ALGOUSDT", "HBARUSDT", "EGLDUSDT", "CELOUSDT", "MINAUSDT",
+                "TRXUSDT", "XLMUSDT", "VETUSDT",
                 
-                # Tier 5: Volatile Coins (9)
-                "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
-                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "PEPEUSDT"
+                # AI Tokens
+                "KASUSDT", "FETUSDT", "WLDUSDT",
+                
+                # Meme & High Volatility
+                "ORDIUSDT", "WIFUSDT", "PEPEUSDT", "BONKUSDT", "FLOKIUSDT",
+                "DOGEUSDT", "SHIBUSDT", "MEMEUSDT", "NOTUSDT"
             ]
             
             # Duplikate entfernen
