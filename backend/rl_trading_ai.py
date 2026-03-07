@@ -1010,7 +1010,7 @@ class RLTradingAI:
         Soll verkauft werden? - 100% KI-ENTSCHEIDUNG
         
         ANTI-FLIP PROTECTION:
-        - Mindest-Haltezeit: 90 Sekunden (verhindert Flip-Trading)
+        - Mindest-Haltezeit: 180 Sekunden (3 Min - verhindert zu frühe Exits)
         - Exploration Guard: Bei hohem Epsilon kein zufälliges SELL unter 180s
         - SELL nur durch Exploitation oder Emergency, NICHT durch random Exploration
         - Hard Exit: 10 Minuten wird in worker.py erzwungen
@@ -1031,8 +1031,8 @@ class RLTradingAI:
         hold_seconds = hold_hours * 3600
         
         # ============ KONSTANTEN ============
-        MIN_HOLD_SECONDS = 90          # Absolute Mindesthaltezeit
-        EXPLORATION_SELL_SECONDS = 180  # Random SELL erst ab hier (bei hohem epsilon)
+        MIN_HOLD_SECONDS = 180         # Mindesthaltezeit: 3 Minuten (vorher 90s)
+        EXPLORATION_SELL_SECONDS = 240  # Random SELL erst ab 4 Min (erhöht von 180s)
         EMERGENCY_THRESHOLD = -5.0      # Emergency Exit Schwelle
         HIGH_EPSILON_THRESHOLD = 0.5    # Ab hier gilt "hohe Exploration"
         
