@@ -1564,6 +1564,18 @@ class MultiUserTradingWorker:
                     await self.db.log(user_id, "WARNING", f"[LIVE] ⚠️ {symbol} bereits im Portfolio - Trade übersprungen")
                     continue
                 
+                # ============ CHECK: Coin kürzlich bei Order fehlgeschlagen? ============
+                if hasattr(self, 'failed_order_coins') and symbol in self.failed_order_coins:
+                    failed_info = self.failed_order_coins[symbol]
+                    failed_time = failed_info.get('timestamp')
+                    if failed_time and (datetime.now(timezone.utc) - failed_time).total_seconds() < 300:  # 5 Min Cooldown
+                        await self.db.log(user_id, "WARNING", 
+                            f"[LIVE] ⚠️ {symbol} Order fehlgeschlagen vor <5min - übersprungen | Error: {failed_info.get('error', 'N/A')[:50]}")
+                        continue
+                    else:
+                        # Cooldown abgelaufen, entferne aus Failed-Liste
+                        del self.failed_order_coins[symbol]
+                
                 # Execute SPOT trade ONLY
                 trade_success = await self.open_live_position(
                     user_id, symbol, candidate, account, settings, strategy, risk_mgr, mexc, 
@@ -1822,26 +1834,119 @@ class MultiUserTradingWorker:
                 await self.db.log(user_id, "WARNING", f"[LIVE] Notional ${notional:.2f} below minimum ${min_notional} (Budget: ${available_budget:.2f})")
                 return False
             
-            qty = notional / current_price
+            # ═══════════════════════════════════════════════════════════════════════════
+            # MEXC ORDER VALIDATION & LOGGING
+            # ═══════════════════════════════════════════════════════════════════════════
+            # Get exchange filters for this symbol
+            filters = order_sizer.get_filters(symbol)
+            if not filters:
+                # Try to get filters from exchange
+                try:
+                    exchange_info = await mexc.get_exchange_info()
+                    order_sizer.update_symbol_filters(exchange_info)
+                    filters = order_sizer.get_filters(symbol)
+                except Exception as e:
+                    logger.warning(f"[ORDER] Could not fetch exchange info: {e}")
             
-            # Apply exchange filters
-            formatted_qty = order_sizer.round_quantity(symbol, qty)
-            if formatted_qty is None or formatted_qty <= 0:
-                await self.db.log(user_id, "WARNING", f"[LIVE] Invalid quantity for {symbol}")
-                return False
+            # Calculate expected quantity (for logging only)
+            expected_qty = notional / current_price
             
-            # Place REAL order
-            await self.db.log(user_id, "WARNING", f"[LIVE] ⚡ PLACING REAL ORDER: {symbol} BUY {formatted_qty} @ MARKET")
+            # ═══════════════════════════════════════════════════════════════════════════
+            # DETAILLIERTES PRE-ORDER LOGGING
+            # ═══════════════════════════════════════════════════════════════════════════
+            filter_log = "KEINE FILTER VERFÜGBAR"
+            if filters:
+                filter_log = (
+                    f"minQty={filters.get('minQty', 'N/A')}, "
+                    f"maxQty={filters.get('maxQty', 'N/A')}, "
+                    f"stepSize={filters.get('stepSize', 'N/A')}, "
+                    f"minNotional={filters.get('minNotional', 'N/A')}, "
+                    f"basePrecision={filters.get('basePrecision', 'N/A')}"
+                )
             
-            order_result = await mexc.place_order(
-                symbol=symbol,
-                side="BUY",
-                order_type="MARKET",
-                quantity=formatted_qty
+            await self.db.log(user_id, "WARNING", 
+                f"\n╔════════════════════════════════════════════════════════════════╗\n"
+                f"║                    🛒 PRE-ORDER VALIDATION                      ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  Symbol:              {symbol:20s}                    ║\n"
+                f"║  ─────────────────────────────────────────────────────────────  ║\n"
+                f"║  Expected USDT:       ${notional:15.4f}                    ║\n"
+                f"║  Current Price:       ${current_price:15.8f}                    ║\n"
+                f"║  Expected Qty (raw):  {expected_qty:18.8f}                    ║\n"
+                f"║  ─────────────────────────────────────────────────────────────  ║\n"
+                f"║  Exchange Filters:                                              ║\n"
+                f"║  {filter_log:60s}  ║\n"
+                f"╚════════════════════════════════════════════════════════════════╝"
             )
             
+            # ═══════════════════════════════════════════════════════════════════════════
+            # MEXC MARKET BUY: Verwende quoteOrderQty (USDT-Betrag)
+            # NICHT quantity (Token-Menge) - das führt zu 400 Bad Request!
+            # ═══════════════════════════════════════════════════════════════════════════
+            # Runde notional auf 2 Dezimalstellen (USDT)
+            rounded_notional = round(notional, 2)
+            
+            await self.db.log(user_id, "WARNING", 
+                f"[LIVE] ⚡ PLACING MARKET BUY: {symbol} | quoteOrderQty=${rounded_notional:.2f} (≈{expected_qty:.4f} tokens @ ${current_price:.8f})")
+            
+            try:
+                order_result = await mexc.place_order(
+                    symbol=symbol,
+                    side="BUY",
+                    order_type="MARKET",
+                    quote_order_qty=rounded_notional  # WICHTIG: quoteOrderQty für MARKET BUY!
+                )
+                
+                # Log successful order response
+                logger.info(f"[MEXC] {symbol} BUY SUCCESS: {order_result}")
+                
+            except Exception as order_error:
+                # ═══════════════════════════════════════════════════════════════════════════
+                # ORDER FAILED - Detailliertes Error Logging
+                # ═══════════════════════════════════════════════════════════════════════════
+                error_msg = str(order_error)
+                
+                # Extrahiere HTTP Response Body wenn vorhanden
+                error_body = "N/A"
+                if hasattr(order_error, 'response'):
+                    try:
+                        error_body = order_error.response.text if hasattr(order_error.response, 'text') else str(order_error.response)
+                    except Exception:
+                        pass
+                
+                await self.db.log(user_id, "ERROR", 
+                    f"\n╔════════════════════════════════════════════════════════════════╗\n"
+                    f"║                    ❌ ORDER FAILED                              ║\n"
+                    f"╠════════════════════════════════════════════════════════════════╣\n"
+                    f"║  Symbol:              {symbol:20s}                    ║\n"
+                    f"║  Error:               {error_msg[:50]:50s}  ║\n"
+                    f"║  MEXC Response:       {error_body[:50]:50s}  ║\n"
+                    f"║  ─────────────────────────────────────────────────────────────  ║\n"
+                    f"║  Attempted:           quoteOrderQty=${rounded_notional:.2f}                   ║\n"
+                    f"║  Price at attempt:    ${current_price:.8f}                    ║\n"
+                    f"╚════════════════════════════════════════════════════════════════╝"
+                )
+                
+                # Markiere diesen Coin als temporär problematisch
+                if not hasattr(self, 'failed_order_coins'):
+                    self.failed_order_coins = {}
+                self.failed_order_coins[symbol] = {
+                    'timestamp': datetime.now(timezone.utc),
+                    'error': error_msg,
+                    'notional': rounded_notional
+                }
+                
+                logger.error(f"[ORDER] {symbol} FAILED: {error_msg} | Response: {error_body}")
+                return False
+            
             # Parse order result - get ACTUAL executed price
-            executed_qty = float(order_result.get('executedQty', formatted_qty))
+            executed_qty = float(order_result.get('executedQty', 0))
+            
+            # Check if order was actually filled
+            if executed_qty <= 0:
+                await self.db.log(user_id, "ERROR", 
+                    f"[LIVE] ❌ ORDER NOT FILLED: {symbol} | executedQty=0 | Response: {order_result}")
+                return False
             
             # Log raw MEXC BUY response
             logger.info(f"[MEXC] {symbol} BUY Response: price={order_result.get('price')}, fills={order_result.get('fills', [])}, cummulativeQuoteQty={order_result.get('cummulativeQuoteQty')}")

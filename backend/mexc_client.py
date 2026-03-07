@@ -79,10 +79,22 @@ class MexcClient:
                 else:
                     raise ValueError(f"Unsupported method: {method}")
                 
-                response.raise_for_status()
+                # Check for HTTP errors and include response body in error
+                if response.status_code >= 400:
+                    error_body = response.text
+                    logger.error(f"[MEXC] HTTP {response.status_code} for {endpoint}: {error_body}")
+                    # Create custom exception with response body
+                    error = httpx.HTTPStatusError(
+                        f"{response.status_code}: {error_body}", 
+                        request=response.request, 
+                        response=response
+                    )
+                    error.response_body = error_body  # Attach body for caller access
+                    raise error
+                
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            # Already logged above, just re-raise
             raise
         except Exception as e:
             logger.error(f"Request error: {e}")

@@ -445,6 +445,46 @@ If Instance A dies:
 
 ---
 
+### MEXC MARKET BUY Fix ✅ (07.03.2026)
+
+**Problem**: MARKET BUY Orders scheiterten mit HTTP 400 Bad Request. Der Bot sendete `quantity` (Token-Menge), aber MEXC erwartet `quoteOrderQty` (USDT-Betrag) für MARKET BUY.
+
+**Root Cause**: Laut MEXC API Dokumentation:
+- MARKET BUY: Muss `quoteOrderQty` verwenden (wie viel USDT ausgeben)
+- MARKET SELL: Muss `quantity` verwenden (wie viele Tokens verkaufen)
+
+**Änderungen:**
+
+1. **`worker.py` - `open_live_position()`**:
+   - Verwendet jetzt `quote_order_qty` statt `quantity` für MARKET BUY
+   - Detailliertes PRE-ORDER Logging mit allen Exchange-Filtern
+   - Vollständiges Error-Logging bei fehlgeschlagenen Orders
+   - Failed-Order-Cooldown: Coins die fehlschlagen werden 5 Min gesperrt
+
+2. **`mexc_client.py` - `_request()`**:
+   - Verbesserte HTTP-Fehlerbehandlung
+   - Response-Body wird an Exception angehängt für besseres Debugging
+
+3. **Neues Logging-Format** (vor jedem BUY):
+   ```
+   ╔════════════════════════════════════════════════════════════════╗
+   ║                    🛒 PRE-ORDER VALIDATION                      ║
+   ╠════════════════════════════════════════════════════════════════╣
+   ║  Symbol:              PEPEUSDT                                  ║
+   ║  Expected USDT:       $10.0000                                  ║
+   ║  Current Price:       $0.00001234                               ║
+   ║  Expected Qty (raw):  810372.77                                 ║
+   ║  Exchange Filters:    minQty=1, stepSize=1, minNotional=5       ║
+   ╚════════════════════════════════════════════════════════════════╝
+   ```
+
+4. **Fallback-Mechanismus**:
+   - Bei Order-Fehler: Coin wird temporär markiert
+   - Nächster Kandidat aus der Signal-Liste wird versucht
+   - 5 Minuten Cooldown für fehlgeschlagene Coins
+
+---
+
 ## Backlog
 
 ### P0 (Kritisch)
