@@ -408,6 +408,41 @@ If Instance A dies:
 - KI wird nicht mehr künstlich ausgebremst bei knappen Grenzfällen
 - Filter lockert schneller wenn RL BUYs systematisch blockiert werden
 
+### Full USDT Universe ✅ (07.03.2026)
+
+**Änderung**: Das Trading-Universe wurde von einer festen Liste (~60 Coins) auf das **vollständige MEXC USDT-Universum** erweitert.
+
+#### Neue Architektur:
+
+1. **Full Universe Layer** (`mexc_client.py`):
+   - Lädt ALLE verfügbaren MEXC Spot USDT-Paare
+   - Keine feste Coinliste mehr
+   - Automatische Erkennung neuer Listings
+
+2. **Filter Layer** (3-Tier System):
+   - **PREFERRED**: Volume > 5M USDT, Spread < 0.20%
+   - **STANDARD**: Volume > 2M USDT, Spread < 0.35%
+   - **FALLBACK**: Volume > 500K USDT, Spread < 0.50%
+   - Blacklist für Stablecoins, Leveraged Tokens, Problem-Coins
+
+3. **Active Scan Pool** (`worker.py`):
+   - 30 Coins pro Scan-Batch (erhöht von 20)
+   - Rotation durch das gesamte Tradeable Pool
+   - Zusätzliche Volatilitäts-Filter
+
+4. **Transparenz-Logging** (pro Universe-Refresh):
+   - Total USDT pairs on MEXC
+   - Filtered by blacklist/volume/spread/price
+   - PREFERRED/STANDARD/FALLBACK counts
+   - Final Tradeable Pool size
+   - Active Scan Pool size
+
+#### Vorteile:
+- KI sieht deutlich mehr Trading-Gelegenheiten
+- Neue Coins werden automatisch erkannt
+- Illiquide/problematische Märkte werden weiterhin gefiltert
+- Volle Transparenz über Filter-Statistiken
+
 ---
 
 ## Backlog

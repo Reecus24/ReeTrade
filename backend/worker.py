@@ -918,25 +918,48 @@ class MultiUserTradingWorker:
             
             mexc = MexcClient()
             # ═══════════════════════════════════════════════════════════════════════════
-            # ZWEISTUFIGES UNIVERSE-SYSTEM
-            # - PREFERRED: Vol > 5M, Spread < 0.20% (beste Qualität)
-            # - FALLBACK: Vol > 2M, Spread < 0.35% (nur wenn zu wenig Preferred)
+            # FULL USDT UNIVERSE - DYNAMISCHE FILTERUNG
+            # Keine feste Coinliste mehr! Alle liquiden USDT-Paare werden berücksichtigt.
             # ═══════════════════════════════════════════════════════════════════════════
-            COIN_UNIVERSE_SIZE = 50  # Pool size
-            MIN_PREFERRED_COINS = 10  # Minimum Preferred bevor Fallback aktiviert wird
+            ACTIVE_SCAN_POOL_SIZE = 40  # Wie viele Coins pro Zyklus aktiv gescannt werden
             
-            momentum_pairs = await mexc.get_momentum_universe(
+            universe_result = await mexc.get_momentum_universe(
                 quote="USDT", 
-                base_limit=COIN_UNIVERSE_SIZE,
-                min_preferred_coins=MIN_PREFERRED_COINS
+                base_limit=ACTIVE_SCAN_POOL_SIZE
             )
             
-            # Count tiers for logging
-            preferred_count = sum(1 for p in momentum_pairs if p.get('tier') == 'preferred')
-            fallback_count = sum(1 for p in momentum_pairs if p.get('tier') == 'fallback')
+            # Neues Format: Dict mit 'pairs', 'stats', 'all_tradeable'
+            momentum_pairs = universe_result.get('pairs', [])
+            universe_stats = universe_result.get('stats', {})
+            all_tradeable_symbols = universe_result.get('all_tradeable', [])
             
-            await self.db.log(user_id, "INFO", 
-                f"📊 {len(momentum_pairs)} Coins ({preferred_count} preferred, {fallback_count} fallback)")
+            # Count tiers for logging
+            preferred_count = universe_stats.get('preferred_count', 0)
+            standard_count = universe_stats.get('standard_count', 0)
+            fallback_count = universe_stats.get('fallback_count', 0)
+            
+            # ═══════════════════════════════════════════════════════════════════════════
+            # UNIVERSE TRANSPARENCY LOG
+            # ═══════════════════════════════════════════════════════════════════════════
+            await self.db.log(user_id, "WARNING", 
+                f"\n╔════════════════════════════════════════════════════════════════╗\n"
+                f"║                    🌍 UNIVERSE STATISTICS                       ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  Total USDT pairs on MEXC:    {universe_stats.get('total_usdt_pairs', 0):4d}                           ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  ❌ Filtered (blacklist):      {universe_stats.get('filtered_blacklist', 0):4d}                           ║\n"
+                f"║  ❌ Filtered (volume<500K):    {universe_stats.get('filtered_volume', 0):4d}                           ║\n"
+                f"║  ❌ Filtered (spread>0.5%):    {universe_stats.get('filtered_spread', 0):4d}                           ║\n"
+                f"║  ❌ Filtered (price=0):        {universe_stats.get('filtered_price_zero', 0):4d}                           ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  ✅ PREFERRED (Vol>5M):        {preferred_count:4d}                           ║\n"
+                f"║  ✅ STANDARD (Vol>2M):         {standard_count:4d}                           ║\n"
+                f"║  ✅ FALLBACK (Vol>500K):       {fallback_count:4d}                           ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  🎯 Total Tradeable Pool:     {universe_stats.get('final_tradeable', 0):4d}                           ║\n"
+                f"║  🔍 Active Scan (this cycle): {len(momentum_pairs):4d}                           ║\n"
+                f"╚════════════════════════════════════════════════════════════════╝"
+            )
             
             # ═══════════════════════════════════════════════════════════════════════════
             # FILTER FÜR RL-TRADING (10-Min Trades)
@@ -1042,16 +1065,18 @@ class MultiUserTradingWorker:
             ), reverse=True)
             
             # ═══════════════════════════════════════════════════════════════════════════
-            # ACTIVE TRADING SET: 15-20 COINS PRO BATCH
-            # - Universe: ~42 Coins (alle verfügbaren Mid-Caps)
-            # - Active Scan Pool: 20 Coins gleichzeitig
-            # - Rotation alle 30-60 Minuten (via ROTATION_INTERVAL_MINUTES in process_user)
+            # ACTIVE TRADING SET - DYNAMISCH BASIEREND AUF VERFÜGBAREM UNIVERSE
+            # - Universe: Alle liquiden USDT-Paare (dynamisch gefiltert)
+            # - Active Scan Pool: 20-40 Coins gleichzeitig
+            # - Rotation alle 30-60 Minuten
             # ═══════════════════════════════════════════════════════════════════════════
-            MAX_TRADABLE_COINS = 45  # Alle ~42 curated Coins + etwas Buffer
-            self.COINS_PER_BATCH = 20  # 15-20 Coins pro Scan-Batch (20 für bessere Abdeckung)
-            all_tradable_symbols = [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
+            MAX_TRADABLE_COINS = 200  # Maximale Größe des Tradeable Pools
+            self.COINS_PER_BATCH = 30  # 20-40 Coins pro Scan-Batch
             
-            # Save first batch (20) as active, store all for rotation
+            # Nutze das vollständige tradeable Universe für Rotation
+            all_tradable_symbols = all_tradeable_symbols[:MAX_TRADABLE_COINS] if all_tradeable_symbols else [p['symbol'] for p in filtered_pairs[:MAX_TRADABLE_COINS]]
+            
+            # Save first batch as active, store all for rotation
             active_batch = all_tradable_symbols[:self.COINS_PER_BATCH]
             
             await self.db.update_settings(user_id, {
@@ -1064,7 +1089,7 @@ class MultiUserTradingWorker:
             self.user_coin_batch[user_id] = 0
             self.user_all_coins[user_id] = all_tradable_symbols
             
-            # Detailed logging - Volatilität statt Regime
+            # Detailed logging
             high_vol_count = sum(1 for p in filtered_pairs if p.get('volatility_1h', 0) >= 1.0)
             med_vol_count = sum(1 for p in filtered_pairs if 0.3 <= p.get('volatility_1h', 0) < 1.0)
             
@@ -1075,14 +1100,21 @@ class MultiUserTradingWorker:
             total_batches = (len(all_tradable_symbols) + self.COINS_PER_BATCH - 1) // self.COINS_PER_BATCH
             
             await self.db.log(
-                user_id, "INFO", 
-                f"✅ Coin-Pool aktualisiert:\n"
-                f"   • {len(all_tradable_symbols)} Coins total ({vol_info})\n"
-                f"   • {total_batches} Batches à {self.COINS_PER_BATCH} Coins\n"
-                f"   • Aktiver Batch: 1-{min(self.COINS_PER_BATCH, len(all_tradable_symbols))}\n"
-                f"   • {skipped_price_too_high} übersprungen (Preis zu hoch)\n"
-                f"   • {skipped_low_volatility} übersprungen (zu wenig Bewegung)",
-                {'symbols': active_batch[:10]}
+                user_id, "WARNING", 
+                f"\n╔════════════════════════════════════════════════════════════════╗\n"
+                f"║                    🎯 ACTIVE SCAN POOL                          ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  Total Tradeable Pool:        {len(all_tradable_symbols):4d}                           ║\n"
+                f"║  Volatility filtered:         {skipped_low_volatility:4d} (removed)                  ║\n"
+                f"║  Price filtered:              {skipped_price_too_high:4d} (removed)                  ║\n"
+                f"║  High-Vol Coins (>1%):        {high_vol_count:4d}                           ║\n"
+                f"║  Med-Vol Coins (0.3-1%):      {med_vol_count:4d}                           ║\n"
+                f"╠════════════════════════════════════════════════════════════════╣\n"
+                f"║  Active Batch Size:           {self.COINS_PER_BATCH:4d}                           ║\n"
+                f"║  Total Batches:               {total_batches:4d}                           ║\n"
+                f"║  Current Batch:               1/{total_batches}                            ║\n"
+                f"╚════════════════════════════════════════════════════════════════╝\n"
+                f"First 10 Coins: {', '.join(active_batch[:10])}"
             )
             
             if skipped_price_filter_examples:
