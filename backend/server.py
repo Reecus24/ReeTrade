@@ -1812,25 +1812,72 @@ async def get_mfe_mae_analysis(
 @app.get("/api/rl/hold-duration-analysis")
 async def get_hold_duration_analysis(
     current_user: dict = Depends(get_current_user),
-    days: int = 7
+    days: int = 7,
+    all_time: bool = False
 ):
     """
     Detaillierte Analyse der Hold-Duration-Verteilung.
     
     Prüft ob die KI zu früh verkauft (direkt nach MIN_HOLD_SECONDS).
+    
+    Parameter:
+    - days: Anzahl Tage zurück (default 7)
+    - all_time: Wenn True, werden ALLE Trades analysiert (ignoriert days)
     """
     from datetime import timezone
     from collections import defaultdict
     
     user_id = current_user['user_id']
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     
-    # Hole Trades
-    trades = await db.trades.find({
+    # Hole Trades - erweiterte Abfrage
+    if all_time:
+        cutoff = datetime(2020, 1, 1)  # Praktisch alle Trades
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    # Zuerst: Alle Trades mit exit_time zählen
+    all_trades_with_exit = await db.trades.find({
         'user_id': user_id,
-        'exit_time': {'$exists': True, '$ne': None},
-        'entry_time': {'$gte': cutoff}
+        'exit_time': {'$exists': True, '$ne': None}
     }).to_list(1000)
+    
+    # Dann: Mit entry_time Filter
+    trades = []
+    trades_without_entry = 0
+    trades_old = 0
+    
+    for trade in all_trades_with_exit:
+        entry = trade.get('entry_time')
+        if not entry:
+            trades_without_entry += 1
+            continue
+        
+        # Parse entry_time
+        if isinstance(entry, str):
+            try:
+                entry = datetime.fromisoformat(entry.replace('Z', '+00:00'))
+            except:
+                trades_without_entry += 1
+                continue
+        
+        # Prüfe ob im Zeitraum
+        try:
+            if entry.replace(tzinfo=None) < cutoff.replace(tzinfo=None):
+                trades_old += 1
+                continue
+        except:
+            pass
+        
+        trades.append(trade)
+    
+    # Debug info
+    debug_info = {
+        'total_with_exit': len(all_trades_with_exit),
+        'trades_without_entry_time': trades_without_entry,
+        'trades_older_than_cutoff': trades_old,
+        'trades_in_period': len(trades),
+        'cutoff_date': cutoff.isoformat() if cutoff else None
+    }
     
     # Buckets für Hold Duration
     buckets = {
@@ -1990,6 +2037,7 @@ async def get_hold_duration_analysis(
     return {
         'total_trades': total_trades,
         'analysis_period_days': days,
+        'debug': debug_info,  # Debug-Infos für Diagnose
         'bucket_analysis': bucket_stats,
         'exit_source_analysis': exit_source_stats,
         'exploitation_hold_distribution': [
