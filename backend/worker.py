@@ -61,7 +61,7 @@ class MultiUserTradingWorker:
         self.RL_BUY_BLOCKED_THRESHOLD = 5  # Nach 5 RL BUYs die am MIN_MOVE scheitern -> schneller lockern
         
         # Trade Cooldown: Mindestzeit zwischen neuen Trades (in Sekunden)
-        self.TRADE_COOLDOWN_SECONDS = 180  # 3 Minuten zwischen Trades (kontrolliertes Lernen)
+        self.TRADE_COOLDOWN_SECONDS = 60  # 1 Minute zwischen Trades (schnelles Trading)
         
         # Telegram Bot (optional - wird später initialisiert)
         self.telegram = None

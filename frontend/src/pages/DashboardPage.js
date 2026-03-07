@@ -53,7 +53,7 @@ const RLStatusPanel = () => {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 10000); // Auto-refresh alle 10 Sekunden
+    const interval = setInterval(fetchStatus, 5000); // Auto-refresh alle 5 Sekunden
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
@@ -741,13 +741,16 @@ const DashboardPage = ({ onLogout }) => {
     const interval = setInterval(() => {
       fetchStatus();
       fetchLogs();
-    }, 30000);
+    }, 10000); // Refresh alle 10 Sekunden
     return () => clearInterval(interval);
   }, [fetchStatus, fetchLogs]);
 
   useEffect(() => {
     if (status?.settings?.live_confirmed) {
       fetchBalance();
+      // Auto-refresh Balance/Positionen alle 5 Sekunden
+      const balanceInterval = setInterval(fetchBalance, 5000);
+      return () => clearInterval(balanceInterval);
     }
   }, [status?.settings?.live_confirmed, fetchBalance]);
 
