@@ -539,7 +539,7 @@ class RLTradingAI:
         self._load_model()
     
     def _load_model(self):
-        """Lade trainiertes Modell MIT Memory UND Neural Networks"""
+        """Lade trainiertes Modell MIT Memory UND Neural Networks UND Exit-Stats"""
         try:
             if os.path.exists(self.MODEL_PATH):
                 with open(self.MODEL_PATH, 'rb') as f:
@@ -572,6 +572,23 @@ class RLTradingAI:
                         for i, priority in enumerate(data['memory_priorities']):
                             if i < len(self.brain.memory):
                                 self.brain.memory.priorities[i] = priority
+                    
+                    # ============ EXIT-STATISTIKEN LADEN ============
+                    if 'exit_stats' in data and data['exit_stats']:
+                        saved_exit_stats = data['exit_stats']
+                        self.exit_stats['exploration_sells'] = saved_exit_stats.get('exploration_sells', 0)
+                        self.exit_stats['exploitation_sells'] = saved_exit_stats.get('exploitation_sells', 0)
+                        self.exit_stats['emergency_sells'] = saved_exit_stats.get('emergency_sells', 0)
+                        self.exit_stats['time_limit_sells'] = saved_exit_stats.get('time_limit_sells', 0)
+                        self.exit_stats['total_hold_time_exploration'] = saved_exit_stats.get('total_hold_time_exploration', 0)
+                        self.exit_stats['total_hold_time_exploitation'] = saved_exit_stats.get('total_hold_time_exploitation', 0)
+                        self.exit_stats['total_hold_time_emergency'] = saved_exit_stats.get('total_hold_time_emergency', 0)
+                        self.exit_stats['total_hold_time_time_limit'] = saved_exit_stats.get('total_hold_time_time_limit', 0)
+                        self.exit_stats['sell_prob_sum'] = saved_exit_stats.get('sell_prob_sum', 0)
+                        self.exit_stats['sell_prob_count'] = saved_exit_stats.get('sell_prob_count', 0)
+                        total_exits = (self.exit_stats['exploration_sells'] + self.exit_stats['exploitation_sells'] + 
+                                      self.exit_stats['emergency_sells'] + self.exit_stats['time_limit_sells'])
+                        logger.info(f"[RL] ✅ Exit-Stats geladen: {total_exits} Exits gesamt")
                     
                     logger.info(f"[RL] ✅ Model geladen: {self.brain.total_trades} Trades, {self.brain.win_rate:.1%} Win-Rate, Memory: {len(self.brain.memory)}, Typ: {self.brain.model_type}")
             else:
@@ -658,7 +675,7 @@ class RLTradingAI:
         }
     
     def _save_model(self):
-        """Speichere Modell MIT Memory UND Neural Networks"""
+        """Speichere Modell MIT Memory UND Neural Networks UND Exit-Stats"""
         try:
             # Erstelle Ordner falls nicht vorhanden
             import os
@@ -674,6 +691,20 @@ class RLTradingAI:
                 # WICHTIG: Memory auch speichern!
                 'memory': list(self.brain.memory.buffer) if hasattr(self.brain.memory, 'buffer') else [],
                 'memory_priorities': list(self.brain.memory.priorities[:len(self.brain.memory)]) if hasattr(self.brain.memory, 'priorities') else [],
+                # ============ EXIT-STATISTIKEN PERSISTIEREN ============
+                'exit_stats': {
+                    'exploration_sells': self.exit_stats.get('exploration_sells', 0),
+                    'exploitation_sells': self.exit_stats.get('exploitation_sells', 0),
+                    'emergency_sells': self.exit_stats.get('emergency_sells', 0),
+                    'time_limit_sells': self.exit_stats.get('time_limit_sells', 0),
+                    'total_hold_time_exploration': self.exit_stats.get('total_hold_time_exploration', 0),
+                    'total_hold_time_exploitation': self.exit_stats.get('total_hold_time_exploitation', 0),
+                    'total_hold_time_emergency': self.exit_stats.get('total_hold_time_emergency', 0),
+                    'total_hold_time_time_limit': self.exit_stats.get('total_hold_time_time_limit', 0),
+                    'sell_prob_sum': self.exit_stats.get('sell_prob_sum', 0),
+                    'sell_prob_count': self.exit_stats.get('sell_prob_count', 0),
+                    # exit_details und recent_exit_logs werden NICHT persistiert (zu groß, nicht kritisch)
+                },
             }
             
             # Speichere Q-Table wenn vorhanden
@@ -688,7 +719,7 @@ class RLTradingAI:
             with open(self.MODEL_PATH, 'wb') as f:
                 pickle.dump(data, f)
             
-            logger.info(f"[RL] ✅ Model gespeichert: {self.brain.total_trades} Trades, Memory: {len(self.brain.memory)}, Typ: {self.brain.model_type}")
+            logger.info(f"[RL] ✅ Model gespeichert: {self.brain.total_trades} Trades, Memory: {len(self.brain.memory)}, Typ: {self.brain.model_type}, Exit-Stats: ✓")
         except Exception as e:
             logger.error(f"[RL] ❌ Konnte Model nicht speichern: {e}")
     
