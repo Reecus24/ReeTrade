@@ -284,31 +284,90 @@ class MexcClient:
         ]
         
         # ═══════════════════════════════════════════════════════════════════════════
-        # DEFINIERTES MID-CAP TRADING UNIVERSE (42 Coins)
+        # ERWEITERTES TRADING UNIVERSE (~200 Coins)
+        # Nur verifizierte MEXC USDT Paare
         # ═══════════════════════════════════════════════════════════════════════════
         if curated_list is None:
             curated_list = [
-                # Tier 1: High Liquidity Mid-Caps (15)
-                "SOLUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "MATICUSDT",
-                "ATOMUSDT", "TRXUSDT", "NEARUSDT", "FILUSDT", "APTUSDT",
-                "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT",
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 1: TOP 30 - Höchste Liquidität
+                # ══════════════════════════════════════════════════════════════════
+                "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
+                "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+                "TRXUSDT", "MATICUSDT", "SHIBUSDT", "LTCUSDT", "ATOMUSDT",
+                "UNIUSDT", "XLMUSDT", "ETCUSDT", "NEARUSDT", "APTUSDT",
+                "FILUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT",
+                "VETUSDT", "ICPUSDT", "HBARUSDT", "FTMUSDT", "THETAUSDT",
                 
-                # Tier 2: DeFi & Layer 1 (10)
-                "AAVEUSDT", "UNIUSDT", "RUNEUSDT", "STXUSDT", "TIAUSDT",
-                "IMXUSDT", "FTMUSDT", "FLOWUSDT", "MINAUSDT", "RNDRUSDT",
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 2: Layer 1 & Layer 2 (30)
+                # ══════════════════════════════════════════════════════════════════
+                "SEIUSDT", "TIAUSDT", "STXUSDT", "KASUSDT", "TONUSDT",
+                "ALGOUSDT", "EOSUSDT", "FLOWUSDT", "MINAUSDT", "IOTAUSDT",
+                "ZILUSDT", "NEOUSDT", "QNTUSDT", "EGLDUSDT", "XTZUSDT",
+                "AXSUSDT", "AAVEUSDT", "GRTUSDT", "SNXUSDT", "MKRUSDT",
+                "RUNEUSDT", "KAVAUSDT", "KSMUSDT", "ROSAUSDT", "ONEUSDT",
+                "CELOUSDT", "CKBUSDT", "CFXUSDT", "ASTRUSDT", "GLMRUSDT",
                 
-                # Tier 3: Gaming & Metaverse (5)
-                "GALAUSDT", "SANDUSDT", "MANAUSDT", "AXSUSDT", "CHZUSDT",
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 3: DeFi Protocols (30)
+                # ══════════════════════════════════════════════════════════════════
+                "LDOUSDT", "CRVUSDT", "COMPUSDT", "DYDXUSDT", "GMXUSDT",
+                "1INCHUSDT", "SUSHIUSDT", "YFIUSDT", "BALUSDT", "UMAUSDT",
+                "ZRXUSDT", "LRCUSDT", "KNCUSDT", "CELRUSDT", "OGNUSDT",
+                "RADUSDT", "BADGERUSDT", "CVXUSDT", "FXSUSDT", "PENDLEUSDT",
+                "RDNTUSDT", "MAGICUSDT", "STGUSDT", "PERPUSDT", "OSMOUSDT",
+                "JUPUSDT", "PYTHUSDT", "WUSDT", "JTOUSDT", "RAYUSDT",
                 
-                # Tier 4: Infrastructure & DeFi (12)
-                "ZILUSDT", "IOTAUSDT", "XLMUSDT", "ALGOUSDT",
-                "DYDXUSDT", "GMXUSDT", "LDOUSDT", "CRVUSDT",
-                "SNXUSDT", "COMPUSDT", "BALUSDT", "ANKRUSDT",
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 4: Gaming & Metaverse (30)
+                # ══════════════════════════════════════════════════════════════════
+                "GALAUSDT", "SANDUSDT", "MANAUSDT", "ENJUSDT", "CHZUSDT",
+                "IMXUSDT", "RNDRUSDT", "ILVUSDT", "YGGUSDT", "LOOKSUSDT",
+                "SUPERUSDT", "SFPUSDT", "TLMUSDT", "DARUSDT", "GHSTUSDT",
+                "ALICEUSDT", "SLPUSDT", "PIXELUSDT", "PORTALUSDT", "XAIUSDT",
+                "ACEUSDT", "GASUSDT", "GMTUSDT", "HIGHUSDT", "BEAMUSDT",
+                "PRIMEUSDT", "METISUSDT", "BLURUSDT", "IDUSDT", "EDUUSDT",
                 
-                # Tier 5: NEUE VOLATILERE COINS (9) - für bessere Bewegung
-                "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "DOGEUSDT",
-                "SHIBUSDT", "ORDIUSDT", "KASUSDT", "FETUSDT", "AGIXUSDT"
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 5: AI & Big Data (20)
+                # ══════════════════════════════════════════════════════════════════
+                "FETUSDT", "AGIXUSDT", "OCEANUSDT", "NMRTUSDT", "ARKMUSDT",
+                "WLDUSDT", "RENDERUSDT", "PHBUSDT", "CTXCUSDT", "MDTUSDT",
+                "RLCUSDT", "IOTXUSDT", "ANKRUSDT", "STORJUSDT", "SCUSDT",
+                "AABORUSDT", "TAOUSDT", "VIRTUSDT", "GRIFFAINUSDT", "AKTUSDT",
+                
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 6: Meme Coins & High Volatility (35)
+                # ══════════════════════════════════════════════════════════════════
+                "PEPEUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT", "MEMEUSDT",
+                "ORDIUSDT", "SATSUSDT", "1000SATSUSDT", "BOMEUSDT", "MEWUSDT",
+                "POPCATUSDT", "WOJAKUSDT", "COQIUSDT", "RATUSDT", "MOGUSDT",
+                "TURBOUSDT", "AIDOGEUSDT", "ELONUSDT", "PEOPLEUSDT", "LUNAUSDT",
+                "LUNCUSDT", "NEIROUSDT", "GOATUSDT", "PABORUSDT", "CATUSDT",
+                "DOGSUSDT", "CATIUSDT", "HMSTRUSDT", "MAJORUSDT", "BANAUSDT",
+                "ACTUSDT", "PABORUSDUSDT", "TRUMPUSDT", "SUNWUKONGUSDT", "CHILLGUYUSDT",
+                
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 7: Infrastructure & Oracles (25)
+                # ══════════════════════════════════════════════════════════════════
+                "ARPAUSDT", "BLZUSDT", "SYSUSDT", "CTSIUSDT", "BICOUSDT",
+                "API3USDT", "BANDUSDT", "REQUSDT", "POLYXUSDT", "HNTUSDT",
+                "MOBUSDT", "LITUSDT", "JASMYUSDT", "ACHUSDT", "TRUUSDT",
+                "TWTUSDT", "C98USDT", "ALPACAUSDT", "ATAUSDT", "FORTHUSDT",
+                "ERNUSDT", "SANTOSUSDT", "LAZIOUSDT", "PORTOUSDT", "ALPINEUSDT",
+                
+                # ══════════════════════════════════════════════════════════════════
+                # TIER 8: Exchange & Utility Tokens (20)
+                # ══════════════════════════════════════════════════════════════════
+                "CAKEUSDT", "MASKUSDT", "ENSUSDT", "LPTUSDT", "AUDIOUSDT",
+                "DENTUSDT", "HOTUSDT", "WINUSDT", "BTTUSDT", "JSTUSDT",
+                "SUNUSDT", "LEVERUSDT", "AMBUSDT", "VOXELUSDT", "AGLDUSDT",
+                "LQTYUSDT", "HOOKUSDT", "MAVUSDT", "ARKUSDT", "COMBOUSDT"
             ]
+            
+            # Duplikate entfernen
+            curated_list = list(dict.fromkeys(curated_list))
         
         # Erstelle Lookup für schnellen Zugriff
         ticker_lookup = {t.get('symbol'): t for t in usdt_pairs}
