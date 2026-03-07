@@ -519,60 +519,75 @@ export default function KILogTab() {
         </div>
       </div>
 
-      {/* Learning Log */}
+      {/* Learning Log - Zeigt Exit Decision Logs */}
       <div className="cyber-panel p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 flex items-center justify-center bg-purple-500/20 border border-purple-500/50">
             <Clock className="w-5 h-5 text-purple-400" />
           </div>
-          <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">AI LEARNING LOG</h3>
+          <h3 className="font-cyber text-sm text-purple-400 tracking-widest uppercase">EXIT DECISION LOG</h3>
         </div>
         
         <ScrollArea className="h-64">
-          {stats?.recent_lessons && stats.recent_lessons.length > 0 ? (
+          {rlStatus?.exit_stats?.recent_exit_logs && rlStatus.exit_stats.recent_exit_logs.length > 0 ? (
             <div className="space-y-2">
-              {stats.recent_lessons.slice().reverse().map((lesson, idx) => (
+              {rlStatus.exit_stats.recent_exit_logs.slice().reverse().slice(0, 20).map((log, idx) => (
                 <div 
                   key={idx} 
                   className={`p-3 border ${
-                    lesson.type === 'KI_TAKEOVER' 
-                      ? 'bg-purple-500/10 border-purple-500/30'
-                      : lesson.type === 'MISTAKE_LEARNING'
+                    log.decision === 'SELL' 
                       ? 'bg-red-500/10 border-red-500/30'
-                      : 'bg-black/50 border-cyan-500/20'
+                      : 'bg-green-500/10 border-green-500/30'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
-                      {lesson.type === 'KI_TAKEOVER' && <Brain className="w-4 h-4 text-purple-400" />}
-                      {lesson.type === 'MISTAKE_LEARNING' && <AlertTriangle className="w-4 h-4 text-red-400" />}
-                      {lesson.type === 'INITIAL_LEARNING' && <BookOpen className="w-4 h-4 text-cyan-400" />}
+                      {log.decision === 'SELL' ? (
+                        <AlertTriangle className="w-4 h-4 text-red-400" />
+                      ) : (
+                        <Brain className="w-4 h-4 text-green-400" />
+                      )}
                       <span className="text-sm font-mono-cyber text-zinc-300">
-                        {lesson.message || lesson.type}
+                        <span className="text-cyan-400">{log.symbol}</span>
+                        {' → '}
+                        <span className={log.decision === 'SELL' ? 'text-red-400' : 'text-green-400'}>
+                          {log.decision}
+                        </span>
+                        {log.reason && (
+                          <span className="text-zinc-500 ml-2">({log.reason})</span>
+                        )}
                       </span>
                     </div>
                     <span className="text-[10px] text-zinc-600 font-mono-cyber">
-                      {lesson.time ? format(new Date(lesson.time), 'HH:mm', { locale: de }) : ''}
+                      {log.timestamp ? format(new Date(log.timestamp), 'HH:mm', { locale: de }) : ''}
                     </span>
                   </div>
-                  {lesson.adjustments && lesson.adjustments.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {lesson.adjustments.map((adj, i) => (
-                        <Badge key={i} className="cyber-badge bg-zinc-900 text-zinc-500 border border-zinc-700 text-[10px]">
-                          {adj}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px]">
+                    <Badge className="cyber-badge bg-zinc-900 text-zinc-500 border border-zinc-700">
+                      Hold: {log.hold_seconds ? `${Math.round(log.hold_seconds)}s` : 'N/A'}
+                    </Badge>
+                    <Badge className={`cyber-badge border ${
+                      (log.pnl_pct || 0) >= 0 
+                        ? 'bg-green-500/10 text-green-400 border-green-500/30' 
+                        : 'bg-red-500/10 text-red-400 border-red-500/30'
+                    }`}>
+                      PnL: {log.pnl_pct !== undefined ? `${log.pnl_pct >= 0 ? '+' : ''}${log.pnl_pct.toFixed(2)}%` : 'N/A'}
+                    </Badge>
+                    {log.q_values && (
+                      <Badge className="cyber-badge bg-purple-500/10 text-purple-400 border border-purple-500/30">
+                        Q[S]: {log.q_values.sell?.toFixed(2) || 'N/A'}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="text-center py-12">
               <Brain className="w-12 h-12 mx-auto mb-4 text-purple-500/30" />
-              <p className="text-zinc-600 font-mono-cyber">NO LEARNING ENTRIES YET</p>
+              <p className="text-zinc-600 font-mono-cyber">KEINE EXIT-ENTSCHEIDUNGEN</p>
               <p className="text-[10px] text-zinc-700 mt-1 font-mono-cyber">
-                AI starts learning after first trades
+                Logs erscheinen nach dem ersten Trade-Exit
               </p>
             </div>
           )}
