@@ -36,7 +36,7 @@ const RLStatusPanel = () => {
   const [loading, setLoading] = useState(true);
   const [statsHours, setStatsHours] = useState(24);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const [statusRes, statsRes] = await Promise.all([
         axios.get(`${BACKEND_URL}/api/rl/status`, getAuthHeaders()),
@@ -49,13 +49,13 @@ const RLStatusPanel = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statsHours]);
 
   useEffect(() => {
     fetchStatus();
     const interval = setInterval(fetchStatus, 10000); // Auto-refresh alle 10 Sekunden
     return () => clearInterval(interval);
-  }, [statsHours]);
+  }, [fetchStatus]);
 
   if (loading) {
     return (
