@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,142 @@ import { toast } from 'sonner';
 import { TrendingUp, TrendingDown, X, Loader2, AlertTriangle, RefreshCw, Layers, Trash2 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+
+// ============ MINI CANDLESTICK CHART COMPONENT ============
+const MiniCandleChart = ({ symbol, entryPrice }) => {
+  const [candles, setCandles] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const getAuthHeaders = useCallback(() => {
+    const token = localStorage.getItem('auth_token');
+    return { headers: { Authorization: `Bearer ${token}` } };
+  }, []);
+
+  const fetchCandles = useCallback(async () => {
+    try {
+      const response = await axios.get(
+        `${BACKEND_URL}/api/market/candles?symbol=${symbol}&interval=1m&limit=10`,
+        getAuthHeaders()
+      );
+      setCandles(response.data.klines || []);
+    } catch (error) {
+      console.error('Candle fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [symbol, getAuthHeaders]);
+
+  useEffect(() => {
+    fetchCandles();
+    const interval = setInterval(fetchCandles, 5000); // Update alle 5s
+    return () => clearInterval(interval);
+  }, [fetchCandles]);
+
+  if (loading || candles.length === 0) {
+    return (
+      <div className="w-24 h-12 bg-zinc-900/50 border border-zinc-800 flex items-center justify-center">
+        <div className="w-3 h-3 border border-cyan-500 border-t-transparent animate-spin rounded-full" />
+      </div>
+    );
+  }
+
+  // Parse klines: [timestamp, open, high, low, close, volume, ...]
+  const parsedCandles = candles.map(k => ({
+    open: parseFloat(k[1]),
+    high: parseFloat(k[2]),
+    low: parseFloat(k[3]),
+    close: parseFloat(k[4])
+  }));
+
+  // Calculate min/max for scaling
+  const allPrices = parsedCandles.flatMap(c => [c.high, c.low]);
+  const minPrice = Math.min(...allPrices, entryPrice);
+  const maxPrice = Math.max(...allPrices, entryPrice);
+  const priceRange = maxPrice - minPrice || 1;
+
+  // Chart dimensions
+  const width = 96;
+  const height = 48;
+  const candleWidth = 6;
+  const gap = 3;
+  const padding = 2;
+
+  const scaleY = (price) => {
+    return height - padding - ((price - minPrice) / priceRange) * (height - padding * 2);
+  };
+
+  // Entry price line position
+  const entryY = scaleY(entryPrice);
+
+  return (
+    <div className="relative" title={`Letzte 10 Kerzen (1m) | Entry: ${entryPrice.toFixed(6)}`}>
+      <svg width={width} height={height} className="bg-zinc-900/50 border border-zinc-800 rounded">
+        {/* Entry Price Line */}
+        <line
+          x1="0"
+          y1={entryY}
+          x2={width}
+          y2={entryY}
+          stroke="#22d3ee"
+          strokeWidth="1"
+          strokeDasharray="2,2"
+          opacity="0.6"
+        />
+        
+        {/* Candles */}
+        {parsedCandles.map((candle, idx) => {
+          const x = padding + idx * (candleWidth + gap);
+          const isGreen = candle.close >= candle.open;
+          const color = isGreen ? '#22c55e' : '#ef4444';
+          
+          const bodyTop = scaleY(Math.max(candle.open, candle.close));
+          const bodyBottom = scaleY(Math.min(candle.open, candle.close));
+          const bodyHeight = Math.max(1, bodyBottom - bodyTop);
+          
+          const wickTop = scaleY(candle.high);
+          const wickBottom = scaleY(candle.low);
+          
+          return (
+            <g key={idx}>
+              {/* Wick */}
+              <line
+                x1={x + candleWidth / 2}
+                y1={wickTop}
+                x2={x + candleWidth / 2}
+                y2={wickBottom}
+                stroke={color}
+                strokeWidth="1"
+              />
+              {/* Body */}
+              <rect
+                x={x}
+                y={bodyTop}
+                width={candleWidth}
+                height={bodyHeight}
+                fill={isGreen ? color : 'transparent'}
+                stroke={color}
+                strokeWidth="1"
+              />
+            </g>
+          );
+        })}
+        
+        {/* Current price indicator (last close) */}
+        {parsedCandles.length > 0 && (
+          <circle
+            cx={width - padding - 3}
+            cy={scaleY(parsedCandles[parsedCandles.length - 1].close)}
+            r="2"
+            fill={parsedCandles[parsedCandles.length - 1].close >= entryPrice ? '#22c55e' : '#ef4444'}
+          />
+        )}
+      </svg>
+      <div className="absolute -bottom-3 left-0 right-0 text-center">
+        <span className="text-[8px] text-zinc-600 font-mono">1m candles</span>
+      </div>
+    </div>
+  );
+};
 
 const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
   const [sellDialog, setSellDialog] = useState({ open: false, position: null, loading: false });
@@ -249,7 +385,10 @@ const PositionsPanel = ({ positions = [], mode = 'paper', onSellComplete }) => {
                 </div>
               </div>
               
-              <div className="flex items-center gap-8">
+              <div className="flex items-center gap-6">
+                {/* Mini Candlestick Chart */}
+                <MiniCandleChart symbol={pos.symbol} entryPrice={pos.entry_price} />
+                
                 {/* PnL Display */}
                 {netPnlAmount !== null && (
                   <div className="text-right">
