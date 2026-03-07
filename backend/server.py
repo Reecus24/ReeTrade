@@ -1809,6 +1809,202 @@ async def get_mfe_mae_analysis(
     return analysis
 
 
+@app.get("/api/rl/hold-duration-analysis")
+async def get_hold_duration_analysis(
+    current_user: dict = Depends(get_current_user),
+    days: int = 7
+):
+    """
+    Detaillierte Analyse der Hold-Duration-Verteilung.
+    
+    Prüft ob die KI zu früh verkauft (direkt nach MIN_HOLD_SECONDS).
+    """
+    from datetime import timezone
+    from collections import defaultdict
+    
+    user_id = current_user['user_id']
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    # Hole Trades
+    trades = await db.trades.find({
+        'user_id': user_id,
+        'exit_time': {'$exists': True, '$ne': None},
+        'entry_time': {'$gte': cutoff}
+    }).to_list(1000)
+    
+    # Buckets für Hold Duration
+    buckets = {
+        '90-120s': {'count': 0, 'pnls': [], 'winners': 0},
+        '120-180s': {'count': 0, 'pnls': [], 'winners': 0},
+        '180-300s': {'count': 0, 'pnls': [], 'winners': 0},
+        '300-600s': {'count': 0, 'pnls': [], 'winners': 0},
+        '600s+': {'count': 0, 'pnls': [], 'winners': 0}
+    }
+    
+    # Exit Source Tracking
+    exit_sources = defaultdict(lambda: {'count': 0, 'pnl_sum': 0, 'hold_times': []})
+    
+    # Immediate exits (90-95s)
+    immediate_exits = []
+    
+    # Exploitation hold distribution
+    exploitation_holds = []
+    
+    for trade in trades:
+        entry = trade.get('entry_time')
+        exit_time = trade.get('exit_time')
+        
+        if not entry or not exit_time:
+            continue
+        
+        # Parse datetime
+        if isinstance(entry, str):
+            entry = datetime.fromisoformat(entry.replace('Z', '+00:00'))
+        if isinstance(exit_time, str):
+            exit_time = datetime.fromisoformat(exit_time.replace('Z', '+00:00'))
+        
+        # Calculate hold duration
+        try:
+            hold_secs = (exit_time - entry).total_seconds()
+        except:
+            continue
+        
+        pnl = trade.get('pnl_pct', 0) or 0
+        exit_source = trade.get('exit_reason', trade.get('sell_source', 'unknown'))
+        
+        # Exit Source tracking
+        exit_sources[exit_source]['count'] += 1
+        exit_sources[exit_source]['pnl_sum'] += pnl
+        exit_sources[exit_source]['hold_times'].append(hold_secs)
+        
+        # Exploitation tracking
+        if exit_source in ['exploitation', 'ai_exit']:
+            exploitation_holds.append(hold_secs)
+        
+        # Bucket assignment
+        if hold_secs < 90:
+            continue
+        elif hold_secs < 120:
+            bucket = '90-120s'
+        elif hold_secs < 180:
+            bucket = '120-180s'
+        elif hold_secs < 300:
+            bucket = '180-300s'
+        elif hold_secs < 600:
+            bucket = '300-600s'
+        else:
+            bucket = '600s+'
+        
+        buckets[bucket]['count'] += 1
+        buckets[bucket]['pnls'].append(pnl)
+        if pnl > 0:
+            buckets[bucket]['winners'] += 1
+        
+        # Immediate exit tracking (90-95s)
+        if 90 <= hold_secs <= 95:
+            immediate_exits.append({
+                'symbol': trade.get('symbol'),
+                'hold_seconds': round(hold_secs, 1),
+                'pnl_pct': round(pnl, 3),
+                'exit_source': exit_source
+            })
+    
+    # Calculate bucket stats
+    total_trades = sum(b['count'] for b in buckets.values())
+    bucket_stats = []
+    for bucket_name, data in buckets.items():
+        count = data['count']
+        bucket_stats.append({
+            'bucket': bucket_name,
+            'count': count,
+            'percentage': round(count / total_trades * 100, 1) if total_trades > 0 else 0,
+            'avg_pnl': round(sum(data['pnls']) / count, 3) if count > 0 else 0,
+            'winners': data['winners'],
+            'win_rate': round(data['winners'] / count * 100, 1) if count > 0 else 0
+        })
+    
+    # Exit source stats
+    exit_source_stats = []
+    for source, data in sorted(exit_sources.items(), key=lambda x: -x[1]['count']):
+        count = data['count']
+        exit_source_stats.append({
+            'source': source,
+            'count': count,
+            'percentage': round(count / total_trades * 100, 1) if total_trades > 0 else 0,
+            'avg_pnl': round(data['pnl_sum'] / count, 3) if count > 0 else 0,
+            'avg_hold_seconds': round(sum(data['hold_times']) / count, 1) if count > 0 else 0
+        })
+    
+    # Exploitation hold distribution
+    exploitation_distribution = {
+        '90-95s': 0, '95-100s': 0, '100-110s': 0, '110-120s': 0,
+        '120-150s': 0, '150-180s': 0, '180-240s': 0, '240-300s': 0, '300s+': 0
+    }
+    for h in exploitation_holds:
+        if h < 95: exploitation_distribution['90-95s'] += 1
+        elif h < 100: exploitation_distribution['95-100s'] += 1
+        elif h < 110: exploitation_distribution['100-110s'] += 1
+        elif h < 120: exploitation_distribution['110-120s'] += 1
+        elif h < 150: exploitation_distribution['120-150s'] += 1
+        elif h < 180: exploitation_distribution['150-180s'] += 1
+        elif h < 240: exploitation_distribution['180-240s'] += 1
+        elif h < 300: exploitation_distribution['240-300s'] += 1
+        else: exploitation_distribution['300s+'] += 1
+    
+    # Immediate exit analysis
+    immediate_by_source = defaultdict(lambda: {'count': 0, 'pnl_sum': 0})
+    for e in immediate_exits:
+        src = e['exit_source']
+        immediate_by_source[src]['count'] += 1
+        immediate_by_source[src]['pnl_sum'] += e['pnl_pct']
+    
+    immediate_stats = []
+    for src, data in immediate_by_source.items():
+        immediate_stats.append({
+            'source': src,
+            'count': data['count'],
+            'avg_pnl': round(data['pnl_sum'] / data['count'], 3) if data['count'] > 0 else 0
+        })
+    
+    # Diagnose
+    diagnosis = []
+    immediate_ratio = len(immediate_exits) / total_trades if total_trades > 0 else 0
+    if immediate_ratio > 0.5:
+        diagnosis.append({
+            'severity': 'HIGH',
+            'issue': 'Zu viele Immediate Exits',
+            'detail': f'{immediate_ratio*100:.1f}% der Trades werden bei 90-95s geschlossen',
+            'suggestion': 'q_diff Threshold erhöhen oder MIN_HOLD_SECONDS anpassen'
+        })
+    
+    if bucket_stats[0]['count'] > 0:  # 90-120s bucket
+        short_bucket_pnl = bucket_stats[0]['avg_pnl']
+        if short_bucket_pnl < -0.1:
+            diagnosis.append({
+                'severity': 'MEDIUM',
+                'issue': 'Kurze Trades unprofitabel',
+                'detail': f'90-120s Bucket: Avg PnL {short_bucket_pnl:+.3f}%',
+                'suggestion': 'KI lernt möglicherweise falsches Muster - längere Haltezeiten testen'
+            })
+    
+    return {
+        'total_trades': total_trades,
+        'analysis_period_days': days,
+        'bucket_analysis': bucket_stats,
+        'exit_source_analysis': exit_source_stats,
+        'exploitation_hold_distribution': [
+            {'bucket': k, 'count': v} for k, v in exploitation_distribution.items()
+        ],
+        'immediate_exits': {
+            'count': len(immediate_exits),
+            'percentage': round(immediate_ratio * 100, 1),
+            'by_source': immediate_stats,
+            'examples': immediate_exits[:10]
+        },
+        'diagnosis': diagnosis
+    }
+
+
 @app.get("/api/rl/trading-stats")
 async def get_rl_trading_stats(
     current_user: dict = Depends(get_current_user),

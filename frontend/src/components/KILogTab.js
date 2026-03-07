@@ -34,6 +34,7 @@ export default function KILogTab() {
   const [rlStatus, setRlStatus] = useState(null);
   const [coinStats, setCoinStats] = useState(null);
   const [mfeAnalysis, setMfeAnalysis] = useState(null);
+  const [holdAnalysis, setHoldAnalysis] = useState(null);
   const [error, setError] = useState(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -46,16 +47,18 @@ export default function KILogTab() {
 
   const fetchData = async () => {
     try {
-      const [kiRes, rlRes, coinRes, mfeRes] = await Promise.all([
+      const [kiRes, rlRes, coinRes, mfeRes, holdRes] = await Promise.all([
         axios.get(`${API}/api/ki/stats`, getAuthHeaders()),
         axios.get(`${API}/api/rl/status`, getAuthHeaders()),
         axios.get(`${API}/api/coin-stats`, getAuthHeaders()).catch(() => ({ data: null })),
-        axios.get(`${API}/api/mfe-mae-analysis`, getAuthHeaders()).catch(() => ({ data: null }))
+        axios.get(`${API}/api/mfe-mae-analysis`, getAuthHeaders()).catch(() => ({ data: null })),
+        axios.get(`${API}/api/rl/hold-duration-analysis?days=7`, getAuthHeaders()).catch(() => ({ data: null }))
       ]);
       setStats(kiRes.data);
       setRlStatus(rlRes.data);
       setCoinStats(coinRes.data);
       setMfeAnalysis(mfeRes.data);
+      setHoldAnalysis(holdRes.data);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.detail || 'Fehler beim Laden');
@@ -478,6 +481,113 @@ export default function KILogTab() {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Hold Duration Analysis Panel */}
+      {holdAnalysis && holdAnalysis.total_trades > 0 && (
+        <div className="cyber-panel p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-orange-500/20 border border-orange-500/50">
+              <Clock className="w-5 h-5 text-orange-400" />
+            </div>
+            <h3 className="font-cyber text-sm text-orange-400 tracking-widest uppercase">HOLD DURATION ANALYSE</h3>
+            <span className="text-zinc-500 text-sm ml-auto">{holdAnalysis.total_trades} Trades (7 Tage)</span>
+          </div>
+          
+          {/* Diagnosis Alerts */}
+          {holdAnalysis.diagnosis && holdAnalysis.diagnosis.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {holdAnalysis.diagnosis.map((d, idx) => (
+                <div key={idx} className={`p-3 border ${
+                  d.severity === 'HIGH' ? 'bg-red-500/10 border-red-500/30' :
+                  d.severity === 'MEDIUM' ? 'bg-yellow-500/10 border-yellow-500/30' :
+                  'bg-blue-500/10 border-blue-500/30'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className={`w-4 h-4 ${
+                      d.severity === 'HIGH' ? 'text-red-400' :
+                      d.severity === 'MEDIUM' ? 'text-yellow-400' : 'text-blue-400'
+                    }`} />
+                    <span className="font-semibold text-white">{d.issue}</span>
+                  </div>
+                  <p className="text-sm text-zinc-400 mt-1">{d.detail}</p>
+                  <p className="text-xs text-cyan-400 mt-1">💡 {d.suggestion}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Bucket Distribution */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <h4 className="text-sm text-zinc-400 mb-2 font-mono-cyber">HOLD DURATION BUCKETS</h4>
+              <div className="space-y-1">
+                {holdAnalysis.bucket_analysis?.map(b => {
+                  const maxCount = Math.max(...holdAnalysis.bucket_analysis.map(x => x.count));
+                  const barWidth = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
+                  return (
+                    <div key={b.bucket} className="flex items-center gap-2">
+                      <span className="w-20 text-xs text-zinc-500 font-mono">{b.bucket}</span>
+                      <div className="flex-1 h-4 bg-zinc-900 relative">
+                        <div 
+                          className={`h-full ${b.avg_pnl >= 0 ? 'bg-green-500/50' : 'bg-red-500/50'}`}
+                          style={{ width: `${barWidth}%` }}
+                        />
+                        <span className="absolute right-1 top-0 text-[10px] text-white">
+                          {b.count} ({b.percentage}%)
+                        </span>
+                      </div>
+                      <span className={`w-16 text-right text-xs ${b.avg_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {b.avg_pnl >= 0 ? '+' : ''}{b.avg_pnl.toFixed(2)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div>
+              <h4 className="text-sm text-zinc-400 mb-2 font-mono-cyber">EXPLOITATION HOLD VERTEILUNG</h4>
+              <div className="space-y-1">
+                {holdAnalysis.exploitation_hold_distribution?.slice(0, 6).map(b => {
+                  const maxCount = Math.max(...holdAnalysis.exploitation_hold_distribution.map(x => x.count));
+                  const barWidth = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
+                  const isEarly = b.bucket.includes('90-') || b.bucket.includes('95-');
+                  return (
+                    <div key={b.bucket} className="flex items-center gap-2">
+                      <span className="w-20 text-xs text-zinc-500 font-mono">{b.bucket}</span>
+                      <div className="flex-1 h-4 bg-zinc-900 relative">
+                        <div 
+                          className={`h-full ${isEarly ? 'bg-orange-500/50' : 'bg-cyan-500/50'}`}
+                          style={{ width: `${barWidth}%` }}
+                        />
+                        <span className="absolute right-1 top-0 text-[10px] text-white">
+                          {b.count}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          
+          {/* Immediate Exits Warning */}
+          {holdAnalysis.immediate_exits?.percentage > 30 && (
+            <div className="p-3 bg-orange-500/10 border border-orange-500/30 mt-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-orange-400" />
+                <span className="font-semibold text-orange-400">
+                  {holdAnalysis.immediate_exits.percentage}% Immediate Exits (90-95s)
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-1">
+                Die KI verkauft sehr oft direkt nach der Mindesthaltezeit. 
+                Dies könnte auf ein lokales Optimum hindeuten.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
